@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111111" />
+    <meta name="description" content="Минималистичный мессенджер на Google Apps Script и Google Таблицах" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Sheet Messenger</title>
+  </head>
+  <body>
+    <main class="app" aria-label="Sheet Messenger">
+      <header class="topbar">
+        <div>
+          <h1>Сообщения</h1>
+          <p id="status" class="status">Локальный режим</p>
+        </div>
+        <button id="profileButton" class="profile" type="button" aria-label="Изменить имя">?</button>
+      </header>
+
+      <section class="chat" aria-label="Общий чат">
+        <div class="chat-title">
+          <div>
+            <strong>Общий чат</strong>
+            <span>обновление каждые 5 секунд</span>
+          </div>
+        </div>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <form id="composer" class="composer">
+          <label class="sr-only" for="messageInput">Сообщение</label>
+          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Сообщение" required></textarea>
+          <button type="submit" aria-label="Отправить">Отправить</button>
+        </form>
+      </section>
+    </main>
+
+    <dialog id="nameDialog">
+      <form id="nameForm" method="dialog">
+        <h2>Как вас называть?</h2>
+        <p>Для первого прототипа достаточно имени. Авторизацию подключим вместе с Google Таблицей.</p>
+        <label for="nameInput">Ваше имя</label>
+        <input id="nameInput" maxlength="40" autocomplete="name" required />
+        <button type="submit">Продолжить</button>
+      </form>
+    </dialog>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>
+

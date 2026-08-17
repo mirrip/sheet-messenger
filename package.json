@@ -1,0 +1,14 @@
+{
+  "name": "sheet-messenger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal messenger powered by Google Apps Script and Google Sheets",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "check": "node --check web/app.js && node --check web/sw.js && node --check scripts/dev-server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+
