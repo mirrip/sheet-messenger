@@ -2,6 +2,7 @@
   "name": "Sheet Messenger",
   "short_name": "Messenger",
   "description": "Минималистичный мессенджер на Google Apps Script",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -16,4 +17,3 @@
     }
   ]
 }
-
