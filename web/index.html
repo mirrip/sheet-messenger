@@ -5,50 +5,104 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#111111" />
     <meta name="description" content="Минималистичный мессенджер на Google Apps Script и Google Таблицах" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=2" />
     <title>Sheet Messenger</title>
   </head>
   <body>
     <main class="app" aria-label="Sheet Messenger">
       <header class="topbar">
         <div>
-          <h1>Сообщения</h1>
-          <p id="status" class="status">Локальный режим</p>
+          <h1>Sheet Messenger</h1>
+          <p id="status" class="status">Подключение…</p>
         </div>
-        <button id="profileButton" class="profile" type="button" aria-label="Изменить имя">?</button>
+        <div class="topbar-actions">
+          <button id="searchButton" class="icon-button" type="button" aria-label="Найти пользователя" disabled>⌕</button>
+          <button id="profileButton" class="profile" type="button" aria-label="Открыть профиль" disabled>?</button>
+        </div>
       </header>
+
+      <button id="inAppNotice" class="in-app-notice" type="button" hidden></button>
 
       <section class="chat" aria-label="Общий чат">
         <div class="chat-title">
           <div>
-            <strong>Общий чат</strong>
-            <span>обновление каждые 5 секунд</span>
+            <strong id="chatName">Общий чат</strong>
+            <span id="chatSubtitle">общий канал · без push · обновление каждые 5 секунд</span>
           </div>
+          <button id="generalChatButton" class="text-button" type="button" hidden>В общий чат</button>
         </div>
 
         <div id="messages" class="messages" aria-live="polite"></div>
 
         <form id="composer" class="composer">
           <label class="sr-only" for="messageInput">Сообщение</label>
-          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Сообщение" required></textarea>
-          <button type="submit" aria-label="Отправить">Отправить</button>
+          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Сообщение" required disabled></textarea>
+          <button id="sendButton" type="submit" aria-label="Отправить" disabled>Отправить</button>
         </form>
       </section>
     </main>
 
-    <dialog id="nameDialog">
-      <form id="nameForm" method="dialog">
-        <h2>Как вас называть?</h2>
-        <p>Для первого прототипа достаточно имени. Авторизацию подключим вместе с Google Таблицей.</p>
-        <label for="nameInput">Ваше имя</label>
-        <input id="nameInput" maxlength="40" autocomplete="name" required />
-        <button type="submit">Продолжить</button>
+    <dialog id="authDialog">
+      <form id="authForm">
+        <div class="auth-switch" role="group" aria-label="Вход или регистрация">
+          <button id="registerModeButton" class="switch-button active" type="button">Регистрация</button>
+          <button id="loginModeButton" class="switch-button" type="button">Вход</button>
+        </div>
+        <h2 id="authTitle">Создать аккаунт</h2>
+        <p id="authHint">Username будет уникальным и станет вашим адресом для поиска.</p>
+        <label for="usernameInput">Username</label>
+        <input id="usernameInput" minlength="3" maxlength="32" autocomplete="username" required />
+        <label for="passwordInput">Пароль</label>
+        <input id="passwordInput" type="password" minlength="8" maxlength="128" autocomplete="new-password" required />
+        <div id="phoneField" class="field-group">
+          <label for="phoneInput">Телефон <span>(не подтверждается)</span></label>
+          <input id="phoneInput" type="tel" maxlength="32" autocomplete="tel" />
+        </div>
+        <p id="authError" class="form-error" role="alert"></p>
+        <button id="authSubmitButton" class="primary-button" type="submit">Зарегистрироваться</button>
       </form>
     </dialog>
 
-    <script src="./app.js" defer></script>
+    <dialog id="profileDialog">
+      <form id="profileForm">
+        <h2 id="profileUsername">Профиль</h2>
+        <p id="profileId" class="muted"></p>
+        <label for="profilePhoneInput">Телефон <span>(не подтверждается)</span></label>
+        <input id="profilePhoneInput" type="tel" maxlength="32" autocomplete="tel" />
+        <section class="push-settings" aria-labelledby="pushTitle">
+          <strong id="pushTitle">Уведомления</strong>
+          <p id="pushStatus">Проверяем доступность…</p>
+          <button id="pushButton" class="secondary-button" type="button">Включить уведомления</button>
+          <button id="pushDisableButton" class="secondary-button" type="button" hidden>Выключить уведомления</button>
+        </section>
+        <p id="profileError" class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" type="button" data-close="profileDialog">Отмена</button>
+          <button class="primary-button" type="submit">Сохранить</button>
+        </div>
+        <button id="logoutButton" class="danger-button" type="button">Выйти на этом устройстве</button>
+      </form>
+    </dialog>
+
+    <dialog id="searchDialog">
+      <form id="searchForm">
+        <h2>Поиск пользователя</h2>
+        <p>Поиск выполняется только по уникальному username.</p>
+        <label for="searchInput">Username</label>
+        <div class="inline-form">
+          <input id="searchInput" minlength="2" maxlength="32" autocomplete="off" required />
+          <button class="primary-button" type="submit">Найти</button>
+        </div>
+        <div id="searchResults" class="search-results" aria-live="polite"></div>
+        <button class="secondary-button" type="button" data-close="searchDialog">Закрыть</button>
+      </form>
+    </dialog>
+
+    <script src="./config.js?v=3"></script>
+    <script src="./app.js?v=3" defer></script>
   </body>
 </html>
-
