@@ -9,7 +9,7 @@ node_modules/
 *.p12
 *.mobileprovision
 service-account*.json
+apps-script/RuntimeConfig.gs
 dist/
 .DS_Store
 Thumbs.db
-

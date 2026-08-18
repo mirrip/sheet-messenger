@@ -55,9 +55,11 @@ const MESSAGE_RATE_LIMIT_MS = 1000;
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4000;
 const MAX_PHONE_LENGTH = 32;
+const APP_VERSION = "0.3.1";
+const SCHEMA_VERSION = "0.3.0";
 
 function doGet() {
-  return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.0" });
+  return jsonOutput_({ ok: true, service: "sheet-messenger", version: APP_VERSION });
 }
 
 function doPost(event) {
@@ -105,7 +107,9 @@ function api(action, payload) {
 function setupProject() {
   const storedId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
   const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const spreadsheet = storedId ? SpreadsheetApp.openById(storedId) : activeSpreadsheet;
+  const spreadsheet = storedId
+    ? SpreadsheetApp.openById(storedId)
+    : activeSpreadsheet || SpreadsheetApp.openById(getDefaultSpreadsheetId_());
 
   if (!spreadsheet) {
     throw new Error("Укажите SPREADSHEET_ID в свойствах скрипта или откройте Apps Script из таблицы");
@@ -118,9 +122,10 @@ function setupProject() {
 
   const properties = PropertiesService.getScriptProperties();
   properties.setProperty("SPREADSHEET_ID", spreadsheet.getId());
+  properties.setProperty("SCHEMA_VERSION", SCHEMA_VERSION);
   getAuthPepper_();
 
-  return { ok: true, spreadsheetId: spreadsheet.getId(), schemaVersion: "0.3.0" };
+  return { ok: true, spreadsheetId: spreadsheet.getId(), schemaVersion: SCHEMA_VERSION };
 }
 
 function registerUser_(payload) {
@@ -684,9 +689,26 @@ function base64UrlJson_(value) {
 }
 
 function getSpreadsheet_() {
-  const spreadsheetId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
-  if (!spreadsheetId) throwApi_("NOT_CONFIGURED", "Сначала запустите setupProject()");
-  return SpreadsheetApp.openById(spreadsheetId);
+  const properties = PropertiesService.getScriptProperties();
+  const spreadsheetId = properties.getProperty("SPREADSHEET_ID") || getDefaultSpreadsheetId_();
+  if (!spreadsheetId) throwApi_("NOT_CONFIGURED", "Не указана Google Таблица");
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  if (properties.getProperty("SCHEMA_VERSION") !== SCHEMA_VERSION) {
+    ensureSheet_(spreadsheet, SHEETS.USERS, HEADERS.USERS);
+    ensureSheet_(spreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
+    ensureSheet_(spreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
+    ensureSheet_(spreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
+    properties.setProperty("SPREADSHEET_ID", spreadsheet.getId());
+    properties.setProperty("SCHEMA_VERSION", SCHEMA_VERSION);
+    getAuthPepper_();
+  }
+
+  return spreadsheet;
+}
+
+function getDefaultSpreadsheetId_() {
+  return typeof RUNTIME_SPREADSHEET_ID === "string" ? RUNTIME_SPREADSHEET_ID : "";
 }
 
 function getAuthPepper_() {
