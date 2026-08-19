@@ -1,4 +1,4 @@
-const CACHE_NAME = "sheet-messenger-shell-v3";
+const CACHE_NAME = "sheet-messenger-shell-v4";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./config.js", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 
 importScripts("./config.js");
@@ -28,3 +28,4 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 });
+

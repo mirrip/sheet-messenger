@@ -3,24 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#111111" />
+    <meta name="theme-color" content="#090b15" />
     <meta name="description" content="Минималистичный мессенджер на Google Apps Script и Google Таблицах" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=2" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
     <title>Sheet Messenger</title>
   </head>
   <body>
     <main class="app" aria-label="Sheet Messenger">
       <header class="topbar">
-        <div>
-          <h1>Sheet Messenger</h1>
-          <p id="status" class="status">Подключение…</p>
+        <div class="brand">
+          <span class="logo-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v11.5A2.5 2.5 0 0 1 17.5 18H10l-6 4.5V4Z" fill="rgba(255,255,255,.95)"/><path d="M7.5 8.5h9M7.5 11.5h6" stroke="#6e5bff" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <h1>Sheet Messenger</h1>
+            <p id="status" class="status">Подключение…</p>
+          </div>
         </div>
         <div class="topbar-actions">
-          <button id="searchButton" class="icon-button" type="button" aria-label="Найти пользователя" disabled>⌕</button>
+          <button id="searchButton" class="icon-button" type="button" aria-label="Найти пользователя" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+          </button>
           <button id="profileButton" class="profile" type="button" aria-label="Открыть профиль" disabled>?</button>
         </div>
       </header>
@@ -41,7 +48,9 @@
         <form id="composer" class="composer">
           <label class="sr-only" for="messageInput">Сообщение</label>
           <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Сообщение" required disabled></textarea>
-          <button id="sendButton" type="submit" aria-label="Отправить" disabled>Отправить</button>
+          <button id="sendButton" type="submit" aria-label="Отправить" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.9 3.2 21.5 11c.6.3.6 1.1 0 1.4L3.9 20.8c-.5.3-1.2-.1-1.1-.7l1-5.3c.1-.4.4-.7.8-.8l8.3-1.4a.5.5 0 0 0 0-.9l-8.3-1.4a1 1 0 0 1-.8-.8l-1-5.3c-.1-.6.6-1 1.1-.7Z"/></svg>
+          </button>
         </form>
       </section>
     </main>
@@ -102,7 +111,8 @@
       </form>
     </dialog>
 
-    <script src="./config.js?v=3"></script>
-    <script src="./app.js?v=3" defer></script>
+    <script src="./config.js?v=4"></script>
+    <script src="./app.js?v=4" defer></script>
   </body>
 </html>
+

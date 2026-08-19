@@ -307,13 +307,17 @@ function renderMessages_() {
     const mine = message.senderUserId === session.user.userId;
     const time = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" })
       .format(new Date(message.createdAt));
+    const sender = String(message.senderUsername || "user");
     return `
       <article class="message${mine ? " mine" : ""}">
-        <div class="message-meta">
-          <strong>@${escapeHtml_(message.senderUsername || "user")}</strong>
-          <time datetime="${escapeHtml_(message.createdAt)}">${time}</time>
+        <span class="message-avatar" aria-hidden="true">${escapeHtml_(sender.slice(0, 1).toUpperCase())}</span>
+        <div class="message-body">
+          <div class="message-meta">
+            <strong>@${escapeHtml_(sender)}</strong>
+            <time datetime="${escapeHtml_(message.createdAt)}">${time}</time>
+          </div>
+          <div class="message-text">${escapeHtml_(messageContentText_(message))}</div>
         </div>
-        <div class="message-text">${escapeHtml_(messageContentText_(message))}</div>
       </article>`;
   }).join("");
   elements.messages.scrollTop = elements.messages.scrollHeight;
