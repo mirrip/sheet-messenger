@@ -95,6 +95,8 @@ function api(action, payload) {
       return sendMessage_(payload);
     case "sync":
       return syncMessages_(payload);
+    case "getUserChats":
+      return getUserChats_(payload);
     case "health":
       return { ok: true, serverTime: new Date().toISOString() };
     default:
@@ -272,10 +274,26 @@ function disablePush_(payload) {
 function sendMessage_(payload) {
   const auth = authenticate_(payload.sessionToken);
   const recipientUserId = String(payload.recipientUserId || "").trim();
-  const recipient = recipientUserId ? findActiveRecipient_(auth, recipientUserId) : null;
-  const chatId = recipient
-    ? directChatId_(auth.user.userId, recipient.userId)
-    : validatePublicChatId_(payload.chatId || "general");
+
+  let chatId;
+  let recipient = null;
+
+  if (recipientUserId) {
+    // Классический режим: явный recipientUserId
+    recipient = findActiveRecipient_(auth, recipientUserId);
+    chatId = directChatId_(auth.user.username, recipient.username);
+  } else {
+    // Прямой chatId (dm:username1:username2 или general)
+    const rawChatId = String(payload.chatId || "general").trim();
+    if (rawChatId === "general") {
+      chatId = "general";
+    } else {
+      // Проверяем что это DM и пользователь участник (по username)
+      authorizeChatByUsername_(auth.user.username, rawChatId);
+      chatId = rawChatId;
+    }
+  }
+
   const messageType = String(payload.messageType || "text").toLowerCase();
   const content = normalizeMessageContent_(messageType, payload);
   const replyToMessageId = payload.replyToMessageId
@@ -341,7 +359,8 @@ function syncMessages_(payload) {
   const afterSeq = Math.max(0, Number(payload.afterSeq || 0));
   const limit = Math.min(200, Math.max(1, Number(payload.limit || 100)));
   const chatId = validateId_(payload.chatId || "general", "chat_id");
-  authorizeChat_(auth.user.userId, chatId);
+  // Используем authorizeChatByUsername_ т.к. chatId строится из username
+  authorizeChatByUsername_(auth.user.username, chatId);
   const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
 
@@ -509,8 +528,9 @@ function findActiveRecipient_(auth, recipientUserId) {
   return { userId: String(row.values[0]), username: String(row.values[1]) };
 }
 
-function directChatId_(firstUserId, secondUserId) {
-  return "dm:" + [String(firstUserId), String(secondUserId)].sort().join(":");
+function directChatId_(firstUsername, secondUsername) {
+  // Строим из нормализованных username (lowercase) — совпадает с getDmChatId на фронте
+  return "dm:" + [normalizeUsername_(String(firstUsername)), normalizeUsername_(String(secondUsername))].sort().join(":");
 }
 
 function validatePublicChatId_(value) {
@@ -527,6 +547,71 @@ function authorizeChat_(userId, chatId) {
   if (parts.length !== 3 || parts[0] !== "dm" || parts.indexOf(userId) === -1) {
     throwApi_("CHAT_FORBIDDEN", "Нет доступа к этому чату");
   }
+}
+
+// Авторизация по username (т.к. chatId строится из username)
+function authorizeChatByUsername_(username, chatId) {
+  if (chatId === "general") return;
+  const parts = chatId.split(":");
+  const normalizedUsername = normalizeUsername_(username);
+  if (parts.length !== 3 || parts[0] !== "dm" || parts.indexOf(normalizedUsername) === -1) {
+    throwApi_("CHAT_FORBIDDEN", "Нет доступа к этому чату");
+  }
+}
+
+// Возвращает список уникальных chatId пользователя с данными о последнем сообщении
+function getUserChats_(payload) {
+  const auth = authenticate_(payload.sessionToken);
+  const myUsername = normalizeUsername_(auth.user.username);
+  const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow <= 1) return { ok: true, chats: [] };
+
+  const rows = sheet.getRange(2, 1, lastRow - 1, HEADERS.MESSAGES.length).getValues();
+  const chatMap = {};
+
+  rows.forEach(function(row) {
+    const msg = messageFromRow_(row);
+    if (msg.deletedAt) return;
+
+    // Проверяем участие: general доступен всем, dm — только если username в chatId
+    const isGeneral = msg.chatId === "general";
+    const parts = msg.chatId.split(":");
+    const isDm = parts.length === 3 && parts[0] === "dm" && parts.indexOf(myUsername) !== -1;
+
+    if (!isGeneral && !isDm) return;
+    if (isGeneral) return; // general — не добавляем, он всегда есть
+
+    if (!chatMap[msg.chatId] || msg.seq > chatMap[msg.chatId].seq) {
+      // Определяем собеседника (peer)
+      let peerUsername = null;
+      if (isDm) {
+        peerUsername = parts[1] === myUsername ? parts[2] : parts[1];
+      }
+
+      let snippet = "Диалог";
+      if (msg.messageType === "text" && msg.content && msg.content.text) {
+        snippet = msg.content.text.slice(0, 40);
+      } else if (msg.messageType === "video") {
+        snippet = "🎬 Видео";
+      } else if (msg.messageType === "photo") {
+        snippet = "📷 Фото";
+      }
+
+      chatMap[msg.chatId] = {
+        chatId: msg.chatId,
+        peerUsername,
+        lastSnippet: snippet,
+        lastTime: new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        lastTimestamp: new Date(msg.createdAt).getTime(),
+        seq: msg.seq
+      };
+    }
+  });
+
+  const chats = Object.values(chatMap).sort(function(a, b) { return b.lastTimestamp - a.lastTimestamp; });
+  return { ok: true, chats };
 }
 
 function validatePushFid_(value) {
