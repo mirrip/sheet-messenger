@@ -365,7 +365,9 @@ class GlobalMessenger {
     this.recentSearches = [clean, ...this.recentSearches.filter(u => u.toLowerCase() !== clean)].slice(0, 15);
 
     this.saveUserStorage();
-    this.renderFrequentUsers();
+    if (this.searchMode) {
+      this.renderFrequentUsers();
+    }
   }
 
   openChatWithUser(targetUsername) {
