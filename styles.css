@@ -383,16 +383,10 @@ body, html {
 }
 
 /* ===================================================
-   FREQUENT CLOSE USERS CAROUSEL
+   FREQUENT CLOSE USERS CAROUSEL (DISABLED)
    =================================================== */
 .frequent-users-section {
-  display: none;
-  padding: 2px 0 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.search-history-section:not(.hidden) .frequent-users-section:not(.hidden) {
-  display: block;
+  display: none !important;
 }
 
 .frequent-carousel {
