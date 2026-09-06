@@ -422,45 +422,8 @@ class GlobalMessenger {
   }
 
   renderFrequentUsers() {
-    const carousel = this.el.frequentCarousel;
-    if (!carousel) return;
-    carousel.innerHTML = '';
-
-    let displayList = [...this.frequentUsers];
-    if (displayList.length === 0) {
-      this.chats.forEach(c => {
-        if (c.targetUser && !displayList.some(d => d.username === c.targetUser)) {
-          displayList.push({ username: c.targetUser });
-        }
-      });
-    }
-
-    if (displayList.length === 0 || !this.searchMode) {
-      this.el.frequentUsersSection.classList.add('hidden');
-      if (!this.searchMode) return;
-    } else {
-      this.el.frequentUsersSection.classList.remove('hidden');
-    }
-
-    displayList.slice(0, 15).forEach(item => {
-      const u = item.username;
-      const initial = (u[0] || '?').toUpperCase();
-      const grad = this.getAvatarGradient(u);
-
-      const el = document.createElement('div');
-      el.className = 'frequent-item';
-      el.innerHTML = `
-        <div class="frequent-avatar-wrap">
-          <div class="frequent-avatar" style="background: ${grad}">${initial}</div>
-          <div class="frequent-status-dot"></div>
-        </div>
-        <span class="frequent-name">@${this.escapeHtml(u)}</span>
-      `;
-      el.addEventListener('click', () => {
-        this.openChatWithUser(u);
-      });
-      carousel.appendChild(el);
-    });
+    // Карусель частых контактов полностью отключена по требованию
+    return;
   }
 
   renderChatList() {
@@ -510,11 +473,10 @@ class GlobalMessenger {
     this.searchMode = true;
     if (!this.el.chatSearch.value.trim()) {
       this.el.btnSearchClear.classList.remove('hidden');
-      this.el.frequentUsersSection.classList.remove('hidden');
+      if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
       this.el.searchHistorySection.classList.remove('hidden');
       this.el.searchResultsSection.classList.add('hidden');
       this.el.chatList.classList.add('hidden');
-      this.renderFrequentUsers();
       this.renderSearchHistory();
     } else {
       this.handleSearchInput(this.el.chatSearch.value);
@@ -593,7 +555,7 @@ class GlobalMessenger {
     }
 
     this.el.btnSearchClear.classList.remove('hidden');
-    this.el.frequentUsersSection.classList.add('hidden');
+    if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
     this.el.searchHistorySection.classList.add('hidden');
     this.el.searchResultsSection.classList.remove('hidden');
     this.el.chatList.classList.add('hidden');
@@ -685,7 +647,7 @@ class GlobalMessenger {
     this.el.btnSearchClear.classList.add('hidden');
     this.el.searchHistorySection.classList.add('hidden');
     this.el.searchResultsSection.classList.add('hidden');
-    this.el.frequentUsersSection.classList.add('hidden'); // карусель только при поиске
+    if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
     this.el.chatList.classList.remove('hidden');
     this.renderChatList();
   }
