@@ -433,11 +433,12 @@ class GlobalMessenger {
       });
     }
 
-    if (displayList.length === 0) {
+    if (displayList.length === 0 || !this.searchMode) {
       this.el.frequentUsersSection.classList.add('hidden');
-      return;
+      if (!this.searchMode) return;
+    } else {
+      this.el.frequentUsersSection.classList.remove('hidden');
     }
-    this.el.frequentUsersSection.classList.remove('hidden');
 
     displayList.slice(0, 15).forEach(item => {
       const u = item.username;
