@@ -1,16 +1,13 @@
 ﻿// ===================================================
-// GLOBAL MESSENGER — ЧИСТЫЙ ДВИЖОК v1.0.0
-// Поддерживает мгновенный локальный режим + готовую архитектуру для базы данных
+// TELEGRAM WEB — POLISHED ENGINE & UI CONTROLLER v2.0.0
 // ===================================================
 
 /**
- * Адаптер данных: локальный (LocalStorage),
- * при подключении базы переключается на Apps Script API без изменения логики UI.
+ * Сервис хранения: локальный режим + готовые интерфейсы
  */
 class StorageService {
   constructor(config) {
     this.config = config || (typeof window !== 'undefined' ? window.APP_CONFIG : null) || { STORAGE_MODE: 'local' };
-    this.isLocal = this.config.STORAGE_MODE === 'local';
     this.initLocalStorage();
   }
 
@@ -19,7 +16,7 @@ class StorageService {
     if (!localStorage.getItem('gm_users')) {
       const demoUsers = [
         { id: 'usr_general', username: 'general', name: 'Общий чат' },
-        { id: 'usr_alex', username: 'alex', name: 'Алексей' },
+        { id: 'usr_durov', username: 'durov', name: 'Павел Дуров' },
         { id: 'usr_maria', username: 'maria', name: 'Мария' }
       ];
       localStorage.setItem('gm_users', JSON.stringify(demoUsers));
@@ -29,8 +26,8 @@ class StorageService {
         {
           id: 'msg_1',
           chatId: 'general',
-          sender: 'alex',
-          text: 'Добро пожаловать в Global Messenger! 🚀',
+          sender: 'durov',
+          text: 'Добро пожаловать в Telegram Web! Скорость, простота и приватность.',
           time: '12:00',
           createdAt: Date.now() - 3600000
         },
@@ -38,7 +35,7 @@ class StorageService {
           id: 'msg_2',
           chatId: 'general',
           sender: 'maria',
-          text: 'Здесь можно общаться в общем чате или находить пользователей в поиске!',
+          text: 'Интерфейс выглядит великолепно! Можно общаться и отправлять фото 🚀',
           time: '12:05',
           createdAt: Date.now() - 1800000
         }
@@ -47,7 +44,6 @@ class StorageService {
     }
   }
 
-  // --- ПОЛЬЗОВАТЕЛИ И АВТОРИЗАЦИЯ ---
   async register(username, password) {
     username = username.trim().toLowerCase().replace(/^@/, '');
     if (!username) throw new Error('Введите имя пользователя');
@@ -77,7 +73,7 @@ class StorageService {
     const user = users.find(u => u.username.toLowerCase() === username);
 
     if (!user) {
-      throw new Error('Пользователь не найден. Нажмите "Регистрация"');
+      throw new Error('Пользователь не найден. Выберите "Регистрация"');
     }
     if (user.password && user.password !== password) {
       throw new Error('Неверный пароль');
@@ -86,7 +82,6 @@ class StorageService {
     return { ok: true, user: { id: user.id, username: user.username } };
   }
 
-  // --- ПОИСК ЛЮДЕЙ ---
   async searchUsers(query, currentUsername) {
     query = query.trim().toLowerCase().replace(/^@/, '');
     if (!query) return [];
@@ -98,7 +93,6 @@ class StorageService {
       .map(u => ({ id: u.id, username: u.username, name: '@' + u.username }));
   }
 
-  // --- СООБЩЕНИЯ И ДИАЛОГИ ---
   async getMessages(chatId) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
@@ -123,7 +117,7 @@ class StorageService {
     localStorage.setItem('gm_messages', JSON.stringify(all));
 
     if (typeof window !== 'undefined' && window.dispatchEvent) {
-      window.dispatchEvent(new CustomEvent('gm_new_message', { detail: newMsg }));
+      window.dispatchEvent(new CustomEvent('tg_new_message', { detail: newMsg }));
     }
     return { ok: true, message: newMsg };
   }
@@ -133,20 +127,18 @@ class StorageService {
     const myName = currentUsername.toLowerCase();
     const chatMap = new Map();
 
-    // 1. Всегда есть Общий чат
     const generalMsgs = all.filter(m => m.chatId === 'general');
     const lastGen = generalMsgs[generalMsgs.length - 1];
     chatMap.set('general', {
       id: 'general',
       title: 'Общий чат',
       isGeneral: true,
-      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? '📎 Файл' : '')) : 'Нажмите, чтобы открыть',
+      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? '📎 Фото/Файл' : '')) : 'Нажмите, чтобы открыть',
       lastTime: lastGen ? lastGen.time : '',
       timestamp: lastGen ? lastGen.createdAt : 0,
       unreadCount: 0
     });
 
-    // 2. Личные диалоги (dm:user1:user2)
     all.forEach(m => {
       if (!m.chatId.startsWith('dm:')) return;
       const parts = m.chatId.split(':');
@@ -157,7 +149,7 @@ class StorageService {
       if (u1 === myName || u2 === myName) {
         const peer = u1 === myName ? parts[2] : parts[1];
         const existing = chatMap.get(m.chatId);
-        const snippet = m.text || (m.file ? '📎 Файл' : 'Сообщение');
+        const snippet = m.text || (m.file ? '📎 Фото/Файл' : 'Сообщение');
 
         if (!existing || m.createdAt > existing.timestamp) {
           const isFromOther = m.sender.toLowerCase() !== myName;
@@ -184,14 +176,15 @@ class StorageService {
 }
 
 /**
- * Главный UI контроллер мессенджера
+ * Контроллер Telegram Web UI
  */
-class GlobalMessengerApp {
+class TelegramApp {
   constructor() {
     this.storage = new StorageService(typeof window !== 'undefined' ? window.APP_CONFIG : null);
     this.currentUser = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
     this.currentChatId = 'general';
     this.currentChatTitle = 'Общий чат';
+    this.activeFolder = 'all'; // 'all' | 'dm' | 'channels'
     this.authMode = 'login';
 
     this.initElements();
@@ -207,8 +200,6 @@ class GlobalMessengerApp {
   initElements() {
     this.el = {
       authScreen: document.getElementById('auth-screen'),
-      authCard: document.querySelector('.auth-card'),
-      authTabs: document.querySelector('.auth-tabs'),
       tabLogin: document.getElementById('tab-login'),
       tabRegister: document.getElementById('tab-register'),
       authForm: document.getElementById('auth-form'),
@@ -219,17 +210,20 @@ class GlobalMessengerApp {
 
       mainScreen: document.getElementById('main-screen'),
       sidebar: document.getElementById('sidebar'),
+      btnSidebarMenu: document.getElementById('btn-sidebar-menu'),
+      menuDropdown: document.getElementById('tg-menu-dropdown'),
       currentUserAvatar: document.getElementById('current-user-avatar'),
       currentUserName: document.getElementById('current-user-name'),
-      btnLogout: document.getElementById('btn-logout'),
+      btnMenuLogout: document.getElementById('btn-menu-logout'),
 
       chatSearch: document.getElementById('chat-search'),
       btnSearchClear: document.getElementById('btn-search-clear'),
       searchResultsSection: document.getElementById('search-results-section'),
       searchResultsList: document.getElementById('search-results-list'),
+      foldersBar: document.getElementById('folders-bar'),
       chatList: document.getElementById('chat-list'),
 
-      chatView: document.querySelector('.chat-view'),
+      chatView: document.querySelector('.tg-chat-view'),
       btnBack: document.getElementById('btn-back'),
       activeChatAvatar: document.getElementById('active-chat-avatar'),
       activeChatTitle: document.getElementById('active-chat-title'),
@@ -240,17 +234,48 @@ class GlobalMessengerApp {
       messageInput: document.getElementById('message-input'),
       btnAttach: document.getElementById('btn-attach'),
       fileInput: document.getElementById('file-input'),
-      btnSend: document.getElementById('btn-send')
+      btnSend: document.getElementById('btn-send'),
+
+      lightboxModal: document.getElementById('lightbox-modal'),
+      lightboxBackdrop: document.getElementById('lightbox-backdrop'),
+      lightboxClose: document.getElementById('lightbox-close'),
+      lightboxImg: document.getElementById('lightbox-img'),
+      lightboxFilename: document.getElementById('lightbox-filename'),
+      lightboxDownload: document.getElementById('lightbox-download')
     };
   }
 
   bindEvents() {
+    // Вкладки авторизации
     this.el.tabLogin.addEventListener('click', () => this.setAuthMode('login'));
     this.el.tabRegister.addEventListener('click', () => this.setAuthMode('register'));
     this.el.authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
 
-    this.el.btnLogout.addEventListener('click', () => this.logout());
+    // Меню и выход
+    this.el.btnSidebarMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.el.menuDropdown.classList.toggle('hidden');
+    });
 
+    document.addEventListener('click', (e) => {
+      if (!this.el.menuDropdown.contains(e.target) && e.target !== this.el.btnSidebarMenu) {
+        this.el.menuDropdown.classList.add('hidden');
+      }
+    });
+
+    this.el.btnMenuLogout.addEventListener('click', () => this.logout());
+
+    // Папки чатов
+    this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.activeFolder = tab.getAttribute('data-folder');
+        this.renderChatList();
+      });
+    });
+
+    // Отправка сообщений
     this.el.btnSend.addEventListener('click', () => this.sendMessage());
     this.el.messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -259,20 +284,47 @@ class GlobalMessengerApp {
       }
     });
 
+    // Автоподстройка высоты текстового поля
+    this.el.messageInput.addEventListener('input', () => {
+      this.el.messageInput.style.height = 'auto';
+      this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
+    });
+
+    // Вставка файлов через кнопку
     this.el.btnAttach.addEventListener('click', () => this.el.fileInput.click());
     this.el.fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
 
+    // Вставка изображений из буфера обмена (Ctrl+V)
+    document.addEventListener('paste', (e) => {
+      if (e.clipboardData && e.clipboardData.items) {
+        for (let item of e.clipboardData.items) {
+          if (item.type.indexOf('image') !== -1) {
+            const blob = item.getAsFile();
+            this.uploadBlob(blob, 'pasted_image.png');
+            break;
+          }
+        }
+      }
+    });
+
+    // Поиск
     this.el.chatSearch.addEventListener('input', () => this.handleSearch(this.el.chatSearch.value));
     this.el.btnSearchClear.addEventListener('click', () => {
       this.el.chatSearch.value = '';
       this.handleSearch('');
     });
 
+    // Мобильная кнопка Назад
     this.el.btnBack.addEventListener('click', () => {
       if (this.el.chatView) this.el.chatView.classList.remove('active');
     });
 
-    window.addEventListener('gm_new_message', (e) => {
+    // Лайтбокс для картинок
+    this.el.lightboxClose.addEventListener('click', () => this.closeLightbox());
+    this.el.lightboxBackdrop.addEventListener('click', () => this.closeLightbox());
+
+    // Слушатели событий
+    window.addEventListener('tg_new_message', (e) => {
       const msg = e.detail;
       if (msg.chatId === this.currentChatId) {
         this.renderMessages();
@@ -292,9 +344,9 @@ class GlobalMessengerApp {
     this.authMode = mode;
     this.el.tabLogin.classList.toggle('active', mode === 'login');
     this.el.tabRegister.classList.toggle('active', mode === 'register');
-    this.el.authSubmitBtn.innerText = mode === 'login' ? 'Войти в систему' : 'Зарегистрироваться';
+    this.el.authSubmitBtn.querySelector('span').innerText = mode === 'login' ? 'Продолжить' : 'Зарегистрироваться';
     this.el.authStatus.innerText = '';
-    this.el.authStatus.className = 'status-msg';
+    this.el.authStatus.className = 'tg-status-msg';
   }
 
   async handleAuthSubmit(e) {
@@ -303,8 +355,8 @@ class GlobalMessengerApp {
     const password = this.el.authPassword.value;
 
     this.el.authSubmitBtn.disabled = true;
-    this.el.authStatus.className = 'status-msg';
-    this.el.authStatus.innerText = 'Выполняется вход...';
+    this.el.authStatus.className = 'tg-status-msg';
+    this.el.authStatus.innerText = 'Подключение к Telegram...';
 
     try {
       let res;
@@ -319,7 +371,7 @@ class GlobalMessengerApp {
       this.el.authStatus.innerText = '';
       this.showMainScreen();
     } catch (err) {
-      this.el.authStatus.className = 'status-msg error';
+      this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
     } finally {
       this.el.authSubmitBtn.disabled = false;
@@ -329,6 +381,7 @@ class GlobalMessengerApp {
   logout() {
     localStorage.removeItem('gm_current_user');
     this.currentUser = null;
+    this.el.menuDropdown.classList.add('hidden');
     this.showAuthScreen();
   }
 
@@ -384,28 +437,37 @@ class GlobalMessengerApp {
   }
 
   async renderChatList() {
-    const chats = await this.storage.getUserChats(this.currentUser.username);
+    let chats = await this.storage.getUserChats(this.currentUser.username);
+
+    // Фильтрация по папкам
+    if (this.activeFolder === 'dm') {
+      chats = chats.filter(c => !c.isGeneral);
+    } else if (this.activeFolder === 'channels') {
+      chats = chats.filter(c => c.isGeneral);
+    }
+
     this.el.chatList.innerHTML = '';
 
     chats.forEach(chat => {
       const isActive = chat.id === this.currentChatId;
       const item = document.createElement('div');
-      item.className = 'chat-item' + (isActive ? ' active' : '');
+      item.className = 'tg-chat-item' + (isActive ? ' active' : '');
 
+      const avatarClass = chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user';
       const avatarContent = chat.isGeneral ? '🌐' : (chat.peer ? chat.peer[0].toUpperCase() : '?');
 
       item.innerHTML = [
-        '<div class="avatar" style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#2abee8,#1f8ecc);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;">',
+        '<div class="tg-avatar ' + avatarClass + '">',
         avatarContent,
         '</div>',
-        '<div class="chat-item-meta" style="flex:1;min-width:0;margin-left:12px;">',
-        '  <div class="chat-item-top" style="display:flex;justify-content:space-between;align-items:center;">',
-        '    <span class="chat-title" style="font-weight:600;font-size:14.5px;">' + this.escape(chat.title) + '</span>',
-        '    <span class="chat-time" style="font-size:12px;color:var(--text-secondary);">' + this.escape(chat.lastTime) + '</span>',
+        '<div class="tg-chat-body">',
+        '  <div class="tg-chat-top">',
+        '    <span class="tg-chat-name">' + this.escape(chat.title) + '</span>',
+        '    <span class="tg-chat-date">' + this.escape(chat.lastTime) + '</span>',
         '  </div>',
-        '  <div class="chat-preview-wrap" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">',
-        '    <div class="chat-preview" style="font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + this.escape(chat.lastMsg) + '</div>',
-        (chat.unreadCount > 0 ? '    <span class="unread-badge" style="background:#3390ec;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;">' + chat.unreadCount + '</span>' : ''),
+        '  <div class="tg-chat-bottom">',
+        '    <div class="tg-chat-snippet">' + this.escape(chat.lastMsg) + '</div>',
+        (chat.unreadCount > 0 ? '    <span class="tg-unread-badge">' + chat.unreadCount + '</span>' : ''),
         '  </div>',
         '</div>'
       ].join('');
@@ -423,35 +485,53 @@ class GlobalMessengerApp {
     this.el.messagesFeed.innerHTML = '';
 
     if (msgs.length === 0) {
-      this.el.messagesFeed.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:30px;font-size:13.5px;">Здесь пока нет сообщений. Начните диалог первым! 💬</div>';
+      this.el.messagesFeed.innerHTML = '<div style="text-align:center;color:var(--tg-text-sub);padding:40px;font-size:14px;">Пока нет сообщений... Напишите первым! 💬</div>';
       return;
     }
 
     msgs.forEach(m => {
       const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
-      const bubble = document.createElement('div');
-      bubble.className = 'tg-bubble ' + (isOut ? 'outgoing' : 'incoming');
+      const wrap = document.createElement('div');
+      wrap.className = 'tg-bubble-wrap ' + (isOut ? 'out' : 'in');
 
       let fileHtml = '';
       if (m.file) {
         if (m.file.type && m.file.type.startsWith('image/')) {
-          fileHtml = '<div style="margin-bottom:6px;"><img src="' + m.file.data + '" style="max-width:100%;border-radius:8px;max-height:240px;display:block;"></div>';
+          fileHtml = '<img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '">';
         } else {
-          fileHtml = '<div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:8px;margin-bottom:6px;">📎 <span style="font-size:13px;font-weight:600;">' + this.escape(m.file.name) + '</span></div>';
+          fileHtml = [
+            '<div class="tg-file-card">',
+            '  <div class="tg-file-icon">📄</div>',
+            '  <div class="tg-file-meta">',
+            '    <div class="tg-file-name">' + this.escape(m.file.name) + '</div>',
+            '    <div class="tg-file-size">' + this.formatSize(m.file.size) + '</div>',
+            '  </div>',
+            '</div>'
+          ].join('');
         }
       }
 
-      bubble.innerHTML = [
-        (!isOut ? '<div class="tg-sender-name">@' + this.escape(m.sender) + '</div>' : ''),
+      wrap.innerHTML = [
+        '<div class="tg-msg-bubble">',
+        (!isOut ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
         fileHtml,
-        (m.text ? '<div class="tg-msg-text">' + this.escape(m.text) + '</div>' : ''),
-        '<div class="tg-bubble-footer">',
-        '  <span class="tg-msg-time">' + m.time + '</span>',
-        (isOut ? '  <span class="tg-checkmarks" style="color:#4fae4e;margin-left:4px;">✓✓</span>' : ''),
+        (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
+        '  <div class="tg-msg-meta">',
+        '    <span>' + m.time + '</span>',
+        (isOut ? '    <span class="tg-checks">✓✓</span>' : ''),
+        '  </div>',
         '</div>'
       ].join('');
 
-      this.el.messagesFeed.appendChild(bubble);
+      // Клик по картинке для открытия лайтбокса
+      const imgEl = wrap.querySelector('.tg-media-photo');
+      if (imgEl) {
+        imgEl.addEventListener('click', () => {
+          this.openLightbox(imgEl.src, imgEl.getAttribute('data-name') || 'photo.png');
+        });
+      }
+
+      this.el.messagesFeed.appendChild(wrap);
     });
 
     this.el.messagesContainer.scrollTop = this.el.messagesContainer.scrollHeight;
@@ -471,20 +551,23 @@ class GlobalMessengerApp {
   async handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+    this.uploadBlob(file, file.name);
+    this.el.fileInput.value = '';
+  }
 
+  uploadBlob(blob, filename) {
     const reader = new FileReader();
     reader.onload = async () => {
       const fileData = {
-        name: file.name,
-        type: file.type,
-        size: file.size,
+        name: filename,
+        type: blob.type,
+        size: blob.size,
         data: reader.result
       };
       await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileData);
       await this.refreshData();
     };
-    reader.readAsDataURL(file);
-    this.el.fileInput.value = '';
+    reader.readAsDataURL(blob);
   }
 
   async handleSearch(q) {
@@ -493,29 +576,31 @@ class GlobalMessengerApp {
       this.el.btnSearchClear.classList.add('hidden');
       this.el.searchResultsSection.classList.add('hidden');
       this.el.chatList.classList.remove('hidden');
+      this.el.foldersBar.classList.remove('hidden');
       return;
     }
 
     this.el.btnSearchClear.classList.remove('hidden');
     this.el.chatList.classList.add('hidden');
+    this.el.foldersBar.classList.add('hidden');
     this.el.searchResultsSection.classList.remove('hidden');
 
     const results = await this.storage.searchUsers(q, this.currentUser.username);
     this.el.searchResultsList.innerHTML = '';
 
     if (results.length === 0) {
-      this.el.searchResultsList.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:13px;">Никого не найдено</div>';
+      this.el.searchResultsList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">Ничего не найдено</div>';
       return;
     }
 
     results.forEach(u => {
       const item = document.createElement('div');
-      item.className = 'search-result-item';
+      item.className = 'tg-search-item';
       item.innerHTML = [
-        '<div class="avatar" style="width:36px;height:36px;font-size:15px;">' + u.username[0].toUpperCase() + '</div>',
-        '<div class="search-item-meta">',
-        '  <div class="search-item-title">@' + this.escape(u.username) + '</div>',
-        '  <div class="search-item-sub" style="font-size:12px;color:var(--text-secondary);">Нажмите, чтобы открыть диалог</div>',
+        '<div class="tg-avatar tg-avatar-user" style="width:42px;height:42px;font-size:16px;">' + u.username[0].toUpperCase() + '</div>',
+        '<div class="tg-chat-body">',
+        '  <div class="tg-chat-name">@' + this.escape(u.username) + '</div>',
+        '  <div class="tg-chat-snippet">Нажмите, чтобы открыть диалог</div>',
         '</div>'
       ].join('');
       item.addEventListener('click', () => {
@@ -523,6 +608,26 @@ class GlobalMessengerApp {
       });
       this.el.searchResultsList.appendChild(item);
     });
+  }
+
+  openLightbox(src, name) {
+    this.el.lightboxImg.src = src;
+    this.el.lightboxFilename.innerText = name;
+    this.el.lightboxDownload.href = src;
+    this.el.lightboxDownload.setAttribute('download', name);
+    this.el.lightboxModal.classList.remove('hidden');
+  }
+
+  closeLightbox() {
+    this.el.lightboxModal.classList.add('hidden');
+    this.el.lightboxImg.src = '';
+  }
+
+  formatSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
   escape(str) {
@@ -535,10 +640,10 @@ class GlobalMessengerApp {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
-    window.messengerApp = new GlobalMessengerApp();
+    window.telegramApp = new TelegramApp();
   });
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { StorageService, GlobalMessengerApp };
+  module.exports = { StorageService, TelegramApp };
 }
