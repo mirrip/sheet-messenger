@@ -55,7 +55,6 @@ const MESSAGE_RATE_LIMIT_MS = 1000;
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4000;
 const MAX_PHONE_LENGTH = 32;
-const MAX_MEDIA_SIZE_BYTES = 1024 * 1024 * 1024;
 
 function doGet() {
   return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.0" });
@@ -489,9 +488,6 @@ function normalizeMessageContent_(messageType, payload) {
   return {
     mediaFileId: mediaFileId.slice(0, 200),
     mediaUrl: mediaUrl.slice(0, 2000),
-    downloadUrl: String(payload.downloadUrl || mediaUrl).trim().slice(0, 2000),
-    fileName: sanitizeMediaFileName_(payload.fileName),
-    checksum: String(payload.checksum || "").trim().slice(0, 100),
     mimeType: String(payload.mimeType || "").trim().slice(0, 100),
     size: Math.max(0, Number(payload.size || 0)),
     thumbnailUrl: String(payload.thumbnailUrl || "").trim().slice(0, 2000),
@@ -623,15 +619,11 @@ function getUserChats_(payload) {
   return { ok: true, chats };
 }
 
-// Маленькие файлы идут прежним путём; крупные — напрямую в resumable-сессию Drive.
+// Загрузка медиафайлов напрямую в Google Drive без клиентских токенов
 function uploadMedia_(payload) {
   const auth = authenticate_(payload.sessionToken);
-  const operation = String(payload.operation || "").trim();
-  if (operation === "startResumable") return startResumableMediaUpload_(auth, payload);
-  if (operation === "finishResumable") return finishResumableMediaUpload_(auth, payload);
-
   const base64Data = String(payload.base64 || "").trim();
-  const fileName = sanitizeMediaFileName_(payload.fileName);
+  const fileName = String(payload.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
   const mimeType = String(payload.mimeType || "application/octet-stream").trim();
 
   if (!base64Data) {
@@ -662,123 +654,6 @@ function uploadMedia_(payload) {
     size: blob.getBytes().length,
     mimeType
   };
-}
-
-function startResumableMediaUpload_(auth, payload) {
-  let chatId = String(payload.chatId || "dm:general").trim();
-  if (chatId === "general") chatId = "dm:general";
-  authorizeChatByUsername_(auth.user.username, chatId);
-
-  const size = Math.floor(Number(payload.size || 0));
-  if (size <= 0 || size > MAX_MEDIA_SIZE_BYTES) {
-    throwApi_("INVALID_FILE_SIZE", "Допустимый размер файла: до 1 ГБ");
-  }
-
-  const fileName = sanitizeMediaFileName_(payload.fileName);
-  const mimeType = String(payload.mimeType || "application/octet-stream").trim().slice(0, 100);
-  const folder = getLargeMediaFolder_();
-  const metadata = {
-    name: fileName,
-    parents: [folder.getId()],
-    appProperties: {
-      gmOwner: auth.user.userId,
-      gmChat: chatId,
-      gmExpectedSize: String(size)
-    }
-  };
-  const response = UrlFetchApp.fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,md5Checksum",
-    {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(metadata),
-      headers: {
-        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
-        "X-Upload-Content-Type": mimeType,
-        "X-Upload-Content-Length": String(size)
-      },
-      muteHttpExceptions: true
-    }
-  );
-  const status = response.getResponseCode();
-  const headers = response.getAllHeaders();
-  const sessionUrl = String(headers.Location || headers.location || "");
-  if (status < 200 || status >= 300 || !sessionUrl) {
-    throwApi_("UPLOAD_SESSION_FAILED", "Drive не создал сессию загрузки: HTTP " + status);
-  }
-  return { ok: true, sessionUrl, size, mimeType, fileName };
-}
-
-function finishResumableMediaUpload_(auth, payload) {
-  let chatId = String(payload.chatId || "dm:general").trim();
-  if (chatId === "general") chatId = "dm:general";
-  authorizeChatByUsername_(auth.user.username, chatId);
-
-  const fileId = validateDriveFileId_(payload.fileId);
-  const expectedSize = Math.floor(Number(payload.expectedSize || 0));
-  const response = UrlFetchApp.fetch(
-    "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId)
-      + "?fields=id,name,mimeType,size,md5Checksum,parents,appProperties",
-    {
-      method: "get",
-      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    }
-  );
-  if (response.getResponseCode() !== 200) {
-    throwApi_("UPLOAD_VERIFY_FAILED", "Не удалось проверить загруженный файл");
-  }
-  const data = JSON.parse(response.getContentText() || "{}");
-  const properties = data.appProperties || {};
-  const folderId = getLargeMediaFolder_().getId();
-  if (properties.gmOwner !== auth.user.userId
-      || properties.gmChat !== chatId
-      || (data.parents || []).indexOf(folderId) === -1) {
-    throwApi_("MEDIA_ACCESS_DENIED", "Файл не принадлежит этой загрузке");
-  }
-  const actualSize = Number(data.size || 0);
-  if (!expectedSize || actualSize !== expectedSize
-      || Number(properties.gmExpectedSize || 0) !== expectedSize) {
-    throwApi_("FILE_SIZE_MISMATCH", "Размер файла после загрузки не совпадает");
-  }
-
-  const file = DriveApp.getFileById(fileId);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  const resourceKey = String(file.getResourceKey ? (file.getResourceKey() || "") : "");
-  const suffix = resourceKey ? "&resourcekey=" + encodeURIComponent(resourceKey) : "";
-  return {
-    ok: true,
-    fileId,
-    mediaUrl: "https://lh3.googleusercontent.com/d/" + fileId,
-    downloadUrl: "https://drive.google.com/uc?export=download&id=" + fileId + suffix,
-    fileName: String(data.name || "file"),
-    mimeType: String(data.mimeType || "application/octet-stream"),
-    size: actualSize,
-    checksum: String(data.md5Checksum || "")
-  };
-}
-
-function getLargeMediaFolder_() {
-  const properties = PropertiesService.getScriptProperties();
-  const storedId = properties.getProperty("LARGE_MEDIA_FOLDER_ID");
-  if (storedId) {
-    try { return DriveApp.getFolderById(storedId); } catch (error) { console.warn(error); }
-  }
-  const folders = DriveApp.getFoldersByName("GlobalMessenger_Media");
-  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("GlobalMessenger_Media");
-  properties.setProperty("LARGE_MEDIA_FOLDER_ID", folder.getId());
-  return folder;
-}
-
-function sanitizeMediaFileName_(value) {
-  const name = String(value || "file").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim();
-  return (name || "file").slice(0, 180);
-}
-
-function validateDriveFileId_(value) {
-  const id = String(value || "").trim();
-  if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) throwApi_("INVALID_MEDIA_ID", "Некорректный файл");
-  return id;
 }
 
 function validatePushFid_(value) {
@@ -1068,4 +943,3 @@ function jsonOutput_(value) {
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
 }
-
