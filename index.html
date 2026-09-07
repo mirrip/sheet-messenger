@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=2.0.0">
+  <link rel="stylesheet" href="styles.css?v=2.1.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
 </head>
 <body class="tg-theme-dark">
@@ -25,7 +25,7 @@
           </svg>
         </div>
         <h1 class="tg-auth-title">Telegram</h1>
-        <p class="tg-auth-sub">Пожалуйста, войдите в аккаунт или зарегистрируйтесь</p>
+        <p class="tg-auth-sub">Войдите в аккаунт или зарегистрируйтесь</p>
 
         <div class="tg-auth-tabs">
           <button id="tab-login" class="tg-tab-btn active">Вход</button>
@@ -52,9 +52,8 @@
         </form>
 
         <div id="auth-status" class="tg-status-msg"></div>
-
         <div class="tg-auth-footnote">
-          <span>⚡ Мгновенный автономный мессенджер</span>
+          <span>⚡ Полноценный Telegram Web с голосовыми, кружками и профилями</span>
         </div>
       </div>
     </div>
@@ -86,17 +85,23 @@
           </div>
         </header>
 
-        <!-- SIDEBAR DRAWER / MENU POPUP (HIDDEN BY DEFAULT) -->
+        <!-- SIDEBAR POPUP MENU -->
         <div id="tg-menu-dropdown" class="tg-menu-dropdown hidden">
-          <div class="tg-menu-header">
+          <div class="tg-menu-header" id="btn-open-my-profile">
             <div class="tg-menu-avatar" id="current-user-avatar">?</div>
             <div class="tg-menu-info">
               <div class="tg-menu-name" id="current-user-name">@user</div>
-              <div class="tg-menu-phone">в сети</div>
+              <div class="tg-menu-phone">Мой профиль</div>
             </div>
           </div>
           <div class="tg-menu-divider"></div>
-          <div class="tg-menu-item" id="btn-menu-logout">
+          <div class="tg-menu-item" id="btn-menu-profile">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+            <span>Настройки профиля</span>
+          </div>
+          <div class="tg-menu-item danger" id="btn-menu-logout">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
             </svg>
@@ -104,14 +109,14 @@
           </div>
         </div>
 
-        <!-- FOLDERS TABS (ВСЕ, ЛИЧНЫЕ, КАНАЛЫ) -->
+        <!-- FOLDERS BAR -->
         <div class="tg-folders-bar" id="folders-bar">
           <div class="tg-folder-tab active" data-folder="all">Все чаты</div>
           <div class="tg-folder-tab" data-folder="dm">Личные</div>
           <div class="tg-folder-tab" data-folder="channels">Каналы</div>
         </div>
 
-        <!-- SEARCH RESULTS LIST -->
+        <!-- SEARCH RESULTS -->
         <div class="tg-search-results hidden" id="search-results-section">
           <div class="tg-section-caption">Глобальный поиск</div>
           <div class="tg-search-list" id="search-results-list"></div>
@@ -124,14 +129,14 @@
       <!-- RIGHT CHAT VIEW -->
       <main class="tg-chat-view">
         <!-- CHAT HEADER -->
-        <header class="tg-chat-header">
+        <header class="tg-chat-header" id="chat-header">
           <button id="btn-back" class="tg-icon-btn tg-mobile-back" title="Назад">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
             </svg>
           </button>
 
-          <div class="tg-header-info">
+          <div class="tg-header-info" id="btn-open-chat-profile" style="cursor: pointer;">
             <div class="tg-header-avatar" id="active-chat-avatar">🌐</div>
             <div class="tg-header-text">
               <h2 id="active-chat-title" class="tg-chat-title">Общий чат</h2>
@@ -145,9 +150,9 @@
                 <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
               </svg>
             </button>
-            <button class="tg-icon-btn" id="btn-chat-more" title="Ещё">
+            <button class="tg-icon-btn" id="btn-chat-info-panel" title="Профиль чата">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
               </svg>
             </button>
           </div>
@@ -156,6 +161,29 @@
         <!-- MESSAGES FEED -->
         <div class="tg-messages-scroll" id="messages-container">
           <div class="tg-messages-body" id="messages-feed"></div>
+        </div>
+
+        <!-- VIDEO NOTE RECORDING PREVIEW MODAL / OVERLAY -->
+        <div id="video-recording-panel" class="tg-video-record-wrap hidden">
+          <div class="tg-video-circle-preview">
+            <video id="video-stream-preview" autoplay playsinline muted></video>
+            <div class="tg-record-timer" id="record-timer">00:00</div>
+          </div>
+          <div class="tg-video-record-actions">
+            <button id="btn-cancel-video-note" class="tg-rec-btn cancel" title="Отмена">✕</button>
+            <button id="btn-send-video-note" class="tg-rec-btn send" title="Отправить видеокружок">✓</button>
+          </div>
+        </div>
+
+        <!-- AUDIO RECORDING BANNER -->
+        <div id="audio-recording-panel" class="tg-audio-record-wrap hidden">
+          <div class="tg-rec-indicator">
+            <span class="tg-rec-dot"></span>
+            <span class="tg-rec-label">Запись голосового...</span>
+            <span id="audio-record-timer" class="tg-rec-time">00:00</span>
+          </div>
+          <button id="btn-cancel-voice" class="tg-icon-btn" title="Отмена">✕</button>
+          <button id="btn-send-voice" class="tg-icon-btn tg-voice-send-btn" title="Отправить">✓</button>
         </div>
 
         <!-- TELEGRAM COMPOSER -->
@@ -170,13 +198,21 @@
 
           <div class="tg-input-wrapper">
             <textarea id="message-input" class="tg-msg-textarea" placeholder="Написать сообщение..." rows="1"></textarea>
-            <button id="btn-emoji" class="tg-emoji-btn" title="Эмодзи">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+            
+            <!-- TOGGLE VOICE OR VIDEO NOTE RECORD BUTTON -->
+            <button id="btn-mode-toggle" class="tg-mode-btn" title="Переключить: микрофон / видеокружок">
+              <!-- Default mic icon -->
+              <svg id="icon-mode-mic" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+              </svg>
+              <!-- Video camera icon -->
+              <svg id="icon-mode-video" class="hidden" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
               </svg>
             </button>
           </div>
 
+          <!-- SEND TEXT OR QUICK RECORD BUTTON -->
           <button id="btn-send" class="tg-send-btn" title="Отправить">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -184,9 +220,38 @@
           </button>
         </footer>
       </main>
+
+      <!-- PROFILE DRAWER / RIGHT PANEL -->
+      <aside id="profile-panel" class="tg-profile-panel hidden">
+        <header class="tg-profile-header">
+          <button id="btn-close-profile" class="tg-icon-btn" title="Закрыть">✕</button>
+          <h3>Информация</h3>
+          <div style="width: 40px;"></div>
+        </header>
+
+        <div class="tg-profile-body">
+          <div class="tg-profile-avatar-large" id="profile-avatar-large">?</div>
+          <h2 class="tg-profile-title" id="profile-name">@username</h2>
+          <span class="tg-profile-status" id="profile-status">в сети</span>
+
+          <div class="tg-profile-section">
+            <div class="tg-profile-field">
+              <div class="tg-profile-field-label">Имя пользователя</div>
+              <div class="tg-profile-field-value" id="profile-username-val">@username</div>
+            </div>
+            <div class="tg-profile-field">
+              <div class="tg-profile-field-label">О себе (Bio)</div>
+              <div class="tg-profile-field-value" id="profile-bio-val">Пользуюсь Telegram Web ✨</div>
+            </div>
+            <div class="tg-profile-field" id="profile-edit-box">
+              <button id="btn-edit-bio" class="tg-small-btn">Изменить статус</button>
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
 
-    <!-- LIGHTBOX MODAL FOR IMAGES -->
+    <!-- LIGHTBOX MODAL -->
     <div id="lightbox-modal" class="tg-lightbox hidden">
       <div class="tg-lightbox-backdrop" id="lightbox-backdrop"></div>
       <div class="tg-lightbox-dialog">
@@ -198,11 +263,7 @@
                 <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
               </svg>
             </a>
-            <button id="lightbox-close" class="tg-icon-btn" title="Закрыть">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
-              </svg>
-            </button>
+            <button id="lightbox-close" class="tg-icon-btn" title="Закрыть">✕</button>
           </div>
         </div>
         <div class="tg-lightbox-imgwrap">
@@ -212,7 +273,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=2.0.0"></script>
-  <script src="app.js?v=2.0.0"></script>
+  <script src="config.js?v=2.1.0"></script>
+  <script src="app.js?v=2.1.0"></script>
 </body>
 </html>
