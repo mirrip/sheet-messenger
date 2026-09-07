@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -188,7 +188,7 @@
 
         <!-- TELEGRAM COMPOSER -->
         <footer class="tg-composer">
-          <input type="file" id="file-input" style="display: none">
+          <input type="file" id="file-input" multiple style="display: none">
 
           <button id="btn-attach" class="tg-clip-btn" title="Прикрепить файл">
             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
@@ -230,7 +230,11 @@
         </header>
 
         <div class="tg-profile-body">
-          <div class="tg-profile-avatar-large" id="profile-avatar-large">?</div>
+          <div class="tg-profile-avatar-wrap">
+            <div class="tg-profile-avatar-large" id="profile-avatar-large">?</div>
+            <button id="btn-change-avatar" class="tg-avatar-edit-btn" title="Сменить фото профиля">📷</button>
+            <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+          </div>
           <h2 class="tg-profile-title" id="profile-name">@username</h2>
           <span class="tg-profile-status" id="profile-status">в сети</span>
 
@@ -270,6 +274,15 @@
           <img id="lightbox-img" src="" alt="Photo">
         </div>
       </div>
+    <!-- REACTIONS POPUP -->
+    <div id="reactions-popup" class="tg-reactions-popup hidden">
+      <span class="tg-react-emoji" data-emoji="👍">👍</span>
+      <span class="tg-react-emoji" data-emoji="❤️">❤️</span>
+      <span class="tg-react-emoji" data-emoji="🔥">🔥</span>
+      <span class="tg-react-emoji" data-emoji="😂">😂</span>
+      <span class="tg-react-emoji" data-emoji="😮">😮</span>
+      <span class="tg-react-emoji" data-emoji="😢">😢</span>
+      <span class="tg-react-emoji" data-emoji="🎉">🎉</span>
     </div>
   </div>
 
