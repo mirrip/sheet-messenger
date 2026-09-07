@@ -965,3 +965,362 @@ html, body {
     display: flex;
   }
 }
+
+/* ===================================================
+   VOICE MESSAGES & TELEGRAM WAVEFORM PLAYER
+   =================================================== */
+.tg-voice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  padding: 4px 2px;
+}
+
+.tg-voice-play-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--tg-primary);
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.1s, background 0.15s;
+}
+
+.tg-voice-play-btn:hover {
+  background: var(--tg-primary-hover);
+  transform: scale(1.05);
+}
+
+.tg-voice-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tg-voice-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 22px;
+}
+
+.tg-wave-bar {
+  width: 2.5px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 2px;
+  transition: height 0.15s, background 0.15s;
+}
+
+.tg-wave-bar.played {
+  background: #ffffff;
+}
+
+.tg-voice-time {
+  font-size: 11.5px;
+  color: var(--tg-text-meta-out);
+}
+
+/* ===================================================
+   TELEGRAM VIDEO CIRCLE (КРУЖОЧКИ)
+   =================================================== */
+.tg-circle-card {
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  margin: 4px 0;
+  cursor: pointer;
+  background: #000;
+}
+
+.tg-circle-card video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.tg-circle-play-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.tg-circle-card.playing .tg-circle-play-overlay {
+  opacity: 0;
+}
+
+/* RECORDING MODALS & PANELS */
+.tg-audio-record-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #17212b;
+  border-radius: 20px;
+  padding: 8px 16px;
+  margin: 0 16px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tg-rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tg-rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff595a;
+  animation: tg-pulse 1s infinite alternate;
+}
+
+@keyframes tg-pulse {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.2); opacity: 1; }
+}
+
+.tg-rec-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tg-rec-time {
+  font-size: 13px;
+  color: #ff595a;
+  font-weight: 600;
+}
+
+.tg-voice-send-btn {
+  background: var(--tg-primary) !important;
+  color: #fff !important;
+}
+
+/* VIDEO CIRCLE LIVE RECORD OVERLAY */
+.tg-video-record-wrap {
+  position: absolute;
+  bottom: 70px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.tg-video-circle-preview {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 4px solid var(--tg-primary);
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  background: #000;
+}
+
+.tg-video-circle-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror */
+}
+
+.tg-record-timer {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.tg-video-record-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.tg-rec-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+
+.tg-rec-btn:active {
+  transform: scale(0.92);
+}
+
+.tg-rec-btn.cancel {
+  background: #ff595a;
+}
+
+.tg-rec-btn.send {
+  background: var(--tg-primary);
+}
+
+.tg-mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--tg-text-sub);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tg-mode-btn:hover {
+  color: var(--tg-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ===================================================
+   PROFILE DRAWER (RIGHT PANEL)
+   =================================================== */
+.tg-profile-panel {
+  width: 320px;
+  background: var(--tg-bg-sidebar);
+  border-left: 1px solid var(--tg-sidebar-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 15;
+  flex-shrink: 0;
+  animation: slideInRight 0.2s ease-out;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.tg-profile-header {
+  height: 56px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--tg-sidebar-border);
+}
+
+.tg-profile-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tg-profile-body {
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+}
+
+.tg-profile-avatar-large {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3390ec, #176bb8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.tg-profile-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 14px;
+}
+
+.tg-profile-status {
+  font-size: 13px;
+  color: #4fae4e;
+  margin-top: 2px;
+}
+
+.tg-profile-section {
+  width: 100%;
+  margin-top: 24px;
+  background: #17212b;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.tg-profile-field {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tg-profile-field:last-child {
+  border-bottom: none;
+}
+
+.tg-profile-field-label {
+  font-size: 11.5px;
+  color: var(--tg-text-sub);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.tg-profile-field-value {
+  font-size: 14.5px;
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+.tg-small-btn {
+  background: var(--tg-primary);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: background 0.15s;
+}
+
+.tg-small-btn:hover {
+  background: var(--tg-primary-hover);
+}
