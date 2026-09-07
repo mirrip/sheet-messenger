@@ -55,9 +55,13 @@ const MESSAGE_RATE_LIMIT_MS = 1000;
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4000;
 const MAX_PHONE_LENGTH = 32;
+const MEDIA_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
+const MEDIA_MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MEDIA_MANIFEST_FILE = ".gm-manifest.json";
+const MEDIA_CHUNK_PREFIX = "chunk_";
 
 function doGet() {
-  return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.0" });
+  return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.2" });
 }
 
 function doPost(event) {
@@ -297,7 +301,7 @@ function sendMessage_(payload) {
   }
 
   const messageType = String(payload.messageType || "text").toLowerCase();
-  const content = normalizeMessageContent_(messageType, payload);
+  const content = normalizeMessageContent_(messageType, payload, auth, chatId);
   const replyToMessageId = payload.replyToMessageId
     ? validateId_(payload.replyToMessageId, "reply_to_message_id")
     : "";
@@ -459,7 +463,7 @@ function clearPrimaryDevices_(sheet, userId) {
   });
 }
 
-function normalizeMessageContent_(messageType, payload) {
+function normalizeMessageContent_(messageType, payload, auth, chatId) {
   if (MESSAGE_TYPES.indexOf(messageType) === -1) {
     throwApi_("INVALID_MESSAGE_TYPE", "Поддерживаются text, photo и video");
   }
@@ -483,6 +487,26 @@ function normalizeMessageContent_(messageType, payload) {
   const caption = String(payload.caption || "").trim();
   if (caption.length > MAX_TEXT_LENGTH) {
     throwApi_("CAPTION_TOO_LONG", "Подпись длиннее 4000 символов");
+  }
+
+  if (mediaFileId) {
+    const manifest = getPrivateMediaManifest_(mediaFileId);
+    if (manifest.status !== "ready"
+        || manifest.ownerUserId !== auth.user.userId
+        || manifest.chatId !== chatId) {
+      throwApi_("MEDIA_ACCESS_DENIED", "Файл недоступен для этого сообщения");
+    }
+    return {
+      mediaFileId,
+      mediaUrl: "",
+      fileName: manifest.fileName,
+      mimeType: manifest.mimeType,
+      size: manifest.size,
+      chunkSize: manifest.chunkSize,
+      totalChunks: manifest.totalChunks,
+      thumbnailUrl: "",
+      caption
+    };
   }
 
   return {
@@ -619,41 +643,196 @@ function getUserChats_(payload) {
   return { ok: true, chats };
 }
 
-// Загрузка медиафайлов напрямую в Google Drive без клиентских токенов
+// Приватное чанковое хранилище. Ни папка, ни файлы не публикуются по ссылке.
 function uploadMedia_(payload) {
   const auth = authenticate_(payload.sessionToken);
-  const base64Data = String(payload.base64 || "").trim();
-  const fileName = String(payload.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
-  const mimeType = String(payload.mimeType || "application/octet-stream").trim();
+  const operation = String(payload.operation || "").trim().toLowerCase();
+  if (operation === "start") return startPrivateMediaUpload_(auth, payload);
+  if (operation === "chunk") return savePrivateMediaChunk_(auth, payload);
+  if (operation === "finish") return finishPrivateMediaUpload_(auth, payload);
+  if (operation === "download") return downloadPrivateMediaChunk_(auth, payload);
+  throwApi_("INVALID_MEDIA_OPERATION", "Неизвестная операция с файлом");
+}
 
-  if (!base64Data) {
-    throwApi_("EMPTY_FILE", "Файл не передан");
+// Одноразовая миграция ранее загруженных публичных файлов.
+function privatizeLegacyMediaFiles() {
+  let updated = 0;
+  const folders = DriveApp.getFoldersByName("GlobalMessenger_Media");
+  while (folders.hasNext()) {
+    const folder = folders.next();
+    const files = folder.getFiles();
+    while (files.hasNext()) {
+      files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+      updated += 1;
+    }
+    folder.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+  }
+  return { ok: true, updated };
+}
+
+function startPrivateMediaUpload_(auth, payload) {
+  let chatId = String(payload.chatId || "dm:general").trim();
+  if (chatId === "general") chatId = "dm:general";
+  authorizeChatByUsername_(auth.user.username, chatId);
+
+  const size = Math.floor(Number(payload.size || 0));
+  const chunkSize = Math.floor(Number(payload.chunkSize || 0));
+  const totalChunks = Math.floor(Number(payload.totalChunks || 0));
+  if (size <= 0 || size > MEDIA_MAX_FILE_SIZE_BYTES) {
+    throwApi_("FILE_TOO_LARGE", "Допустимый размер файла: до 100 МБ");
+  }
+  if (chunkSize <= 0 || chunkSize > MEDIA_CHUNK_SIZE_BYTES
+      || totalChunks !== Math.ceil(size / chunkSize)) {
+    throwApi_("INVALID_CHUNK_PLAN", "Некорректный план загрузки файла");
   }
 
-  const decodedBytes = Utilities.base64Decode(base64Data);
-  const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
+  const root = getPrivateMediaRoot_();
+  const folder = root.createFolder("media_" + compactUuid_());
+  const manifest = {
+    version: 1,
+    status: "uploading",
+    ownerUserId: auth.user.userId,
+    ownerUsername: auth.user.username,
+    chatId,
+    fileName: sanitizePrivateFileName_(payload.fileName),
+    mimeType: String(payload.mimeType || "application/octet-stream").slice(0, 100),
+    size,
+    chunkSize,
+    totalChunks,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  folder.createFile(MEDIA_MANIFEST_FILE, JSON.stringify(manifest), MimeType.PLAIN_TEXT);
+  return { ok: true, mediaId: folder.getId(), chunkSize, totalChunks };
+}
 
-  // Получаем или создаем папку для медиафайлов мессенджера
-  const folderName = "GlobalMessenger_Media";
-  const folders = DriveApp.getFoldersByName(folderName);
-  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+function savePrivateMediaChunk_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  assertPrivateMediaOwner_(auth, manifest);
+  if (manifest.status !== "uploading") throwApi_("UPLOAD_CLOSED", "Загрузка уже завершена");
 
-  const file = folder.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const chunkIndex = Math.floor(Number(payload.chunkIndex));
+  if (chunkIndex < 0 || chunkIndex >= manifest.totalChunks) {
+    throwApi_("INVALID_CHUNK_INDEX", "Некорректный номер части");
+  }
+  const bytes = Utilities.base64Decode(String(payload.base64 || ""));
+  const expected = chunkIndex === manifest.totalChunks - 1
+    ? manifest.size - chunkIndex * manifest.chunkSize
+    : manifest.chunkSize;
+  if (bytes.length !== expected || bytes.length > MEDIA_CHUNK_SIZE_BYTES) {
+    throwApi_("INVALID_CHUNK_SIZE", "Некорректный размер части файла");
+  }
 
-  const fileId = file.getId();
-  // Формируем прямую ссылку для отображения/скачивания
-  const mediaUrl = "https://lh3.googleusercontent.com/d/" + fileId;
-  const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+  const name = privateChunkName_(chunkIndex);
+  const previous = folder.getFilesByName(name);
+  while (previous.hasNext()) previous.next().setTrashed(true);
+  folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", name));
+  return { ok: true, mediaId, chunkIndex };
+}
 
+function finishPrivateMediaUpload_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  assertPrivateMediaOwner_(auth, manifest);
+
+  let totalSize = 0;
+  for (let index = 0; index < manifest.totalChunks; index += 1) {
+    const files = folder.getFilesByName(privateChunkName_(index));
+    if (!files.hasNext()) throwApi_("UPLOAD_INCOMPLETE", "Не все части файла загружены");
+    totalSize += Number(files.next().getSize());
+    if (files.hasNext()) throwApi_("DUPLICATE_CHUNK", "Обнаружена лишняя часть файла");
+  }
+  if (totalSize !== manifest.size) throwApi_("INVALID_FILE_SIZE", "Размер загруженного файла не совпадает");
+
+  manifest.status = "ready";
+  manifest.updatedAt = new Date().toISOString();
+  writePrivateMediaManifest_(folder, manifest);
   return {
     ok: true,
-    fileId,
-    mediaUrl,
-    downloadUrl,
-    size: blob.getBytes().length,
-    mimeType
+    mediaId,
+    fileName: manifest.fileName,
+    mimeType: manifest.mimeType,
+    size: manifest.size,
+    chunkSize: manifest.chunkSize,
+    totalChunks: manifest.totalChunks
   };
+}
+
+function downloadPrivateMediaChunk_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  if (manifest.status !== "ready") throwApi_("MEDIA_NOT_READY", "Файл ещё не готов");
+  authorizeChatByUsername_(auth.user.username, manifest.chatId);
+
+  const chunkIndex = Math.floor(Number(payload.chunkIndex));
+  if (chunkIndex < 0 || chunkIndex >= manifest.totalChunks) {
+    throwApi_("INVALID_CHUNK_INDEX", "Некорректный номер части");
+  }
+  const files = folder.getFilesByName(privateChunkName_(chunkIndex));
+  if (!files.hasNext()) throwApi_("MEDIA_CORRUPTED", "Часть файла отсутствует");
+  return {
+    ok: true,
+    mediaId,
+    chunkIndex,
+    totalChunks: manifest.totalChunks,
+    fileName: manifest.fileName,
+    mimeType: manifest.mimeType,
+    size: manifest.size,
+    base64: Utilities.base64Encode(files.next().getBlob().getBytes())
+  };
+}
+
+function getPrivateMediaRoot_() {
+  const properties = PropertiesService.getScriptProperties();
+  const storedId = properties.getProperty("PRIVATE_MEDIA_ROOT_ID");
+  if (storedId) {
+    try { return DriveApp.getFolderById(storedId); } catch (error) { console.warn(error); }
+  }
+  const folder = DriveApp.createFolder("GlobalMessenger_Private_Media");
+  properties.setProperty("PRIVATE_MEDIA_ROOT_ID", folder.getId());
+  return folder;
+}
+
+function getPrivateMediaManifest_(mediaId) {
+  return readPrivateMediaManifest_(DriveApp.getFolderById(validatePrivateMediaId_(mediaId)));
+}
+
+function readPrivateMediaManifest_(folder) {
+  const files = folder.getFilesByName(MEDIA_MANIFEST_FILE);
+  if (!files.hasNext()) throwApi_("MEDIA_NOT_FOUND", "Файл не найден");
+  try { return JSON.parse(files.next().getBlob().getDataAsString()); }
+  catch (error) { throwApi_("MEDIA_CORRUPTED", "Повреждены данные файла"); }
+}
+
+function writePrivateMediaManifest_(folder, manifest) {
+  const files = folder.getFilesByName(MEDIA_MANIFEST_FILE);
+  if (!files.hasNext()) throwApi_("MEDIA_NOT_FOUND", "Файл не найден");
+  files.next().setContent(JSON.stringify(manifest));
+}
+
+function assertPrivateMediaOwner_(auth, manifest) {
+  if (manifest.ownerUserId !== auth.user.userId) {
+    throwApi_("MEDIA_ACCESS_DENIED", "Нет доступа к загрузке");
+  }
+}
+
+function validatePrivateMediaId_(value) {
+  const id = String(value || "").trim();
+  if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) throwApi_("INVALID_MEDIA_ID", "Некорректный файл");
+  return id;
+}
+
+function privateChunkName_(index) {
+  return MEDIA_CHUNK_PREFIX + String(index).padStart(6, "0");
+}
+
+function sanitizePrivateFileName_(value) {
+  const name = String(value || "file").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim();
+  return (name || "file").slice(0, 180);
 }
 
 function validatePushFid_(value) {
@@ -943,3 +1122,4 @@ function jsonOutput_(value) {
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
