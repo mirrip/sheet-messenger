@@ -772,6 +772,48 @@ html, body {
 /* ===================================================
    TELEGRAM COMPOSER (BOTTOM BAR)
    =================================================== */
+.tg-composer-attachments {
+  max-width: 740px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 16px 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tg-attach-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--tg-bg-sidebar);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 13px;
+  color: var(--tg-text-main);
+  max-width: 220px;
+}
+
+.tg-attach-pill-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-attach-pill-remove {
+  background: transparent;
+  border: none;
+  color: var(--tg-text-sub);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+.tg-attach-pill-remove:hover {
+  color: #ff595a;
+}
+
 .tg-composer {
   padding: 8px 16px 12px;
   display: flex;
@@ -861,6 +903,28 @@ html, body {
   transition: transform 0.12s, background 0.15s;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(51, 144, 236, 0.4);
+  padding: 0;
+  outline: none;
+}
+
+.tg-send-btn svg {
+  display: none !important;
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+.tg-send-btn.state-mic svg#icon-action-mic {
+  display: block !important;
+}
+
+.tg-send-btn.state-video svg#icon-action-video {
+  display: block !important;
+}
+
+.tg-send-btn.state-send svg#icon-action-send {
+  display: block !important;
 }
 
 .tg-send-btn:hover {
