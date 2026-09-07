@@ -79,7 +79,44 @@ class StorageService {
       throw new Error('Неверный пароль');
     }
 
-    return { ok: true, user: { id: user.id, username: user.username } };
+    return { ok: true, user: { id: user.id, username: user.username, bio: user.bio, avatar: user.avatar } };
+  }
+
+  async updateUserAvatar(username, avatarBase64) {
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (user) {
+      user.avatar = avatarBase64;
+      localStorage.setItem('gm_users', JSON.stringify(users));
+      const cur = JSON.parse(localStorage.getItem('gm_current_user') || '{}');
+      if (cur.username && cur.username.toLowerCase() === username.toLowerCase()) {
+        cur.avatar = avatarBase64;
+        localStorage.setItem('gm_current_user', JSON.stringify(cur));
+      }
+    }
+    return { ok: true };
+  }
+
+  async toggleReaction(msgId, emoji, username) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const msg = all.find(m => m.id === msgId);
+    if (!msg) return { ok: false };
+    if (!msg.reactions) msg.reactions = {};
+    if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+
+    const idx = msg.reactions[emoji].indexOf(username);
+    if (idx !== -1) {
+      msg.reactions[emoji].splice(idx, 1);
+      if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
+    } else {
+      msg.reactions[emoji].push(username);
+    }
+
+    localStorage.setItem('gm_messages', JSON.stringify(all));
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('tg_new_message', { detail: msg }));
+    }
+    return { ok: true, reactions: msg.reactions };
   }
 
   async searchUsers(query, currentUsername) {
@@ -90,7 +127,7 @@ class StorageService {
     return users
       .filter(u => u.username !== 'general' && u.username.toLowerCase() !== currentUsername.toLowerCase())
       .filter(u => u.username.toLowerCase().includes(query))
-      .map(u => ({ id: u.id, username: u.username, name: '@' + u.username }));
+      .map(u => ({ id: u.id, username: u.username, name: '@' + u.username, bio: u.bio, avatar: u.avatar }));
   }
 
   async getMessages(chatId) {
@@ -98,7 +135,7 @@ class StorageService {
     return all.filter(m => m.chatId === chatId);
   }
 
-  async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null) {
+  async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -109,8 +146,10 @@ class StorageService {
       sender,
       text: text || '',
       file: file || null,
+      files: files || (file ? [file] : null),
       voice: voice || null,
       circleVideo: circleVideo || null,
+      reactions: {},
       time: timeStr,
       createdAt: Date.now()
     };
@@ -280,7 +319,11 @@ class TelegramApp {
       btnOpenMyProfile: document.getElementById('btn-open-my-profile'),
       btnMenuProfile: document.getElementById('btn-menu-profile'),
       btnOpenChatProfile: document.getElementById('btn-open-chat-profile'),
-      btnChatInfoPanel: document.getElementById('btn-chat-info-panel')
+      btnChatInfoPanel: document.getElementById('btn-chat-info-panel'),
+
+      btnChangeAvatar: document.getElementById('btn-change-avatar'),
+      avatarFileInput: document.getElementById('avatar-file-input'),
+      reactionsPopup: document.getElementById('reactions-popup')
     };
   }
 
@@ -379,6 +422,29 @@ class TelegramApp {
       this.el.messageInput.style.height = 'auto';
       this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
     });
+
+    // Смена аватара
+    if (this.el.btnChangeAvatar && this.el.avatarFileInput) {
+      this.el.btnChangeAvatar.addEventListener('click', () => this.el.avatarFileInput.click());
+      this.el.avatarFileInput.addEventListener('change', (e) => this.handleAvatarUpload(e));
+    }
+
+    // Реакции: клик по смайлику в поп-апе
+    if (this.el.reactionsPopup) {
+      this.el.reactionsPopup.querySelectorAll('.tg-react-emoji').forEach(span => {
+        span.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const emoji = span.getAttribute('data-emoji');
+          if (this.activeReactionMsgId) {
+            await this.storage.toggleReaction(this.activeReactionMsgId, emoji, this.currentUser.username);
+            this.hideReactionsPopup();
+            await this.renderMessages();
+          }
+        });
+      });
+
+      document.addEventListener('click', () => this.hideReactionsPopup());
+    }
 
     // Вставка файлов через кнопку
     this.el.btnAttach.addEventListener('click', () => this.el.fileInput.click());
@@ -485,7 +551,7 @@ class TelegramApp {
     this.el.mainScreen.classList.remove('hidden');
 
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
-    this.el.currentUserAvatar.innerText = this.currentUser.username[0].toUpperCase();
+    this.renderAvatars();
 
     this.refreshData();
   }
@@ -618,10 +684,33 @@ class TelegramApp {
           '</div>'
         ].join('');
       }
-      // 3. ФОТОГРАФИЯ ИЛИ ФАЙЛ
-      else if (m.file) {
+      // 3. ФОТОГРАФИИ (ОДИНОЧНЫЕ И СЕТКА ГАЛЕРЕИ) ИЛИ ФАЙЛЫ
+      else if (m.files && m.files.length > 0) {
+        const photoFiles = m.files.filter(f => f.type && f.type.startsWith('image/'));
+        const otherFiles = m.files.filter(f => !f.type || !f.type.startsWith('image/'));
+
+        let gridHtml = '';
+        if (photoFiles.length > 0) {
+          const gridClass = photoFiles.length === 1 ? 'grid-1' : (photoFiles.length === 2 ? 'grid-2' : (photoFiles.length === 3 ? 'grid-3' : 'grid-more'));
+          gridHtml = '<div class="tg-photo-grid ' + gridClass + '">' +
+            photoFiles.map(f => '<img class="tg-media-photo" src="' + f.data + '" alt="Photo" data-name="' + this.escape(f.name) + '">').join('') +
+            '</div>';
+        }
+
+        const filesHtml = otherFiles.map(f => [
+          '<div class="tg-file-card">',
+          '  <div class="tg-file-icon">📄</div>',
+          '  <div class="tg-file-meta">',
+          '    <div class="tg-file-name">' + this.escape(f.name) + '</div>',
+          '    <div class="tg-file-size">' + this.formatSize(f.size) + '</div>',
+          '  </div>',
+          '</div>'
+        ].join('')).join('');
+
+        specialContent = gridHtml + filesHtml;
+      } else if (m.file) {
         if (m.file.type && m.file.type.startsWith('image/')) {
-          specialContent = '<img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '">';
+          specialContent = '<div class="tg-photo-grid grid-1"><img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '"></div>';
         } else {
           specialContent = [
             '<div class="tg-file-card">',
@@ -635,8 +724,20 @@ class TelegramApp {
         }
       }
 
+      // Блок реакций
+      let reactionsHtml = '';
+      if (m.reactions && Object.keys(m.reactions).length > 0) {
+        reactionsHtml = '<div class="tg-msg-reactions">' +
+          Object.entries(m.reactions).map(([emoji, users]) => {
+            const hasMine = users.includes(this.currentUser.username);
+            return '<span class="tg-reaction-badge ' + (hasMine ? 'active' : '') + '" data-msg-id="' + m.id + '" data-emoji="' + emoji + '">' +
+              emoji + ' ' + users.length + '</span>';
+          }).join('') +
+          '</div>';
+      }
+
       wrap.innerHTML = [
-        '<div class="tg-msg-bubble">',
+        '<div class="tg-msg-bubble" data-msg-id="' + m.id + '">',
         (!isOut ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
         specialContent,
         (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
@@ -644,6 +745,7 @@ class TelegramApp {
         '    <span>' + m.time + '</span>',
         (isOut ? '    <span class="tg-checks">✓✓</span>' : ''),
         '  </div>',
+        reactionsHtml,
         '</div>'
       ].join('');
 
@@ -678,11 +780,46 @@ class TelegramApp {
         });
       }
 
-      // Лайтбокс для фото
-      const imgEl = wrap.querySelector('.tg-media-photo');
-      if (imgEl) {
+      // Лайтбокс для картинок галереи
+      wrap.querySelectorAll('.tg-media-photo').forEach(imgEl => {
         imgEl.addEventListener('click', () => {
           this.openLightbox(imgEl.src, imgEl.getAttribute('data-name') || 'photo.png');
+        });
+      });
+
+      // Клик по реакции на сообщении
+      wrap.querySelectorAll('.tg-reaction-badge').forEach(badge => {
+        badge.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const emoji = badge.getAttribute('data-emoji');
+          await this.storage.toggleReaction(m.id, emoji, this.currentUser.username);
+          await this.renderMessages();
+        });
+      });
+
+      // Контекстное меню / зажатие (Long Press) для реакций
+      const bubbleEl = wrap.querySelector('.tg-msg-bubble');
+      if (bubbleEl) {
+        // ПК: Правый клик
+        bubbleEl.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          this.showReactionsPopup(e.clientX, e.clientY, m.id);
+        });
+
+        // Мобильные: Долгое зажатие (Touch Long Press)
+        let touchTimer = null;
+        bubbleEl.addEventListener('touchstart', (e) => {
+          const touch = e.touches[0];
+          touchTimer = setTimeout(() => {
+            this.showReactionsPopup(touch.clientX, touch.clientY, m.id);
+          }, 450);
+        }, { passive: true });
+
+        bubbleEl.addEventListener('touchend', () => {
+          if (touchTimer) clearTimeout(touchTimer);
+        });
+        bubbleEl.addEventListener('touchmove', () => {
+          if (touchTimer) clearTimeout(touchTimer);
         });
       }
 
@@ -704,10 +841,44 @@ class TelegramApp {
   }
 
   async handleFileUpload(e) {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+
+    const filePromises = files.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            data: reader.result
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    const fileObjects = await Promise.all(filePromises);
+    await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileObjects[0], null, null, fileObjects);
+    await this.refreshData();
+    this.el.fileInput.value = '';
+  }
+
+  async handleAvatarUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-    this.uploadBlob(file, file.name);
-    this.el.fileInput.value = '';
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result;
+      await this.storage.updateUserAvatar(this.currentUser.username, base64);
+      this.currentUser.avatar = base64;
+      this.renderAvatars();
+      this.openUserProfile(this.currentUser.username, true);
+    };
+    reader.readAsDataURL(file);
+    this.el.avatarFileInput.value = '';
   }
 
   uploadBlob(blob, filename) {
@@ -719,10 +890,31 @@ class TelegramApp {
         size: blob.size,
         data: reader.result
       };
-      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileData);
+      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileData, null, null, [fileData]);
       await this.refreshData();
     };
     reader.readAsDataURL(blob);
+  }
+
+  showReactionsPopup(x, y, msgId) {
+    this.activeReactionMsgId = msgId;
+    if (!this.el.reactionsPopup) return;
+
+    // Ограничиваем координаты границами экрана
+    const popupWidth = 260;
+    const posX = Math.min(Math.max(10, x - 120), window.innerWidth - popupWidth - 10);
+    const posY = Math.max(10, y - 55);
+
+    this.el.reactionsPopup.style.left = posX + 'px';
+    this.el.reactionsPopup.style.top = posY + 'px';
+    this.el.reactionsPopup.classList.remove('hidden');
+  }
+
+  hideReactionsPopup() {
+    if (this.el.reactionsPopup) {
+      this.el.reactionsPopup.classList.add('hidden');
+    }
+    this.activeReactionMsgId = null;
   }
 
   async handleSearch(q) {
@@ -919,17 +1111,38 @@ class TelegramApp {
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     const user = users.find(u => u.username.toLowerCase() === username) || {
       username: username,
+      avatar: isOwn ? this.currentUser.avatar : null,
       bio: isOwn ? (this.currentUser.bio || 'Пользуюсь Telegram Web ✨') : 'Пользователь Telegram Web'
     };
 
-    this.el.profileAvatarLarge.innerText = username === 'general' ? '🌐' : username[0].toUpperCase();
+    if (user.avatar) {
+      this.el.profileAvatarLarge.innerHTML = '<img src="' + user.avatar + '" alt="Avatar">';
+    } else {
+      this.el.profileAvatarLarge.innerText = username === 'general' ? '🌐' : username[0].toUpperCase();
+    }
+
     this.el.profileName.innerText = '@' + username;
     this.el.profileStatus.innerText = 'в сети';
     this.el.profileUsernameVal.innerText = '@' + username;
     this.el.profileBioVal.innerText = user.bio || 'О себе пока ничего не написано';
 
+    if (this.el.btnChangeAvatar) {
+      this.el.btnChangeAvatar.style.display = isOwn ? 'flex' : 'none';
+    }
     this.el.btnEditBio.style.display = isOwn ? 'block' : 'none';
     this.el.profilePanel.classList.remove('hidden');
+  }
+
+  renderAvatars() {
+    if (this.currentUser && this.currentUser.avatar) {
+      if (this.el.currentUserAvatar) {
+        this.el.currentUserAvatar.innerHTML = '<img src="' + this.currentUser.avatar + '" alt="Avatar">';
+      }
+    } else if (this.currentUser) {
+      if (this.el.currentUserAvatar) {
+        this.el.currentUserAvatar.innerText = this.currentUser.username[0].toUpperCase();
+      }
+    }
   }
 
   async editBio() {
