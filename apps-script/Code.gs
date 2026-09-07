@@ -283,10 +283,10 @@ function sendMessage_(payload) {
     recipient = findActiveRecipient_(auth, recipientUserId);
     chatId = directChatId_(auth.user.username, recipient.username);
   } else {
-    // Прямой chatId (dm:username1:username2 или general)
-    const rawChatId = String(payload.chatId || "general").trim();
-    if (rawChatId === "general") {
-      chatId = "general";
+    // Прямой chatId (dm:username1:username2 или dm:general / general)
+    const rawChatId = String(payload.chatId || "dm:general").trim();
+    if (rawChatId === "general" || rawChatId === "dm:general") {
+      chatId = "dm:general";
     } else {
       // Проверяем что это DM и пользователь участник (по username)
       authorizeChatByUsername_(auth.user.username, rawChatId);
@@ -358,8 +358,11 @@ function syncMessages_(payload) {
   const auth = authenticate_(payload.sessionToken);
   const afterSeq = Math.max(0, Number(payload.afterSeq || 0));
   const limit = Math.min(200, Math.max(1, Number(payload.limit || 100)));
-  const chatId = validateId_(payload.chatId || "general", "chat_id");
-  // Используем authorizeChatByUsername_ т.к. chatId строится из username
+  let rawChatId = String(payload.chatId || "dm:general").trim();
+  if (rawChatId === "general") rawChatId = "dm:general";
+  const chatId = validateId_(rawChatId, "chat_id");
+  
+  // Строгая проверка доступа по username
   authorizeChatByUsername_(auth.user.username, chatId);
   const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
@@ -551,7 +554,7 @@ function authorizeChat_(userId, chatId) {
 
 // Авторизация по username (т.к. chatId строится из username)
 function authorizeChatByUsername_(username, chatId) {
-  if (chatId === "general") return;
+  if (chatId === "general" || chatId === "dm:general") return;
   const parts = chatId.split(":");
   const normalizedUsername = normalizeUsername_(username);
   if (parts.length !== 3 || parts[0] !== "dm" || parts.indexOf(normalizedUsername) === -1) {
@@ -575,13 +578,13 @@ function getUserChats_(payload) {
     const msg = messageFromRow_(row);
     if (msg.deletedAt) return;
 
-    // Проверяем участие: general доступен всем, dm — только если username в chatId
-    const isGeneral = msg.chatId === "general";
+    // Проверяем участие: general / dm:general доступен всем, dm — только если username в chatId
+    const isGeneral = msg.chatId === "general" || msg.chatId === "dm:general";
     const parts = msg.chatId.split(":");
     const isDm = parts.length === 3 && parts[0] === "dm" && parts.indexOf(myUsername) !== -1;
 
     if (!isGeneral && !isDm) return;
-    if (isGeneral) return; // general — не добавляем, он всегда есть
+    if (isGeneral) return; // general — не добавляем в список личных диалогов, он всегда закреплен первым
 
     if (!chatMap[msg.chatId] || msg.seq > chatMap[msg.chatId].seq) {
       // Определяем собеседника (peer)
