@@ -713,11 +713,15 @@ class TelegramApp {
 
       let specialContent = '';
 
+      const isCircle = Boolean(m.circleVideo);
+
       // 1. ВИДЕОКРУЖОЧЕК TELEGRAM
       if (m.circleVideo) {
+        const dur = m.circleVideo.duration ? String(m.circleVideo.duration).padStart(2, '0') : '00';
         specialContent = [
           '<div class="tg-circle-card" data-video-src="' + m.circleVideo.data + '">',
-          '  <video src="' + m.circleVideo.data + '" playsinline loop></video>',
+          '  <video src="' + m.circleVideo.data + '" autoplay muted playsinline loop></video>',
+          '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
           '  <div class="tg-circle-play-overlay">▶</div>',
           '</div>'
         ].join('');
@@ -797,15 +801,19 @@ class TelegramApp {
           '</div>';
       }
 
-      wrap.innerHTML = [
-        '<div class="tg-msg-bubble" data-msg-id="' + m.id + '">',
-        (!isOut ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
-        specialContent,
-        (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
+      const bubbleMetaHtml = isCircle ? '' : [
         '  <div class="tg-msg-meta">',
         '    <span>' + m.time + '</span>',
         (isOut ? '    <span class="tg-checks">✓✓</span>' : ''),
-        '  </div>',
+        '  </div>'
+      ].join('');
+
+      wrap.innerHTML = [
+        '<div class="tg-msg-bubble ' + (isCircle ? 'is-circle' : '') + '" data-msg-id="' + m.id + '">',
+        (!isOut && !isCircle ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
+        specialContent,
+        (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
+        bubbleMetaHtml,
         reactionsHtml,
         '</div>'
       ].join('');
@@ -815,8 +823,12 @@ class TelegramApp {
       if (circleCard) {
         const vid = circleCard.querySelector('video');
         circleCard.addEventListener('click', () => {
-          if (vid.paused) {
-            vid.play();
+          if (vid.muted) {
+            vid.muted = false;
+            vid.play().catch(() => {});
+            circleCard.classList.add('playing');
+          } else if (vid.paused) {
+            vid.play().catch(() => {});
             circleCard.classList.add('playing');
           } else {
             vid.pause();
@@ -1156,20 +1168,36 @@ class TelegramApp {
   async startVideoCircleRecording() {
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 400, height: 400, facingMode: 'user' },
+        video: { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: true
       });
       this.el.videoStreamPreview.srcObject = this.mediaStream;
       this.recordedChunks = [];
-      this.mediaRecorder = new MediaRecorder(this.mediaStream);
+
+      // Кросс-браузерный выбор MIME-типа
+      const supportedTypes = [
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4'
+      ];
+      let selectedMime = '';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        selectedMime = supportedTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+      }
+
+      const recorderOptions = selectedMime ? { mimeType: selectedMime } : {};
+      this.mediaRecorder = new MediaRecorder(this.mediaStream, recorderOptions);
 
       this.mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) this.recordedChunks.push(e.data);
+        if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
       };
 
       this.mediaRecorder.onstop = async () => {
-        if (this.shouldSendRecorded) {
-          const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        if (this.shouldSendRecorded && this.recordedChunks.length > 0) {
+          const finalType = selectedMime || (this.recordedChunks[0] && this.recordedChunks[0].type) || 'video/webm';
+          const blob = new Blob(this.recordedChunks, { type: finalType });
           const base64 = await this.blobToBase64(blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
             data: base64,
@@ -1180,11 +1208,11 @@ class TelegramApp {
         this.cleanupStream();
       };
 
-      this.mediaRecorder.start();
+      this.mediaRecorder.start(100);
       this.el.videoRecordingPanel.classList.remove('hidden');
       this.startTimer(this.el.recordTimer);
     } catch (err) {
-      alert('Не удалось получить доступ к камере: ' + err.message);
+      alert('Не удалось запустить камеру для видеокружка: ' + err.message);
       this.cleanupStream();
     }
   }
