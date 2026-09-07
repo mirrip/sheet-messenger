@@ -281,4 +281,33 @@ const updated = context.api("updatePhone", {
 });
 assert.equal(updated.user.phone, "+7 911 111-11-11");
 
+const profile = context.api("updateProfile", {
+  sessionToken: alice.session.sessionToken,
+  displayName: "Alice Aurora",
+  bio: "Проверяем профиль",
+  avatarUrl: "https://example.com/avatar.jpg"
+});
+assert.equal(profile.profile.displayName, "Alice Aurora");
+assert.equal(
+  context.api("getProfile", { sessionToken: bob.session.sessionToken, username: "alice_1" }).profile.bio,
+  "Проверяем профиль"
+);
+
+usersSheet.rows[1][10] = 0;
+const audioMessage = context.api("send", {
+  sessionToken: alice.session.sessionToken,
+  recipientUserId: bob.user.userId,
+  messageType: "audio",
+  mediaUrl: "https://example.com/voice.webm",
+  mimeType: "audio/webm",
+  fileName: "voice.webm",
+  mediaKind: "audio"
+});
+assert.equal(audioMessage.message.content.mediaKind, "audio");
+const bobChats = context.api("getUserChats", { sessionToken: bob.session.sessionToken });
+const aliceChat = bobChats.chats.find((chat) => chat.peerUsername === "alice_1");
+assert.equal(aliceChat.peerDisplayName, "Alice Aurora");
+assert.equal(aliceChat.lastSnippet, "🎙 Голосовое сообщение");
+
 console.log("Backend smoke tests passed");
+
