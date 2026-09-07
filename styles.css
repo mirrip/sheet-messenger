@@ -567,20 +567,60 @@ body, html {
   overflow: hidden;
 }
 
-.chat-item-top {
+.chat-title-wrap {
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
 }
 
 .chat-title {
   font-weight: 600;
   font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-type-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.chat-type-badge.general {
+  background: rgba(51, 144, 236, 0.2);
+  color: #5bb3ff;
+  border: 1px solid rgba(51, 144, 236, 0.4);
+}
+
+.chat-type-badge.dm {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.chat-item.active .chat-type-badge.general {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.chat-item.active .chat-type-badge.dm {
+  background: rgba(52, 211, 153, 0.25);
+  color: #a7f3d0;
+  border-color: rgba(52, 211, 153, 0.5);
 }
 
 .chat-time {
   font-size: 12px;
   color: var(--text-secondary);
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .chat-item.active .chat-time {
@@ -649,6 +689,31 @@ body, html {
 .chat-status {
   font-size: 12px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-tag-type {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: inline-block;
+}
+
+.badge-tag-type.general {
+  background: rgba(51, 144, 236, 0.25);
+  color: #5bb3ff;
+  border: 1px solid rgba(51, 144, 236, 0.5);
+}
+
+.badge-tag-type.dm {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
 .badge-tag {
