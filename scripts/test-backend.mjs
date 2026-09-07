@@ -256,11 +256,38 @@ assert.equal(fcmPayload.message.data.chatId, pushedMessage.message.chatId);
 assert.ok(fcmPayload.message.webpush.fcm_options.link.includes("chat=dm%3A"));
 
 usersSheet.rows[1][10] = 0;
+context.DriveApp = {
+  getFolderById: () => ({
+    getFilesByName: () => {
+      let available = true;
+      return {
+        hasNext: () => available,
+        next: () => {
+          available = false;
+          return {
+            getBlob: () => ({
+              getDataAsString: () => JSON.stringify({
+                status: "ready",
+                ownerUserId: alice.user.userId,
+                chatId: "dm:general",
+                fileName: "photo.jpg",
+                mimeType: "image/jpeg",
+                size: 123,
+                chunkSize: 123,
+                totalChunks: 1
+              })
+            })
+          };
+        }
+      };
+    }
+  })
+};
 const photoMessage = context.api("send", {
   sessionToken: alice.session.sessionToken,
   chatId: "general",
   messageType: "photo",
-  mediaFileId: "file_123",
+  mediaFileId: "file_123456",
   mimeType: "image/jpeg",
   caption: "Подпись"
 });
@@ -282,3 +309,4 @@ const updated = context.api("updatePhone", {
 assert.equal(updated.user.phone, "+7 911 111-11-11");
 
 console.log("Backend smoke tests passed");
+
