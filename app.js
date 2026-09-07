@@ -7,7 +7,9 @@ class GlobalMessenger {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
       PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbzq1QJHelEdQ-H-XO7jAF2dBe73hxegP320C0kH80dsw76n4_hfygGnh0nWFRo_ufQJIw/exec',
       SYNC_INTERVAL_MS: 1500,
-      MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
+      LEGACY_UPLOAD_LIMIT_BYTES: 25 * 1024 * 1024,
+      RESUMABLE_CHUNK_SIZE_BYTES: 8 * 1024 * 1024,
+      MAX_FILE_SIZE_BYTES: 1024 * 1024 * 1024
     };
 
     this.user = null;
@@ -442,7 +444,8 @@ class GlobalMessenger {
     this.el.btnAvatarChange.disabled = true;
     this.el.btnAvatarChange.innerText = 'Загрузка…';
     try {
-      const avatarUrl = await this.uploadFileToServer(file, () => {});
+      const uploaded = await this.uploadFileToServer(file, this.currentChatId, () => {});
+      const avatarUrl = uploaded.mediaUrl;
       const profile = this.profiles.get(this.user.username.toLowerCase()) || {};
       profile.avatarUrl = avatarUrl;
       profile.username = this.user.username.toLowerCase();
@@ -1026,7 +1029,12 @@ class GlobalMessenger {
     });
   }
 
-  async uploadFileToServer(file, onProgress) {
+  async uploadFileToServer(file, chatId, onProgress) {
+    const legacyLimit = this.config.LEGACY_UPLOAD_LIMIT_BYTES || (25 * 1024 * 1024);
+    if (file.size > legacyLimit) {
+      return this.uploadFileResumable(file, chatId, onProgress);
+    }
+
     onProgress(25, 'Подготовка файла к отправке...');
     const base64Content = await this.readFileAsBase64(file);
 
@@ -1044,7 +1052,93 @@ class GlobalMessenger {
     }
 
     onProgress(100, 'Готово!');
-    return uploadRes.mediaUrl;
+    return {
+      fileId: uploadRes.fileId || '',
+      mediaUrl: uploadRes.mediaUrl,
+      downloadUrl: uploadRes.downloadUrl || uploadRes.mediaUrl,
+      checksum: uploadRes.checksum || ''
+    };
+  }
+
+  async uploadFileResumable(file, chatId, onProgress) {
+    const chunkSize = this.config.RESUMABLE_CHUNK_SIZE_BYTES || (8 * 1024 * 1024);
+    onProgress(1, 'Создание защищённой сессии загрузки...');
+    const start = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      operation: 'startResumable',
+      chatId,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size
+    });
+    if (!start || !start.ok || !start.sessionUrl) {
+      throw new Error(start && start.error ? start.error : 'Не удалось создать сессию загрузки');
+    }
+
+    let offset = 0;
+    let driveFile = null;
+    while (offset < file.size) {
+      const endExclusive = Math.min(file.size, offset + chunkSize);
+      const response = await this.putResumableChunkWithRetry(
+        start.sessionUrl,
+        file.slice(offset, endExclusive),
+        offset,
+        endExclusive,
+        file.size,
+        file.type || 'application/octet-stream'
+      );
+      if (response.status === 200 || response.status === 201) {
+        driveFile = await response.json();
+        offset = file.size;
+      } else if (response.status === 308) {
+        const range = response.headers.get('Range');
+        const match = range && range.match(/bytes=0-(\d+)/i);
+        offset = match ? Number(match[1]) + 1 : endExclusive;
+      } else {
+        throw new Error('Хранилище отклонило часть файла: HTTP ' + response.status);
+      }
+      onProgress(
+        Math.min(98, Math.max(2, Math.round((offset / file.size) * 98))),
+        `Передано ${this.formatBytes(offset)} из ${this.formatBytes(file.size)}...`
+      );
+    }
+
+    if (!driveFile || !driveFile.id) throw new Error('Хранилище не подтвердило завершение загрузки');
+    const finished = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      operation: 'finishResumable',
+      chatId,
+      fileId: driveFile.id,
+      expectedSize: file.size
+    });
+    if (!finished || !finished.ok) {
+      throw new Error(finished && finished.error ? finished.error : 'Не удалось проверить файл');
+    }
+    onProgress(100, 'Файл проверен и готов!');
+    return finished;
+  }
+
+  async putResumableChunkWithRetry(sessionUrl, blob, offset, endExclusive, totalSize, mimeType) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const response = await fetch(sessionUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Range': `bytes ${offset}-${endExclusive - 1}/${totalSize}`
+          },
+          body: blob
+        });
+        if ([200, 201, 308].includes(response.status)) return response;
+        if (response.status < 500 && response.status !== 429) return response;
+        lastError = new Error('HTTP ' + response.status);
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(8000, 500 * (2 ** attempt))));
+    }
+    throw lastError || new Error('Не удалось передать часть файла');
   }
 
   async handleFileSelection(e) {
@@ -1070,18 +1164,20 @@ class GlobalMessenger {
     this.el.uploadCard.classList.remove('hidden');
     this.el.uploadFileName.innerText = mediaKind === 'audio' ? 'Голосовое сообщение' : (mediaKind === 'videoNote' ? 'Видеокружок' : file.name);
     try {
-      const fileUrl = await this.uploadFileToServer(file, (pct, statusText) => {
+      const uploaded = await this.uploadFileToServer(file, targetChatId, (pct, statusText) => {
         this.el.uploadProgressFill.style.width = pct + '%';
         this.el.uploadFileStats.innerText = `${statusText} (${pct}%)`;
       });
-      const filePayload = { id:'file_' + Date.now(), name:file.name, size:file.size, mimeType:file.type, url:fileUrl, downloadUrl:fileUrl, mediaKind };
+      const fileUrl = uploaded.mediaUrl;
+      const filePayload = { id:uploaded.fileId || ('file_' + Date.now()), name:file.name, size:file.size, mimeType:file.type, url:fileUrl, downloadUrl:uploaded.downloadUrl || fileUrl, checksum:uploaded.checksum || '', mediaKind };
       this.appendMessage({
         id:'tmp_' + Date.now(), chatId:targetChatId, senderUsername:this.user.username,
         content:{ text:caption, file:filePayload }, createdAt:new Date().toISOString()
       }, true, targetChatId);
       const res = await this.apiRequest('send', {
         sessionToken:this.session.sessionToken, chatId:targetChatId, messageType,
-        mediaUrl:fileUrl, mimeType:file.type || 'application/octet-stream', size:file.size,
+        mediaUrl:fileUrl, mediaFileId:uploaded.fileId || '', downloadUrl:uploaded.downloadUrl || fileUrl,
+        checksum:uploaded.checksum || '', mimeType:file.type || 'application/octet-stream', size:file.size,
         fileName:file.name, mediaKind, caption
       });
       if (res && res.message) {
@@ -1568,4 +1664,3 @@ class GlobalMessenger {
 window.addEventListener('DOMContentLoaded', () => {
   window.messenger = new GlobalMessenger();
 });
-
