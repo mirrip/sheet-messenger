@@ -111,24 +111,33 @@ function api(action, payload) {
 }
 
 function setupProject() {
-  const storedId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  const properties = PropertiesService.getScriptProperties();
   const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const spreadsheet = storedId ? SpreadsheetApp.openById(storedId) : activeSpreadsheet;
+  const authSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_AUTH_ID", activeSpreadsheet);
+  const messagesSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_MESSAGES_ID", activeSpreadsheet);
+  const archiveSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_ARCHIVE_ID", activeSpreadsheet);
 
-  if (!spreadsheet) {
-    throw new Error("Укажите SPREADSHEET_ID в свойствах скрипта или откройте Apps Script из таблицы");
+  if (!authSpreadsheet || !messagesSpreadsheet || !archiveSpreadsheet) {
+    throw new Error("Укажите SPREADSHEET_AUTH_ID, SPREADSHEET_MESSAGES_ID и SPREADSHEET_ARCHIVE_ID");
   }
 
-  ensureSheet_(spreadsheet, SHEETS.USERS, HEADERS.USERS);
-  ensureSheet_(spreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
-  ensureSheet_(spreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
-  ensureSheet_(spreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
+  ensureSheet_(authSpreadsheet, SHEETS.USERS, HEADERS.USERS);
+  ensureSheet_(authSpreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
+  ensureSheet_(messagesSpreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
+  ensureSheet_(archiveSpreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
 
-  const properties = PropertiesService.getScriptProperties();
-  properties.setProperty("SPREADSHEET_ID", spreadsheet.getId());
+  if (!properties.getProperty("SPREADSHEET_AUTH_ID")) properties.setProperty("SPREADSHEET_AUTH_ID", authSpreadsheet.getId());
+  if (!properties.getProperty("SPREADSHEET_MESSAGES_ID")) properties.setProperty("SPREADSHEET_MESSAGES_ID", messagesSpreadsheet.getId());
+  if (!properties.getProperty("SPREADSHEET_ARCHIVE_ID")) properties.setProperty("SPREADSHEET_ARCHIVE_ID", archiveSpreadsheet.getId());
   getAuthPepper_();
 
-  return { ok: true, spreadsheetId: spreadsheet.getId(), schemaVersion: "0.3.0" };
+  return {
+    ok: true,
+    authSpreadsheetId: authSpreadsheet.getId(),
+    messagesSpreadsheetId: messagesSpreadsheet.getId(),
+    archiveSpreadsheetId: archiveSpreadsheet.getId(),
+    schemaVersion: "0.3.0"
+  };
 }
 
 function registerUser_(payload) {
@@ -319,7 +328,7 @@ function sendMessage_(payload) {
       throwApi_("RATE_LIMITED", "Можно отправлять не больше одного сообщения в секунду");
     }
 
-    const messagesSheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+    const messagesSheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
     const seq = Math.max(1, messagesSheet.getLastRow());
     message = {
       seq,
@@ -370,7 +379,7 @@ function syncMessages_(payload) {
   
   // Строгая проверка доступа по username
   authorizeChatByUsername_(auth.user.username, chatId);
-  const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+  const sheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
 
   if (lastRow <= 1 || afterSeq >= lastRow - 1) {
@@ -418,6 +427,8 @@ function authenticate_(sessionToken) {
 
   return {
     spreadsheet,
+    messagesSpreadsheet: getMessagesSpreadsheet_(),
+    archiveSpreadsheet: getArchiveSpreadsheet_(),
     devicesSheet,
     usersSheet,
     deviceRowIndex: deviceRow.rowIndex,
@@ -592,7 +603,7 @@ function authorizeChatByUsername_(username, chatId) {
 function getUserChats_(payload) {
   const auth = authenticate_(payload.sessionToken);
   const myUsername = normalizeUsername_(auth.user.username);
-  const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+  const sheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
 
   if (lastRow <= 1) return { ok: true, chats: [] };
@@ -990,9 +1001,27 @@ function base64UrlJson_(value) {
 }
 
 function getSpreadsheet_() {
-  const spreadsheetId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
-  if (!spreadsheetId) throwApi_("NOT_CONFIGURED", "Сначала запустите setupProject()");
-  return SpreadsheetApp.openById(spreadsheetId);
+  return openRequiredSpreadsheet_("SPREADSHEET_AUTH_ID");
+}
+
+function getMessagesSpreadsheet_() {
+  return openRequiredSpreadsheet_("SPREADSHEET_MESSAGES_ID");
+}
+
+function getArchiveSpreadsheet_() {
+  return openRequiredSpreadsheet_("SPREADSHEET_ARCHIVE_ID");
+}
+
+function openRequiredSpreadsheet_(propertyName) {
+  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = openConfiguredSpreadsheet_(propertyName, activeSpreadsheet);
+  if (!spreadsheet) throwApi_("NOT_CONFIGURED", "Сначала запустите setupProject()");
+  return spreadsheet;
+}
+
+function openConfiguredSpreadsheet_(propertyName, fallback) {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty(propertyName);
+  return spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : fallback;
 }
 
 function getAuthPepper_() {
