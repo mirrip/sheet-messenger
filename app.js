@@ -293,9 +293,10 @@ class TelegramApp {
       lightboxFilename: document.getElementById('lightbox-filename'),
       lightboxDownload: document.getElementById('lightbox-download'),
 
-      btnModeToggle: document.getElementById('btn-mode-toggle'),
-      iconModeMic: document.getElementById('icon-mode-mic'),
-      iconModeVideo: document.getElementById('icon-mode-video'),
+      btnMainAction: document.getElementById('btn-main-action'),
+      iconActionMic: document.getElementById('icon-action-mic'),
+      iconActionVideo: document.getElementById('icon-action-video'),
+      iconActionSend: document.getElementById('icon-action-send'),
 
       audioRecordingPanel: document.getElementById('audio-recording-panel'),
       audioRecordTimer: document.getElementById('audio-record-timer'),
@@ -313,9 +314,10 @@ class TelegramApp {
       profileAvatarLarge: document.getElementById('profile-avatar-large'),
       profileName: document.getElementById('profile-name'),
       profileStatus: document.getElementById('profile-status'),
+      profileDisplaynameVal: document.getElementById('profile-displayname-val'),
       profileUsernameVal: document.getElementById('profile-username-val'),
       profileBioVal: document.getElementById('profile-bio-val'),
-      btnEditBio: document.getElementById('btn-edit-bio'),
+      btnEditProfile: document.getElementById('btn-edit-profile'),
       btnOpenMyProfile: document.getElementById('btn-open-my-profile'),
       btnMenuProfile: document.getElementById('btn-menu-profile'),
       btnOpenChatProfile: document.getElementById('btn-open-chat-profile'),
@@ -377,14 +379,11 @@ class TelegramApp {
         this.el.profilePanel.classList.add('hidden');
       });
     }
-    if (this.el.btnEditBio) {
-      this.el.btnEditBio.addEventListener('click', () => this.editBio());
+    if (this.el.btnEditProfile) {
+      this.el.btnEditProfile.addEventListener('click', () => this.editProfile());
     }
 
-    // Переключение Микрофон / Видеокружок
-    if (this.el.btnModeToggle) {
-      this.el.btnModeToggle.addEventListener('click', () => this.toggleRecordMode());
-    }
+    // Запись голоса / кружочка: кнопки управления на оверлее
     if (this.el.btnCancelVoice) {
       this.el.btnCancelVoice.addEventListener('click', () => this.stopRecording(false));
     }
@@ -398,6 +397,20 @@ class TelegramApp {
       this.el.btnSendVideoNote.addEventListener('click', () => this.stopRecording(true));
     }
 
+    // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM (МИКРОФОН / КРУЖОЧЕК / ОТПРАВИТЬ)
+    if (this.el.btnMainAction) {
+      this.el.btnMainAction.addEventListener('click', () => {
+        const text = this.el.messageInput.value.trim();
+        if (text) {
+          // Если есть текст — отправляем сообщение
+          this.sendMessage();
+        } else {
+          // Если строка пустая — короткий клик переключает режим (микрофон <-> видеокружок)
+          this.toggleRecordMode();
+        }
+      });
+    }
+
     // Папки чатов
     this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -408,8 +421,6 @@ class TelegramApp {
       });
     });
 
-    // Отправка сообщений
-    this.el.btnSend.addEventListener('click', () => this.sendMessage());
     this.el.messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -417,10 +428,11 @@ class TelegramApp {
       }
     });
 
-    // Автоподстройка высоты текстового поля
+    // Автоподстройка высоты + АВТОМАТИЧЕСКАЯ СМЕНА КНОПКИ ПРИ ПОЯВЛЕНИИ ПЕРВОГО СИМВОЛА
     this.el.messageInput.addEventListener('input', () => {
       this.el.messageInput.style.height = 'auto';
       this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
+      this.updateMainActionButtonState();
     });
 
     // Смена аватара
@@ -588,6 +600,7 @@ class TelegramApp {
       this.el.chatView.classList.add('active');
     }
 
+    this.updateMainActionButtonState();
     this.renderChatList();
     this.renderMessages();
   }
@@ -835,6 +848,7 @@ class TelegramApp {
 
     this.el.messageInput.value = '';
     this.el.messageInput.style.height = 'auto';
+    this.updateMainActionButtonState();
 
     await this.storage.sendMessage(this.currentChatId, this.currentUser.username, text);
     await this.refreshData();
@@ -977,18 +991,43 @@ class TelegramApp {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
+  updateMainActionButtonState() {
+    if (!this.el.btnMainAction) return;
+    const hasText = this.el.messageInput && this.el.messageInput.value.trim().length > 0;
+
+    if (hasText) {
+      // Есть текст: кнопка отправки сообщения (самолетик)
+      this.el.btnMainAction.className = 'tg-send-btn state-send';
+      this.el.btnMainAction.title = 'Отправить';
+      this.el.iconActionMic.classList.add('hidden');
+      this.el.iconActionVideo.classList.add('hidden');
+      this.el.iconActionSend.classList.remove('hidden');
+    } else {
+      // Нет текста: режим записи (микрофон или камера-кружочек)
+      if (this.recordMode === 'video') {
+        this.el.btnMainAction.className = 'tg-send-btn state-video';
+        this.el.btnMainAction.title = 'Видеокружок (клик — переключить на микрофон)';
+        this.el.iconActionMic.classList.add('hidden');
+        this.el.iconActionVideo.classList.remove('hidden');
+        this.el.iconActionSend.classList.add('hidden');
+      } else {
+        this.el.btnMainAction.className = 'tg-send-btn state-mic';
+        this.el.btnMainAction.title = 'Голосовое сообщение (клик — переключить на видеокружок)';
+        this.el.iconActionMic.classList.remove('hidden');
+        this.el.iconActionVideo.classList.add('hidden');
+        this.el.iconActionSend.classList.add('hidden');
+      }
+    }
+  }
+
   toggleRecordMode() {
+    // Короткий клик переключает микрофон <-> видеокамера
     if (this.recordMode === 'mic') {
       this.recordMode = 'video';
-      this.el.iconModeMic.classList.add('hidden');
-      this.el.iconModeVideo.classList.remove('hidden');
-      this.startVideoCircleRecording();
     } else {
       this.recordMode = 'mic';
-      this.el.iconModeVideo.classList.add('hidden');
-      this.el.iconModeMic.classList.remove('hidden');
-      this.startVoiceRecording();
     }
+    this.updateMainActionButtonState();
   }
 
   async startVoiceRecording() {
@@ -1123,13 +1162,18 @@ class TelegramApp {
 
     this.el.profileName.innerText = '@' + username;
     this.el.profileStatus.innerText = 'в сети';
+    if (this.el.profileDisplaynameVal) {
+      this.el.profileDisplaynameVal.innerText = user.name || ('@' + username);
+    }
     this.el.profileUsernameVal.innerText = '@' + username;
     this.el.profileBioVal.innerText = user.bio || 'О себе пока ничего не написано';
 
     if (this.el.btnChangeAvatar) {
       this.el.btnChangeAvatar.style.display = isOwn ? 'flex' : 'none';
     }
-    this.el.btnEditBio.style.display = isOwn ? 'block' : 'none';
+    if (this.el.btnEditProfile) {
+      this.el.btnEditProfile.style.display = isOwn ? 'block' : 'none';
+    }
     this.el.profilePanel.classList.remove('hidden');
   }
 
@@ -1145,20 +1189,32 @@ class TelegramApp {
     }
   }
 
-  async editBio() {
+  async editProfile() {
+    const currentName = this.currentUser.name || ('@' + this.currentUser.username);
     const currentBio = this.currentUser.bio || '';
-    const newBio = prompt('Введите новый статус "О себе":', currentBio);
-    if (newBio !== null) {
-      const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
-      const user = users.find(u => u.username.toLowerCase() === this.currentUser.username.toLowerCase());
-      if (user) {
-        user.bio = newBio;
-        localStorage.setItem('gm_users', JSON.stringify(users));
-      }
-      this.currentUser.bio = newBio;
-      localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
-      this.el.profileBioVal.innerText = newBio;
+
+    const newName = prompt('Введите ваше имя:', currentName);
+    if (newName === null) return;
+
+    const newBio = prompt('Введите статус "О себе":', currentBio);
+    if (newBio === null) return;
+
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const user = users.find(u => u.username.toLowerCase() === this.currentUser.username.toLowerCase());
+    if (user) {
+      user.name = newName.trim() || ('@' + this.currentUser.username);
+      user.bio = newBio.trim();
+      localStorage.setItem('gm_users', JSON.stringify(users));
     }
+
+    this.currentUser.name = newName.trim() || ('@' + this.currentUser.username);
+    this.currentUser.bio = newBio.trim();
+    localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
+
+    if (this.el.profileDisplaynameVal) this.el.profileDisplaynameVal.innerText = this.currentUser.name;
+    if (this.el.profileBioVal) this.el.profileBioVal.innerText = this.currentUser.bio;
+    if (this.el.currentUserName) this.el.currentUserName.innerText = this.currentUser.name;
+    await this.renderChatList();
   }
 
   escape(str) {
