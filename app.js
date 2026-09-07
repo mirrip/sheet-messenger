@@ -36,6 +36,8 @@ class GlobalMessenger {
     this.knownUsers = new Set();
     this.searchMode = false;
     this.searchQuery = '';
+    this.searchTimer = null;
+    this.searchRequestId = 0;
 
     this.clearOldCaches();
     this.initElements();
@@ -926,10 +928,37 @@ class GlobalMessenger {
     if (globalList.children.length === 0 && localMatches.length === 0) {
       globalList.innerHTML = `<div class="empty-search-hint">По запросу «${this.escapeHtml(q)}» ничего не найдено</div>`;
     }
+
+    // Серверный поиск с защитой от устаревших ответов.
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    const requestId = ++this.searchRequestId;
+    if (q.length >= 2) {
+      this.searchTimer = setTimeout(async () => {
+        try {
+          const res = await this.apiRequest('searchUsers', {
+            sessionToken: this.session.sessionToken,
+            query: q
+          });
+          if (requestId !== this.searchRequestId || q !== this.searchQuery || !this.searchMode) return;
+          (res.users || []).forEach(user => {
+            const username = String(user.username || '').toLowerCase();
+            if (!username || seenUsers.has(username)) return;
+            seenUsers.add(username);
+            globalList.appendChild(this.createSearchResultElement(username, 'Пользователь Global'));
+          });
+          const empty = globalList.querySelector('.empty-search-hint');
+          if (empty && globalList.children.length > 1) empty.remove();
+        } catch (error) {
+          // Локальные результаты остаются доступными даже при временной ошибке сети.
+        }
+      }, 260);
+    }
   }
 
   closeSearch() {
     this.searchMode = false;
+    this.searchRequestId++;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchQuery = '';
     this.el.chatSearch.value = '';
     this.el.btnSearchClear.classList.add('hidden');
@@ -1109,11 +1138,14 @@ class GlobalMessenger {
     const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
     const sec = String(elapsed % 60).padStart(2, '0');
     this.el.recorderTimer.innerText = `${min}:${sec}`;
+    const limit = this.recordingKind === 'videoNote' ? 60 : 300;
+    if (elapsed >= limit && this.recorder) this.stopRecording(true);
   }
 
   stopRecording(send) {
     if (!this.recorder) { this.cleanupRecording(); return; }
     const recorder = this.recorder;
+    this.recorder = null;
     const kind = this.recordingKind;
     recorder.onstop = async () => {
       const mimeType = recorder.mimeType || (kind === 'videoNote' ? 'video/webm' : 'audio/webm');
