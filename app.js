@@ -7,7 +7,8 @@ class GlobalMessenger {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
       PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbwcyFjnZkPZ7YB3z4kvVl9E_31rAcX-F6ryc2DHH6h6cZcoanr5OjUN2q3wWXc_S6X-hA/exec',
       SYNC_INTERVAL_MS: 1500,
-      MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
+      CHUNK_SIZE_BYTES: 2 * 1024 * 1024,
+      MAX_FILE_SIZE_BYTES: 100 * 1024 * 1024
     };
 
     this.user = null;
@@ -18,6 +19,8 @@ class GlobalMessenger {
     this.syncAbortController = null;
     this.pollTimer = null;
     this.renderedMessageIds = new Set();
+    this.mediaBlobUrls = new Map();
+    this.mediaLoadPromises = new Map();
     this.activeLightboxData = null;
 
     // Chat list, search & contact architecture
@@ -767,7 +770,7 @@ class GlobalMessenger {
     }
   }
 
-  readFileAsBase64(file) {
+  readBlobAsBase64(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -776,29 +779,48 @@ class GlobalMessenger {
         resolve(base64);
       };
       reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(blob);
     });
   }
 
-  async uploadFileToServer(file, onProgress) {
-    onProgress(25, 'Подготовка файла к отправке...');
-    const base64Content = await this.readFileAsBase64(file);
+  async uploadFileToServer(file, chatId, onProgress) {
+    const chunkSize = this.config.CHUNK_SIZE_BYTES || (2 * 1024 * 1024);
+    const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+    onProgress(2, 'Создание защищённой загрузки...');
 
-    onProgress(60, 'Сохранение файла в облачном хранилище...');
+    const start = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      operation: 'start',
+      chatId,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size,
+      chunkSize,
+      totalChunks
+    });
+
+    for (let index = 0; index < totalChunks; index += 1) {
+      const from = index * chunkSize;
+      const slice = file.slice(from, Math.min(file.size, from + chunkSize));
+      const base64 = await this.readBlobAsBase64(slice);
+      await this.apiRequest('uploadMedia', {
+        sessionToken: this.session.sessionToken,
+        operation: 'chunk',
+        mediaId: start.mediaId,
+        chunkIndex: index,
+        base64
+      });
+      const pct = Math.min(96, Math.round(((index + 1) / totalChunks) * 94) + 2);
+      onProgress(pct, `Загрузка части ${index + 1} из ${totalChunks}...`);
+    }
 
     const uploadRes = await this.apiRequest('uploadMedia', {
       sessionToken: this.session.sessionToken,
-      fileName: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      base64: base64Content
+      operation: 'finish',
+      mediaId: start.mediaId
     });
-
-    if (!uploadRes || !uploadRes.ok) {
-      throw new Error(uploadRes && uploadRes.error ? uploadRes.error : 'Не удалось загрузить файл');
-    }
-
     onProgress(100, 'Готово!');
-    return uploadRes.mediaUrl;
+    return uploadRes;
   }
 
   async handleFileSelection(e) {
@@ -820,7 +842,8 @@ class GlobalMessenger {
     this.el.uploadFileStats.innerText = 'Подготовка...';
 
     try {
-      const fileUrl = await this.uploadFileToServer(file, (pct, statusText) => {
+      const targetChatId = this.currentChatId;
+      const upload = await this.uploadFileToServer(file, targetChatId, (pct, statusText) => {
         this.el.uploadProgressFill.style.width = pct + '%';
         this.el.uploadFileStats.innerText = `${statusText} (${pct}%)`;
       });
@@ -833,14 +856,14 @@ class GlobalMessenger {
 
       // Оптимистичный пузырь для UX
       const filePayload = {
-        id: 'file_' + Date.now(),
+        id: upload.mediaId,
+        mediaId: upload.mediaId,
         name: file.name,
         size: file.size,
         mimeType,
-        url: fileUrl,
-        downloadUrl: fileUrl
+        url: URL.createObjectURL(file),
+        downloadUrl: ''
       };
-      const targetChatId = this.currentChatId;
       const tempId = 'tmp_' + Date.now();
       this.appendMessage({
         id: tempId,
@@ -851,12 +874,13 @@ class GlobalMessenger {
         createdAt: new Date().toISOString()
       }, true, targetChatId);
 
-      // Сохраняем на сервере (бэкенд ожидает mediaUrl, mimeType и caption на верхнем уровне payload)
+      // В сообщении хранится только приватный идентификатор, публичной ссылки нет.
       const res = await this.apiRequest('send', {
         sessionToken: this.session.sessionToken,
         chatId: targetChatId,
         messageType: serverMessageType,
-        mediaUrl: fileUrl,
+        mediaFileId: upload.mediaId,
+        fileName: file.name,
         mimeType,
         size: file.size,
         caption: messageText
@@ -970,6 +994,13 @@ class GlobalMessenger {
         ${checkmarks}
       </div>
     `;
+
+    const privateMediaId = msg.content && msg.content.file && msg.content.file.mediaId;
+    if (privateMediaId && !msg.content.file.url) {
+      this.hydratePrivateMedia(bubble, privateMediaId, msgChatId).catch((error) => {
+        console.warn('Не удалось загрузить защищённый файл:', error.message);
+      });
+    }
 
     bubble.querySelectorAll('.tg-photo-card').forEach(card => {
       card.addEventListener('click', (e) => {
@@ -1085,18 +1116,67 @@ class GlobalMessenger {
       });
   }
 
+  async getPrivateMediaUrl(mediaId, chatId) {
+    if (this.mediaBlobUrls.has(mediaId)) return this.mediaBlobUrls.get(mediaId);
+    if (this.mediaLoadPromises.has(mediaId)) return this.mediaLoadPromises.get(mediaId);
+
+    const loading = (async () => {
+      const parts = [];
+      let totalChunks = 1;
+      let mimeType = 'application/octet-stream';
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+        const response = await this.apiRequest('uploadMedia', {
+          sessionToken: this.session.sessionToken,
+          operation: 'download',
+          mediaId,
+          chatId,
+          chunkIndex
+        });
+        totalChunks = Number(response.totalChunks || 1);
+        mimeType = response.mimeType || mimeType;
+        const binary = atob(response.base64 || '');
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        parts.push(bytes);
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: mimeType }));
+      this.mediaBlobUrls.set(mediaId, url);
+      return url;
+    })();
+
+    this.mediaLoadPromises.set(mediaId, loading);
+    try {
+      return await loading;
+    } finally {
+      this.mediaLoadPromises.delete(mediaId);
+    }
+  }
+
+  async hydratePrivateMedia(bubble, mediaId, chatId) {
+    const url = await this.getPrivateMediaUrl(mediaId, chatId);
+    const img = bubble.querySelector('.tg-photo-card img');
+    const video = bubble.querySelector('.tg-video-card video');
+    if (img) img.src = url;
+    if (video) video.src = url;
+    bubble.querySelectorAll('.tg-photo-card, .btn-dl-action').forEach((element) => {
+      element.setAttribute('data-url', url);
+    });
+  }
+
   // Нормализует сообщение сервера к формату, понятному appendMessage
   normalizeServerMsg(msg) {
     const { messageType, content } = msg;
     if (messageType === 'photo' || messageType === 'video') {
-      // Бэкенд хранит { mediaUrl, mimeType, size, caption } в content_json
+      // Новые файлы хранятся приватно и загружаются через авторизованный API.
       const url = content.mediaUrl || '';
-      const name = url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
+      const name = content.fileName || url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
       return {
         ...msg,
         content: {
           text: content.caption || '',
           file: {
+            id: content.mediaFileId || '',
+            mediaId: content.mediaFileId || '',
             name,
             size: content.size || 0,
             mimeType: content.mimeType || (messageType === 'video' ? 'video/mp4' : 'image/jpeg'),
@@ -1230,3 +1310,4 @@ class GlobalMessenger {
 window.addEventListener('DOMContentLoaded', () => {
   window.messenger = new GlobalMessenger();
 });
+
