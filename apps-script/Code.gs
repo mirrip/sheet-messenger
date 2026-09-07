@@ -97,6 +97,8 @@ function api(action, payload) {
       return syncMessages_(payload);
     case "getUserChats":
       return getUserChats_(payload);
+    case "uploadMedia":
+      return uploadMedia_(payload);
     case "health":
       return { ok: true, serverTime: new Date().toISOString() };
     default:
@@ -615,6 +617,43 @@ function getUserChats_(payload) {
 
   const chats = Object.values(chatMap).sort(function(a, b) { return b.lastTimestamp - a.lastTimestamp; });
   return { ok: true, chats };
+}
+
+// Загрузка медиафайлов напрямую в Google Drive без клиентских токенов
+function uploadMedia_(payload) {
+  const auth = authenticate_(payload.sessionToken);
+  const base64Data = String(payload.base64 || "").trim();
+  const fileName = String(payload.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const mimeType = String(payload.mimeType || "application/octet-stream").trim();
+
+  if (!base64Data) {
+    throwApi_("EMPTY_FILE", "Файл не передан");
+  }
+
+  const decodedBytes = Utilities.base64Decode(base64Data);
+  const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
+
+  // Получаем или создаем папку для медиафайлов мессенджера
+  const folderName = "GlobalMessenger_Media";
+  const folders = DriveApp.getFoldersByName(folderName);
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  const fileId = file.getId();
+  // Формируем прямую ссылку для отображения/скачивания
+  const mediaUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+  const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+
+  return {
+    ok: true,
+    fileId,
+    mediaUrl,
+    downloadUrl,
+    size: blob.getBytes().length,
+    mimeType
+  };
 }
 
 function validatePushFid_(value) {
