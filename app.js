@@ -235,10 +235,11 @@ class TelegramApp {
     this.recInterval = null;
     this.recStartTime = null;
     this.mediaStream = null;
-    this.shouldSendRecorded = false;
+    this.pendingFiles = []; // Вложения перед отправкой
 
     this.initElements();
     this.bindEvents();
+    this.updateMainActionButtonState();
 
     if (this.currentUser) {
       this.showMainScreen();
@@ -284,6 +285,7 @@ class TelegramApp {
       messageInput: document.getElementById('message-input'),
       btnAttach: document.getElementById('btn-attach'),
       fileInput: document.getElementById('file-input'),
+      composerAttachments: document.getElementById('composer-attachments'),
       btnSend: document.getElementById('btn-send'),
 
       lightboxModal: document.getElementById('lightbox-modal'),
@@ -399,10 +401,54 @@ class TelegramApp {
 
     // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM (МИКРОФОН / КРУЖОЧЕК / ОТПРАВИТЬ)
     if (this.el.btnMainAction) {
-      this.el.btnMainAction.addEventListener('click', () => {
-        const text = this.el.messageInput.value.trim();
-        if (text) {
-          // Если есть текст — отправляем сообщение
+      let isLongPress = false;
+      let pressTimer = null;
+
+      const startHold = () => {
+        const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
+        const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
+        if (hasText || hasFiles) return;
+
+        isLongPress = false;
+        pressTimer = setTimeout(() => {
+          isLongPress = true;
+          if (this.recordMode === 'video') {
+            this.startVideoCircleRecording();
+          } else {
+            this.startVoiceRecording();
+          }
+        }, 350);
+      };
+
+      const endHold = () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      };
+
+      // Поддержка мыши
+      this.el.btnMainAction.addEventListener('mousedown', startHold);
+      this.el.btnMainAction.addEventListener('mouseup', endHold);
+      this.el.btnMainAction.addEventListener('mouseleave', endHold);
+
+      // Поддержка сенсорных экранов
+      this.el.btnMainAction.addEventListener('touchstart', startHold, { passive: true });
+      this.el.btnMainAction.addEventListener('touchend', endHold);
+      this.el.btnMainAction.addEventListener('touchcancel', endHold);
+
+      // Клик (короткий тап / клик)
+      this.el.btnMainAction.addEventListener('click', (e) => {
+        if (isLongPress) {
+          isLongPress = false;
+          return;
+        }
+
+        const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
+        const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
+
+        if (hasText || hasFiles) {
+          // Если есть текст или файл — отправляем сообщение
           this.sendMessage();
         } else {
           // Если строка пустая — короткий клик переключает режим (микрофон <-> видеокружок)
@@ -428,11 +474,13 @@ class TelegramApp {
       }
     });
 
-    // Автоподстройка высоты + АВТОМАТИЧЕСКАЯ СМЕНА КНОПКИ ПРИ ПОЯВЛЕНИИ ПЕРВОГО СИМВОЛА
-    this.el.messageInput.addEventListener('input', () => {
-      this.el.messageInput.style.height = 'auto';
-      this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
-      this.updateMainActionButtonState();
+    // Автоподстройка высоты + МГНОВЕННАЯ СМЕНА КНОПКИ ПРИ ПОЯВЛЕНИИ ПЕРВОГО СИМВОЛА
+    ['input', 'keyup', 'paste', 'change'].forEach(evt => {
+      this.el.messageInput.addEventListener(evt, () => {
+        this.el.messageInput.style.height = 'auto';
+        this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
+        this.updateMainActionButtonState();
+      });
     });
 
     // Смена аватара
@@ -844,13 +892,31 @@ class TelegramApp {
 
   async sendMessage() {
     const text = this.el.messageInput.value.trim();
-    if (!text) return;
+    const hasFiles = this.pendingFiles && this.pendingFiles.length > 0;
+
+    if (!text && !hasFiles) return;
+
+    const filesToSend = this.pendingFiles ? [...this.pendingFiles] : [];
+    this.pendingFiles = [];
+    this.renderPendingAttachments();
 
     this.el.messageInput.value = '';
     this.el.messageInput.style.height = 'auto';
     this.updateMainActionButtonState();
 
-    await this.storage.sendMessage(this.currentChatId, this.currentUser.username, text);
+    if (filesToSend.length > 0) {
+      await this.storage.sendMessage(
+        this.currentChatId,
+        this.currentUser.username,
+        text,
+        filesToSend[0],
+        null,
+        null,
+        filesToSend
+      );
+    } else {
+      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, text);
+    }
     await this.refreshData();
   }
 
@@ -874,8 +940,9 @@ class TelegramApp {
     });
 
     const fileObjects = await Promise.all(filePromises);
-    await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileObjects[0], null, null, fileObjects);
-    await this.refreshData();
+    if (!this.pendingFiles) this.pendingFiles = [];
+    this.pendingFiles.push(...fileObjects);
+    this.renderPendingAttachments();
     this.el.fileInput.value = '';
   }
 
@@ -897,15 +964,16 @@ class TelegramApp {
 
   uploadBlob(blob, filename) {
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const fileData = {
         name: filename,
         type: blob.type,
         size: blob.size,
         data: reader.result
       };
-      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileData, null, null, [fileData]);
-      await this.refreshData();
+      if (!this.pendingFiles) this.pendingFiles = [];
+      this.pendingFiles.push(fileData);
+      this.renderPendingAttachments();
     };
     reader.readAsDataURL(blob);
   }
@@ -993,40 +1061,63 @@ class TelegramApp {
 
   updateMainActionButtonState() {
     if (!this.el.btnMainAction) return;
-    const hasText = this.el.messageInput && this.el.messageInput.value.trim().length > 0;
+    const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
+    const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
+    const hasContent = hasText || hasFiles;
 
-    if (hasText) {
-      // Есть текст: кнопка отправки сообщения (самолетик)
+    if (hasContent) {
+      // Есть текст или прикрепленные файлы: кнопка отправки (самолетик)
       this.el.btnMainAction.className = 'tg-send-btn state-send';
-      this.el.btnMainAction.title = 'Отправить';
-      this.el.iconActionMic.classList.add('hidden');
-      this.el.iconActionVideo.classList.add('hidden');
-      this.el.iconActionSend.classList.remove('hidden');
+      this.el.btnMainAction.title = 'Отправить сообщение';
     } else {
-      // Нет текста: режим записи (микрофон или камера-кружочек)
+      // Нет текста и нет файлов: микрофон или видеокружок
       if (this.recordMode === 'video') {
         this.el.btnMainAction.className = 'tg-send-btn state-video';
-        this.el.btnMainAction.title = 'Видеокружок (клик — переключить на микрофон)';
-        this.el.iconActionMic.classList.add('hidden');
-        this.el.iconActionVideo.classList.remove('hidden');
-        this.el.iconActionSend.classList.add('hidden');
+        this.el.btnMainAction.title = 'Видеокружок (клик — микрофон, зажатие — запись)';
       } else {
         this.el.btnMainAction.className = 'tg-send-btn state-mic';
-        this.el.btnMainAction.title = 'Голосовое сообщение (клик — переключить на видеокружок)';
-        this.el.iconActionMic.classList.remove('hidden');
-        this.el.iconActionVideo.classList.add('hidden');
-        this.el.iconActionSend.classList.add('hidden');
+        this.el.btnMainAction.title = 'Голосовое (клик — кружочек, зажатие — запись)';
       }
     }
   }
 
+  renderPendingAttachments() {
+    if (!this.el.composerAttachments) return;
+    if (!this.pendingFiles || this.pendingFiles.length === 0) {
+      this.el.composerAttachments.innerHTML = '';
+      this.el.composerAttachments.classList.add('hidden');
+      this.updateMainActionButtonState();
+      return;
+    }
+
+    this.el.composerAttachments.classList.remove('hidden');
+    this.el.composerAttachments.innerHTML = this.pendingFiles.map((f, idx) => {
+      const isImg = f.type && f.type.startsWith('image/');
+      const icon = isImg ? '🖼️' : '📄';
+      return [
+        '<div class="tg-attach-pill">',
+        '  <span>' + icon + '</span>',
+        '  <span class="tg-attach-pill-name" title="' + this.escape(f.name) + '">' + this.escape(f.name) + '</span>',
+        '  <button type="button" class="tg-attach-pill-remove" data-idx="' + idx + '" title="Удалить">✕</button>',
+        '</div>'
+      ].join('');
+    }).join('');
+
+    this.el.composerAttachments.querySelectorAll('.tg-attach-pill-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        this.pendingFiles.splice(idx, 1);
+        this.renderPendingAttachments();
+      });
+    });
+
+    this.updateMainActionButtonState();
+  }
+
   toggleRecordMode() {
     // Короткий клик переключает микрофон <-> видеокамера
-    if (this.recordMode === 'mic') {
-      this.recordMode = 'video';
-    } else {
-      this.recordMode = 'mic';
-    }
+    this.recordMode = this.recordMode === 'mic' ? 'video' : 'mic';
     this.updateMainActionButtonState();
   }
 
