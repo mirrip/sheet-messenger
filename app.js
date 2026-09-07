@@ -7,10 +7,7 @@ class GlobalMessenger {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
       PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbwcyFjnZkPZ7YB3z4kvVl9E_31rAcX-F6ryc2DHH6h6cZcoanr5OjUN2q3wWXc_S6X-hA/exec',
       SYNC_INTERVAL_MS: 1500,
-      MAX_FILE_SIZE_BYTES: 100 * 1024 * 1024,
-      GITHUB_TOKEN: ['ghp', '_5gKsjx', 'FlMBk0d2lu', 'IuSgp7MgZV', 'q1uy2IHMDN'].join(''),
-      REPO_OWNER: 'mirrip',
-      REPO_NAME: 'global-messenger'
+      MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
     };
 
     this.user = null;
@@ -784,36 +781,24 @@ class GlobalMessenger {
   }
 
   async uploadFileToServer(file, onProgress) {
-    onProgress(20, 'Кодирование исходных байтов...');
+    onProgress(25, 'Подготовка файла к отправке...');
     const base64Content = await this.readFileAsBase64(file);
 
-    const timestamp = Date.now();
-    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const serverPath = `media/files/${timestamp}_${cleanName}`;
+    onProgress(60, 'Сохранение файла в облачном хранилище...');
 
-    onProgress(50, 'Сохранение файла на сервере...');
-
-    const uploadUrl = `https://api.github.com/repos/${this.config.REPO_OWNER}/${this.config.REPO_NAME}/contents/${serverPath}`;
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': 'token ' + this.config.GITHUB_TOKEN,
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github.v3+json'
-      },
-      body: JSON.stringify({
-        message: `media: store ${file.name} (${file.size} bytes)`,
-        content: base64Content
-      })
+    const uploadRes = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      base64: base64Content
     });
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error('Ошибка сервера хранилища: ' + (errData.message || res.statusText));
+    if (!uploadRes || !uploadRes.ok) {
+      throw new Error(uploadRes && uploadRes.error ? uploadRes.error : 'Не удалось загрузить файл');
     }
 
     onProgress(100, 'Готово!');
-    return `https://raw.githubusercontent.com/${this.config.REPO_OWNER}/${this.config.REPO_NAME}/main/${serverPath}`;
+    return uploadRes.mediaUrl;
   }
 
   async handleFileSelection(e) {
