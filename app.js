@@ -16,7 +16,9 @@ class GlobalMessenger {
     this.user = null;
     this.session = null;
     this.currentChatId = 'dm:general';
-    this.lastSeq = 0;
+    this.chatSeqs = {}; // per-chat sequence: { [chatId]: number }
+    this.activeRequestId = 0; // token to cancel stale sync responses on fast switching
+    this.syncAbortController = null;
     this.pollTimer = null;
     this.renderedMessageIds = new Set();
     this.activeLightboxData = null;
@@ -174,13 +176,15 @@ class GlobalMessenger {
     this.el.authStatus.innerText = '';
   }
 
-  async apiRequest(action, payload = {}) {
+  async apiRequest(action, payload = {}, signal = null) {
     const postData = JSON.stringify({ action, payload });
-    const response = await fetch(this.config.PRIMARY_ENDPOINT, {
+    const options = {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: postData
-    });
+    };
+    if (signal) options.signal = signal;
+    const response = await fetch(this.config.PRIMARY_ENDPOINT, options);
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || 'Ошибка запроса');
     return data; // backend returns { ok, messages, ... } directly
@@ -326,6 +330,14 @@ class GlobalMessenger {
       this.recentSearches = [];
     }
 
+    // 4. Per-chat sequences
+    try {
+      const savedSeqs = localStorage.getItem('gm_seqs_' + uid);
+      this.chatSeqs = savedSeqs ? JSON.parse(savedSeqs) : {};
+    } catch (e) {
+      this.chatSeqs = {};
+    }
+
     // Populate known users registry
     this.knownUsers = new Set();
     this.frequentUsers.forEach(f => this.knownUsers.add(f.username.toLowerCase()));
@@ -341,6 +353,45 @@ class GlobalMessenger {
     localStorage.setItem('gm_chats_' + uid, JSON.stringify(this.chats));
     localStorage.setItem('gm_frequent_' + uid, JSON.stringify(this.frequentUsers));
     localStorage.setItem('gm_recent_searches_' + uid, JSON.stringify(this.recentSearches));
+    localStorage.setItem('gm_seqs_' + uid, JSON.stringify(this.chatSeqs));
+  }
+
+  getChatCacheKey(chatId) {
+    if (!this.user) return null;
+    const uid = this.user.username.toLowerCase();
+    return `gm_msgs_${uid}_${chatId}`;
+  }
+
+  getChatMessages(chatId) {
+    const key = this.getChatCacheKey(chatId);
+    if (!key) return [];
+    try {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  saveChatMessages(chatId, messages) {
+    const key = this.getChatCacheKey(chatId);
+    if (!key) return;
+    try {
+      // Сохраняем последние 200 сообщений чата в кэше для быстрого открытия
+      const toSave = (messages || []).slice(-200);
+      localStorage.setItem(key, JSON.stringify(toSave));
+    } catch (e) {
+      console.warn('Ошибка сохранения сообщений чата в localStorage:', e);
+    }
+  }
+
+  appendMessageToCache(chatId, msg) {
+    if (!chatId || !msg) return;
+    const list = this.getChatMessages(chatId);
+    const msgId = msg.id || msg.messageId;
+    if (msgId && list.some(m => (m.id || m.messageId) === msgId)) return;
+    list.push(msg);
+    this.saveChatMessages(chatId, list);
   }
 
   recordUserInteraction(targetUser) {
@@ -398,26 +449,42 @@ class GlobalMessenger {
   }
 
   openChat(chatId, title, targetUser = null) {
+    // 1. Увеличиваем токен переключения, отменяем старый сетевой запрос
+    this.activeRequestId++;
+    if (this.syncAbortController) {
+      try { this.syncAbortController.abort(); } catch (e) {}
+      this.syncAbortController = null;
+    }
+
     this.currentChatId = chatId;
-    this.lastSeq = 0;
     this.renderedMessageIds.clear();
+    this.el.messagesFeed.innerHTML = '';
     this.el.activeChatTitle.innerText = title;
 
     if (chatId === 'dm:general') {
       this.el.activeChatAvatar.innerText = '🌐';
       this.el.activeChatAvatar.style.background = 'linear-gradient(135deg, #3390ec, #1f69b3)';
-      this.el.activeChatStatus.innerText = 'в сети';
+      this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type general">Общий канал</span> • в сети';
     } else {
       const u = targetUser || title.replace('@', '');
       this.el.activeChatAvatar.innerText = (u[0] || '?').toUpperCase();
       this.el.activeChatAvatar.style.background = this.getAvatarGradient(u);
-      this.el.activeChatStatus.innerText = 'в сети';
+      this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type dm">Личный диалог</span> • в сети';
     }
 
-    this.el.messagesFeed.innerHTML = '';
+    // 2. Мгновенно отображаем сообщения из локального кэша для этого chatId
+    const cachedMessages = this.getChatMessages(chatId);
+    if (cachedMessages.length > 0) {
+      cachedMessages.forEach(msg => {
+        this.appendMessage(msg, false, chatId);
+      });
+    }
+
     this.renderChatList();
 
     if (this.el.chatView) this.el.chatView.classList.add('active');
+    
+    // 3. Запускаем досинхронизацию только свежих сообщений
     this.syncMessages();
   }
 
@@ -446,11 +513,18 @@ class GlobalMessenger {
         avatarHtml = `<div class="avatar" style="background: ${this.getAvatarGradient(u)}">${initial}</div>`;
       }
 
+      const badgeHtml = chat.isGeneral
+        ? '<span class="chat-type-badge general">Канал</span>'
+        : '<span class="chat-type-badge dm">Диалог</span>';
+
       item.innerHTML = `
         ${avatarHtml}
         <div class="chat-item-meta">
           <div class="chat-item-top">
-            <span class="chat-title">${this.escapeHtml(chat.title)}</span>
+            <div class="chat-title-wrap">
+              <span class="chat-title">${this.escapeHtml(chat.title)}</span>
+              ${badgeHtml}
+            </div>
             <span class="chat-time">${this.escapeHtml(chat.lastTime || '')}</span>
           </div>
           <div class="chat-preview">${this.escapeHtml(chat.lastMsg || 'Нажмите, чтобы начать общение')}</div>
@@ -663,26 +737,33 @@ class GlobalMessenger {
     this.el.messageInput.value = '';
     this.el.messageInput.style.height = 'auto';
 
+    const targetChatId = this.currentChatId;
     const tempId = 'tmp_' + Date.now();
-    this.appendMessage({
+    const optimisticMsg = {
       id: tempId,
       messageId: tempId,
+      chatId: targetChatId,
       senderUsername: this.user.username,
       content: { text },
       createdAt: new Date().toISOString()
-    }, true);
+    };
+
+    this.appendMessage(optimisticMsg, true, targetChatId);
 
     try {
-      // Для DM нужен chatId напрямую (бэкенд поддерживает через authorizeChat_)
       const sendPayload = {
         sessionToken: this.session.sessionToken,
-        chatId: this.currentChatId,
+        chatId: targetChatId,
         messageType: 'text',
         text
       };
       const res = await this.apiRequest('send', sendPayload);
       if (res && res.message) {
-        this.lastSeq = Math.max(this.lastSeq, res.message.seq);
+        const currentSeq = this.chatSeqs[targetChatId] || 0;
+        this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
+        this.saveUserStorage();
+        // Сохраняем подтвержденное сообщение в локальный кэш этого чата
+        this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
       }
     } catch (err) {
       console.error('Ошибка отправки:', err);
@@ -774,25 +855,34 @@ class GlobalMessenger {
         url: fileUrl,
         downloadUrl: fileUrl
       };
+      const targetChatId = this.currentChatId;
       const tempId = 'tmp_' + Date.now();
       this.appendMessage({
         id: tempId,
         messageId: tempId,
+        chatId: targetChatId,
         senderUsername: this.user.username,
         content: { text: messageText, file: filePayload },
         createdAt: new Date().toISOString()
-      }, true);
+      }, true, targetChatId);
 
       // Сохраняем на сервере (бэкенд ожидает mediaUrl, mimeType и caption на верхнем уровне payload)
-      await this.apiRequest('send', {
+      const res = await this.apiRequest('send', {
         sessionToken: this.session.sessionToken,
-        chatId: this.currentChatId,
+        chatId: targetChatId,
         messageType: serverMessageType,
         mediaUrl: fileUrl,
         mimeType,
         size: file.size,
         caption: messageText
       });
+
+      if (res && res.message) {
+        const currentSeq = this.chatSeqs[targetChatId] || 0;
+        this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
+        this.saveUserStorage();
+        this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
+      }
 
       this.el.uploadCard.classList.add('hidden');
     } catch (err) {
@@ -805,7 +895,14 @@ class GlobalMessenger {
   // FULL FORMAT TELEGRAM MESSAGE RENDERING
   // ===================================================
 
-  appendMessage(msg, isOptimistic = false) {
+  appendMessage(msg, isOptimistic = false, targetChatId = null) {
+    const msgChatId = targetChatId || msg.chatId || this.currentChatId;
+
+    // Железная защита от гонок: сообщение никогда не отобразится, если пользователь уже переключил чат
+    if (msgChatId !== this.currentChatId) {
+      return;
+    }
+
     const msgId = msg.id || msg.messageId || null;
     if (!isOptimistic && msgId && this.renderedMessageIds.has(msgId)) {
       return;
@@ -1029,23 +1126,49 @@ class GlobalMessenger {
 
   async syncMessages() {
     if (!this.session) return;
+    const targetChatId = this.currentChatId;
+    const currentReqId = this.activeRequestId;
+    const afterSeq = this.chatSeqs[targetChatId] || 0;
+
+    // Создаем AbortController для возможности отмены при быстром переключении
+    this.syncAbortController = new AbortController();
+
     try {
       const res = await this.apiRequest('sync', {
         sessionToken: this.session.sessionToken,
-        chatId: this.currentChatId,
-        afterSeq: this.lastSeq
-      });
+        chatId: targetChatId,
+        afterSeq
+      }, this.syncAbortController.signal);
+
+      // Проверяем, актуален ли ответ (пользователь мог переключить чат во время запроса)
+      if (currentReqId !== this.activeRequestId || targetChatId !== this.currentChatId) {
+        return;
+      }
 
       if (res.messages && res.messages.length > 0) {
-        for (const msg of res.messages) {
-          if (msg.seq > this.lastSeq) {
-            this.lastSeq = msg.seq;
-            this.appendMessage(this.normalizeServerMsg(msg));
+        let maxSeq = afterSeq;
+        for (const rawMsg of res.messages) {
+          // Игнорируем чужой chatId, если бэкенд случайно вернул чужое сообщение
+          const msgChatId = rawMsg.chatId === 'general' ? 'dm:general' : rawMsg.chatId;
+          if (msgChatId !== targetChatId) continue;
+
+          if (rawMsg.seq > maxSeq) {
+            maxSeq = rawMsg.seq;
           }
+          const normMsg = this.normalizeServerMsg(rawMsg);
+          this.appendMessage(normMsg, false, targetChatId);
+          this.appendMessageToCache(targetChatId, normMsg);
+        }
+
+        if (maxSeq > afterSeq) {
+          this.chatSeqs[targetChatId] = maxSeq;
+          this.saveUserStorage();
         }
       }
     } catch (err) {
-      console.warn('Синхронизация:', err.message);
+      if (err.name !== 'AbortError') {
+        console.warn('Синхронизация:', err.message);
+      }
     }
   }
 
