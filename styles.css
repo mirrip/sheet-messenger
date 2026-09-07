@@ -1094,16 +1094,31 @@ html, body {
 /* ===================================================
    TELEGRAM VIDEO CIRCLE (КРУЖОЧКИ)
    =================================================== */
+.tg-msg-bubble.is-circle {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  min-width: auto !important;
+}
+
+.tg-msg-bubble.is-circle .tg-sender-heading {
+  margin-bottom: 4px;
+  padding-left: 8px;
+}
+
 .tg-circle-card {
   width: 240px;
   height: 240px;
   border-radius: 50%;
   overflow: hidden;
   position: relative;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
   margin: 4px 0;
   cursor: pointer;
   background: #000;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  display: block;
 }
 
 .tg-circle-card video {
@@ -1111,6 +1126,21 @@ html, body {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  display: block;
+}
+
+.tg-circle-time-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 50%;
+  transform: translateX(50%);
+  background: rgba(0, 0, 0, 0.65);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: #fff;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .tg-circle-play-overlay {
@@ -1126,8 +1156,10 @@ html, body {
   align-items: center;
   justify-content: center;
   color: #fff;
+  font-size: 18px;
   pointer-events: none;
   transition: opacity 0.2s;
+  z-index: 3;
 }
 
 .tg-circle-card.playing .tg-circle-play-overlay {
