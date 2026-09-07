@@ -2,8 +2,7 @@ const SHEETS = Object.freeze({
   USERS: "Users",
   DEVICES: "Devices",
   MESSAGES: "Messages",
-  CONFIG: "Config",
-  PROFILES: "Profiles"
+  CONFIG: "Config"
 });
 
 const HEADERS = Object.freeze({
@@ -47,20 +46,22 @@ const HEADERS = Object.freeze({
     "edited_at",
     "deleted_at"
   ],
-  CONFIG: ["key", "value"],
-  PROFILES: ["user_id", "username", "display_name", "bio", "avatar_url", "updated_at"]
+  CONFIG: ["key", "value"]
 });
 
 const USERNAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}._]{2,31}$/u;
-const MESSAGE_TYPES = Object.freeze(["text", "photo", "video", "audio"]);
+const MESSAGE_TYPES = Object.freeze(["text", "photo", "video"]);
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4000;
 const MAX_PHONE_LENGTH = 32;
-const MAX_MEDIA_SIZE_BYTES = 1024 * 1024 * 1024;
+const MEDIA_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
+const MEDIA_MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MEDIA_MANIFEST_FILE = ".gm-manifest.json";
+const MEDIA_CHUNK_PREFIX = "chunk_";
 
 function doGet() {
-  return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.0" });
+  return jsonOutput_({ ok: true, service: "sheet-messenger", version: "0.3.2" });
 }
 
 function doPost(event) {
@@ -88,10 +89,6 @@ function api(action, payload) {
       return getMe_(payload);
     case "updatePhone":
       return updatePhone_(payload);
-    case "getProfile":
-      return getProfile_(payload);
-    case "updateProfile":
-      return updateProfile_(payload);
     case "searchUsers":
       return searchUsers_(payload);
     case "registerPush":
@@ -113,26 +110,36 @@ function api(action, payload) {
   }
 }
 
-function setupProject() {
-  const storedId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
-  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const spreadsheet = storedId ? SpreadsheetApp.openById(storedId) : activeSpreadsheet;
+const DEFAULT_DATABASE_SPREADSHEET_ID = "1WesvVOUgneIPSlfG5BYgTzA1lOurdjtsOCPdvclquv8";
 
-  if (!spreadsheet) {
-    throw new Error("Укажите SPREADSHEET_ID в свойствах скрипта или откройте Apps Script из таблицы");
+function setupProject() {
+  const properties = PropertiesService.getScriptProperties();
+  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const authSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_AUTH_ID", activeSpreadsheet);
+  const messagesSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_MESSAGES_ID", activeSpreadsheet);
+  const archiveSpreadsheet = openConfiguredSpreadsheet_("SPREADSHEET_ARCHIVE_ID", activeSpreadsheet);
+
+  if (!authSpreadsheet) {
+    throw new Error("Не удалось открыть таблицу базы данных: " + DEFAULT_DATABASE_SPREADSHEET_ID);
   }
 
-  ensureSheet_(spreadsheet, SHEETS.USERS, HEADERS.USERS);
-  ensureSheet_(spreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
-  ensureSheet_(spreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
-  ensureSheet_(spreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
-  ensureSheet_(spreadsheet, SHEETS.PROFILES, HEADERS.PROFILES);
+  ensureSheet_(authSpreadsheet, SHEETS.USERS, HEADERS.USERS);
+  ensureSheet_(authSpreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
+  ensureSheet_(messagesSpreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
+  ensureSheet_(archiveSpreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
 
-  const properties = PropertiesService.getScriptProperties();
-  properties.setProperty("SPREADSHEET_ID", spreadsheet.getId());
+  properties.setProperty("SPREADSHEET_AUTH_ID", authSpreadsheet.getId());
+  properties.setProperty("SPREADSHEET_MESSAGES_ID", messagesSpreadsheet.getId());
+  properties.setProperty("SPREADSHEET_ARCHIVE_ID", archiveSpreadsheet.getId());
   getAuthPepper_();
 
-  return { ok: true, spreadsheetId: spreadsheet.getId(), schemaVersion: "0.3.0" };
+  return {
+    ok: true,
+    authSpreadsheetId: authSpreadsheet.getId(),
+    messagesSpreadsheetId: messagesSpreadsheet.getId(),
+    archiveSpreadsheetId: archiveSpreadsheet.getId(),
+    schemaVersion: "0.3.0"
+  };
 }
 
 function registerUser_(payload) {
@@ -234,75 +241,22 @@ function updatePhone_(payload) {
   return { ok: true, user: publicUser_(auth.user) };
 }
 
-function getProfilesSheet_(spreadsheet) {
-  let sheet = spreadsheet.getSheetByName(SHEETS.PROFILES);
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(SHEETS.PROFILES);
-    sheet.getRange(1, 1, 1, HEADERS.PROFILES.length).setValues([HEADERS.PROFILES]);
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-function profileFromRow_(row, fallbackUsername) {
-  return {
-    username: String(row && row[1] || fallbackUsername || ""),
-    displayName: String(row && row[2] || "") || ("@" + String(fallbackUsername || "")),
-    bio: String(row && row[3] || ""),
-    avatarUrl: String(row && row[4] || ""),
-    updatedAt: String(row && row[5] || "")
-  };
-}
-
-function getProfile_(payload) {
-  const auth = authenticate_(payload.sessionToken);
-  const usernameKey = normalizeUsername_(String(payload.username || auth.user.username));
-  const userRow = findRowByValue_(auth.usersSheet, 3, usernameKey);
-  if (!userRow || String(userRow.values[6]) !== "active") {
-    throwApi_("USER_NOT_FOUND", "Пользователь не найден");
-  }
-  const sheet = getProfilesSheet_(auth.spreadsheet);
-  const profileRow = findRowByValue_(sheet, 1, String(userRow.values[0]));
-  return {
-    ok: true,
-    profile: profileFromRow_(profileRow ? profileRow.values : null, String(userRow.values[1]))
-  };
-}
-
-function updateProfile_(payload) {
-  const auth = authenticate_(payload.sessionToken);
-  const displayName = String(payload.displayName || "").trim().slice(0, 48);
-  const bio = String(payload.bio || "").trim().slice(0, 160);
-  const avatarUrl = String(payload.avatarUrl || "").trim().slice(0, 2000);
-  if (avatarUrl && !/^https:\/\//i.test(avatarUrl)) {
-    throwApi_("INVALID_AVATAR_URL", "Некорректный адрес аватара");
-  }
-  const sheet = getProfilesSheet_(auth.spreadsheet);
-  const now = new Date().toISOString();
-  const values = [auth.user.userId, auth.user.username, displayName, bio, avatarUrl, now];
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const row = findRowByValue_(sheet, 1, auth.user.userId);
-    if (row) sheet.getRange(row.rowIndex, 1, 1, values.length).setValues([values]);
-    else sheet.appendRow(values);
-  } finally {
-    lock.releaseLock();
-  }
-  return { ok: true, profile: profileFromRow_(values, auth.user.username) };
-}
-
 function searchUsers_(payload) {
   const auth = authenticate_(payload.sessionToken);
-  const query = normalizeUsername_(String(payload.query || "").trim());
-  if (query.length < 2) throwApi_("QUERY_TOO_SHORT", "Введите минимум два символа");
+  const rawQuery = String(payload.query || "").trim();
+  const query = normalizeUsername_(rawQuery.replace(/^@/, ""));
+  if (query.length < 1) throwApi_("QUERY_TOO_SHORT", "Введите минимум один символ для поиска");
 
   const rows = readDataRows_(auth.usersSheet, HEADERS.USERS.length);
   const users = rows
     .filter((row) => String(row[6]) === "active")
-    .filter((row) => String(row[2]).indexOf(query) === 0)
-    .filter((row) => String(row[0]) !== auth.user.userId)
-    .slice(0, 20)
+    .filter((row) => {
+      const uKey = String(row[2] || "").toLowerCase();
+      const uName = String(row[1] || "").toLowerCase();
+      return uKey.indexOf(query) !== -1 || uName.indexOf(query) !== -1;
+    })
+    .filter((row) => String(row[0]) !== auth.user.userId && normalizeUsername_(String(row[1])) !== normalizeUsername_(auth.user.username))
+    .slice(0, 30)
     .map((row) => ({ userId: String(row[0]), username: String(row[1]) }));
 
   return { ok: true, users };
@@ -347,7 +301,6 @@ function sendMessage_(payload) {
   let recipient = null;
 
   if (recipientUserId) {
-    // Классический режим: явный recipientUserId
     recipient = findActiveRecipient_(auth, recipientUserId);
     chatId = directChatId_(auth.user.username, recipient.username);
   } else {
@@ -363,7 +316,7 @@ function sendMessage_(payload) {
   }
 
   const messageType = String(payload.messageType || "text").toLowerCase();
-  const content = normalizeMessageContent_(messageType, payload);
+  const content = normalizeMessageContent_(messageType, payload, auth, chatId);
   const replyToMessageId = payload.replyToMessageId
     ? validateId_(payload.replyToMessageId, "reply_to_message_id")
     : "";
@@ -381,7 +334,7 @@ function sendMessage_(payload) {
       throwApi_("RATE_LIMITED", "Можно отправлять не больше одного сообщения в секунду");
     }
 
-    const messagesSheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+    const messagesSheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
     const seq = Math.max(1, messagesSheet.getLastRow());
     message = {
       seq,
@@ -432,7 +385,7 @@ function syncMessages_(payload) {
   
   // Строгая проверка доступа по username
   authorizeChatByUsername_(auth.user.username, chatId);
-  const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+  const sheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
 
   if (lastRow <= 1 || afterSeq >= lastRow - 1) {
@@ -480,6 +433,8 @@ function authenticate_(sessionToken) {
 
   return {
     spreadsheet,
+    messagesSpreadsheet: getMessagesSpreadsheet_(),
+    archiveSpreadsheet: getArchiveSpreadsheet_(),
     devicesSheet,
     usersSheet,
     deviceRowIndex: deviceRow.rowIndex,
@@ -525,9 +480,9 @@ function clearPrimaryDevices_(sheet, userId) {
   });
 }
 
-function normalizeMessageContent_(messageType, payload) {
+function normalizeMessageContent_(messageType, payload, auth, chatId) {
   if (MESSAGE_TYPES.indexOf(messageType) === -1) {
-    throwApi_("INVALID_MESSAGE_TYPE", "Поддерживаются text, photo, video и audio");
+    throwApi_("INVALID_MESSAGE_TYPE", "Поддерживаются text, photo и video");
   }
 
   if (messageType === "text") {
@@ -551,16 +506,32 @@ function normalizeMessageContent_(messageType, payload) {
     throwApi_("CAPTION_TOO_LONG", "Подпись длиннее 4000 символов");
   }
 
+  if (mediaFileId) {
+    const manifest = getPrivateMediaManifest_(mediaFileId);
+    if (manifest.status !== "ready"
+        || manifest.ownerUserId !== auth.user.userId
+        || manifest.chatId !== chatId) {
+      throwApi_("MEDIA_ACCESS_DENIED", "Файл недоступен для этого сообщения");
+    }
+    return {
+      mediaFileId,
+      mediaUrl: "",
+      fileName: manifest.fileName,
+      mimeType: manifest.mimeType,
+      size: manifest.size,
+      chunkSize: manifest.chunkSize,
+      totalChunks: manifest.totalChunks,
+      thumbnailUrl: "",
+      caption
+    };
+  }
+
   return {
     mediaFileId: mediaFileId.slice(0, 200),
     mediaUrl: mediaUrl.slice(0, 2000),
-    downloadUrl: String(payload.downloadUrl || mediaUrl).trim().slice(0, 2000),
-    checksum: String(payload.checksum || "").trim().slice(0, 100),
     mimeType: String(payload.mimeType || "").trim().slice(0, 100),
     size: Math.max(0, Number(payload.size || 0)),
     thumbnailUrl: String(payload.thumbnailUrl || "").trim().slice(0, 2000),
-    fileName: String(payload.fileName || "").trim().slice(0, 240),
-    mediaKind: String(payload.mediaKind || "").trim().slice(0, 30),
     caption
   };
 }
@@ -638,19 +609,13 @@ function authorizeChatByUsername_(username, chatId) {
 function getUserChats_(payload) {
   const auth = authenticate_(payload.sessionToken);
   const myUsername = normalizeUsername_(auth.user.username);
-  const sheet = auth.spreadsheet.getSheetByName(SHEETS.MESSAGES);
+  const sheet = auth.messagesSpreadsheet.getSheetByName(SHEETS.MESSAGES);
   const lastRow = sheet.getLastRow();
 
   if (lastRow <= 1) return { ok: true, chats: [] };
 
   const rows = sheet.getRange(2, 1, lastRow - 1, HEADERS.MESSAGES.length).getValues();
   const chatMap = {};
-  const profilesSheet = getProfilesSheet_(auth.spreadsheet);
-  const profileRows = readDataRows_(profilesSheet, HEADERS.PROFILES.length);
-  const profileMap = {};
-  profileRows.forEach(function(row) {
-    profileMap[normalizeUsername_(String(row[1]))] = profileFromRow_(row, String(row[1]));
-  });
 
   rows.forEach(function(row) {
     const msg = messageFromRow_(row);
@@ -678,17 +643,12 @@ function getUserChats_(payload) {
         snippet = "🎬 Видео";
       } else if (msg.messageType === "photo") {
         snippet = "📷 Фото";
-      } else if (msg.messageType === "audio") {
-        snippet = "🎙 Голосовое сообщение";
       }
-
-      const peerProfile = peerUsername ? profileMap[peerUsername] : null;
 
       chatMap[msg.chatId] = {
         chatId: msg.chatId,
         peerUsername,
-        peerDisplayName: peerProfile ? peerProfile.displayName : (peerUsername ? "@" + peerUsername : ""),
-        peerAvatarUrl: peerProfile ? peerProfile.avatarUrl : "",
+        lastSender: msg.senderUsername,
         lastSnippet: snippet,
         lastTime: new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         lastTimestamp: new Date(msg.createdAt).getTime(),
@@ -701,164 +661,196 @@ function getUserChats_(payload) {
   return { ok: true, chats };
 }
 
-// Загрузка медиафайлов напрямую в Google Drive без клиентских токенов
+// Приватное чанковое хранилище. Ни папка, ни файлы не публикуются по ссылке.
 function uploadMedia_(payload) {
   const auth = authenticate_(payload.sessionToken);
-  const operation = String(payload.operation || "").trim();
-  if (operation === "startResumable") return startResumableMediaUpload_(auth, payload);
-  if (operation === "finishResumable") return finishResumableMediaUpload_(auth, payload);
-
-  const base64Data = String(payload.base64 || "").trim();
-  const fileName = sanitizeMediaFileName_(payload.fileName);
-  const mimeType = String(payload.mimeType || "application/octet-stream").trim();
-
-  if (!base64Data) {
-    throwApi_("EMPTY_FILE", "Файл не передан");
-  }
-
-  const decodedBytes = Utilities.base64Decode(base64Data);
-  const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
-
-  // Получаем или создаем папку для медиафайлов мессенджера
-  const folderName = "GlobalMessenger_Media";
-  const folders = DriveApp.getFoldersByName(folderName);
-  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-
-  const file = folder.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-  const fileId = file.getId();
-  // Формируем прямую ссылку для отображения/скачивания
-  const mediaUrl = "https://lh3.googleusercontent.com/d/" + fileId;
-  const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
-
-  return {
-    ok: true,
-    fileId,
-    mediaUrl,
-    downloadUrl,
-    size: blob.getBytes().length,
-    mimeType
-  };
+  const operation = String(payload.operation || "").trim().toLowerCase();
+  if (operation === "start") return startPrivateMediaUpload_(auth, payload);
+  if (operation === "chunk") return savePrivateMediaChunk_(auth, payload);
+  if (operation === "finish") return finishPrivateMediaUpload_(auth, payload);
+  if (operation === "download") return downloadPrivateMediaChunk_(auth, payload);
+  throwApi_("INVALID_MEDIA_OPERATION", "Неизвестная операция с файлом");
 }
 
-// Крупный файл передаётся браузером непосредственно в закрытую resumable-сессию Drive.
-// Apps Script только создаёт сессию и после загрузки сверяет владельца, чат и размер.
-function startResumableMediaUpload_(auth, payload) {
+// Одноразовая миграция ранее загруженных публичных файлов.
+function privatizeLegacyMediaFiles() {
+  let updated = 0;
+  const folders = DriveApp.getFoldersByName("GlobalMessenger_Media");
+  while (folders.hasNext()) {
+    const folder = folders.next();
+    const files = folder.getFiles();
+    while (files.hasNext()) {
+      files.next().setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+      updated += 1;
+    }
+    folder.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+  }
+  return { ok: true, updated };
+}
+
+function startPrivateMediaUpload_(auth, payload) {
   let chatId = String(payload.chatId || "dm:general").trim();
   if (chatId === "general") chatId = "dm:general";
   authorizeChatByUsername_(auth.user.username, chatId);
 
   const size = Math.floor(Number(payload.size || 0));
-  if (size <= 0 || size > MAX_MEDIA_SIZE_BYTES) {
-    throwApi_("INVALID_FILE_SIZE", "Допустимый размер файла: до 1 ГБ");
+  const chunkSize = Math.floor(Number(payload.chunkSize || 0));
+  const totalChunks = Math.floor(Number(payload.totalChunks || 0));
+  if (size <= 0 || size > MEDIA_MAX_FILE_SIZE_BYTES) {
+    throwApi_("FILE_TOO_LARGE", "Допустимый размер файла: до 100 МБ");
+  }
+  if (chunkSize <= 0 || chunkSize > MEDIA_CHUNK_SIZE_BYTES
+      || totalChunks !== Math.ceil(size / chunkSize)) {
+    throwApi_("INVALID_CHUNK_PLAN", "Некорректный план загрузки файла");
   }
 
-  const fileName = sanitizeMediaFileName_(payload.fileName);
-  const mimeType = String(payload.mimeType || "application/octet-stream").trim().slice(0, 100);
-  const folder = getLargeMediaFolder_();
-  const metadata = {
-    name: fileName,
-    parents: [folder.getId()],
-    appProperties: {
-      gmOwner: auth.user.userId,
-      gmChat: chatId,
-      gmExpectedSize: String(size)
-    }
+  const root = getPrivateMediaRoot_();
+  const folder = root.createFolder("media_" + compactUuid_());
+  const manifest = {
+    version: 1,
+    status: "uploading",
+    ownerUserId: auth.user.userId,
+    ownerUsername: auth.user.username,
+    chatId,
+    fileName: sanitizePrivateFileName_(payload.fileName),
+    mimeType: String(payload.mimeType || "application/octet-stream").slice(0, 100),
+    size,
+    chunkSize,
+    totalChunks,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
-  const response = UrlFetchApp.fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,md5Checksum",
-    {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(metadata),
-      headers: {
-        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
-        "X-Upload-Content-Type": mimeType,
-        "X-Upload-Content-Length": String(size)
-      },
-      muteHttpExceptions: true
-    }
-  );
-  const status = response.getResponseCode();
-  const headers = response.getAllHeaders();
-  const sessionUrl = String(headers.Location || headers.location || "");
-  if (status < 200 || status >= 300 || !sessionUrl) {
-    throwApi_("UPLOAD_SESSION_FAILED", "Drive не создал сессию загрузки: HTTP " + status);
-  }
-  return { ok: true, sessionUrl, size, mimeType, fileName };
+  folder.createFile(MEDIA_MANIFEST_FILE, JSON.stringify(manifest), MimeType.PLAIN_TEXT);
+  return { ok: true, mediaId: folder.getId(), chunkSize, totalChunks };
 }
 
-function finishResumableMediaUpload_(auth, payload) {
-  let chatId = String(payload.chatId || "dm:general").trim();
-  if (chatId === "general") chatId = "dm:general";
-  authorizeChatByUsername_(auth.user.username, chatId);
+function savePrivateMediaChunk_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  assertPrivateMediaOwner_(auth, manifest);
+  if (manifest.status !== "uploading") throwApi_("UPLOAD_CLOSED", "Загрузка уже завершена");
 
-  const fileId = validateDriveFileId_(payload.fileId);
-  const expectedSize = Math.floor(Number(payload.expectedSize || 0));
-  const response = UrlFetchApp.fetch(
-    "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId)
-      + "?fields=id,name,mimeType,size,md5Checksum,parents,appProperties",
-    {
-      method: "get",
-      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-      muteHttpExceptions: true
-    }
-  );
-  if (response.getResponseCode() !== 200) {
-    throwApi_("UPLOAD_VERIFY_FAILED", "Не удалось проверить загруженный файл");
+  const chunkIndex = Math.floor(Number(payload.chunkIndex));
+  if (chunkIndex < 0 || chunkIndex >= manifest.totalChunks) {
+    throwApi_("INVALID_CHUNK_INDEX", "Некорректный номер части");
   }
-  const data = JSON.parse(response.getContentText() || "{}");
-  const properties = data.appProperties || {};
-  const folderId = getLargeMediaFolder_().getId();
-  if (properties.gmOwner !== auth.user.userId
-      || properties.gmChat !== chatId
-      || (data.parents || []).indexOf(folderId) === -1) {
-    throwApi_("MEDIA_ACCESS_DENIED", "Файл не принадлежит этой загрузке");
-  }
-  const actualSize = Number(data.size || 0);
-  if (!expectedSize || actualSize !== expectedSize
-      || Number(properties.gmExpectedSize || 0) !== expectedSize) {
-    throwApi_("FILE_SIZE_MISMATCH", "Размер файла после загрузки не совпадает");
+  const bytes = Utilities.base64Decode(String(payload.base64 || ""));
+  const expected = chunkIndex === manifest.totalChunks - 1
+    ? manifest.size - chunkIndex * manifest.chunkSize
+    : manifest.chunkSize;
+  if (bytes.length !== expected || bytes.length > MEDIA_CHUNK_SIZE_BYTES) {
+    throwApi_("INVALID_CHUNK_SIZE", "Некорректный размер части файла");
   }
 
-  const file = DriveApp.getFileById(fileId);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  const resourceKey = String(file.getResourceKey ? (file.getResourceKey() || "") : "");
-  const suffix = resourceKey ? "&resourcekey=" + encodeURIComponent(resourceKey) : "";
+  const name = privateChunkName_(chunkIndex);
+  const previous = folder.getFilesByName(name);
+  while (previous.hasNext()) previous.next().setTrashed(true);
+  folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", name));
+  return { ok: true, mediaId, chunkIndex };
+}
+
+function finishPrivateMediaUpload_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  assertPrivateMediaOwner_(auth, manifest);
+
+  let totalSize = 0;
+  for (let index = 0; index < manifest.totalChunks; index += 1) {
+    const files = folder.getFilesByName(privateChunkName_(index));
+    if (!files.hasNext()) throwApi_("UPLOAD_INCOMPLETE", "Не все части файла загружены");
+    totalSize += Number(files.next().getSize());
+    if (files.hasNext()) throwApi_("DUPLICATE_CHUNK", "Обнаружена лишняя часть файла");
+  }
+  if (totalSize !== manifest.size) throwApi_("INVALID_FILE_SIZE", "Размер загруженного файла не совпадает");
+
+  manifest.status = "ready";
+  manifest.updatedAt = new Date().toISOString();
+  writePrivateMediaManifest_(folder, manifest);
   return {
     ok: true,
-    fileId,
-    mediaUrl: "https://lh3.googleusercontent.com/d/" + fileId,
-    downloadUrl: "https://drive.google.com/uc?export=download&id=" + fileId + suffix,
-    fileName: String(data.name || "file"),
-    mimeType: String(data.mimeType || "application/octet-stream"),
-    size: actualSize,
-    checksum: String(data.md5Checksum || "")
+    mediaId,
+    fileName: manifest.fileName,
+    mimeType: manifest.mimeType,
+    size: manifest.size,
+    chunkSize: manifest.chunkSize,
+    totalChunks: manifest.totalChunks
   };
 }
 
-function getLargeMediaFolder_() {
+function downloadPrivateMediaChunk_(auth, payload) {
+  const mediaId = validatePrivateMediaId_(payload.mediaId);
+  const folder = DriveApp.getFolderById(mediaId);
+  const manifest = readPrivateMediaManifest_(folder);
+  if (manifest.status !== "ready") throwApi_("MEDIA_NOT_READY", "Файл ещё не готов");
+  authorizeChatByUsername_(auth.user.username, manifest.chatId);
+
+  const chunkIndex = Math.floor(Number(payload.chunkIndex));
+  if (chunkIndex < 0 || chunkIndex >= manifest.totalChunks) {
+    throwApi_("INVALID_CHUNK_INDEX", "Некорректный номер части");
+  }
+  const files = folder.getFilesByName(privateChunkName_(chunkIndex));
+  if (!files.hasNext()) throwApi_("MEDIA_CORRUPTED", "Часть файла отсутствует");
+  return {
+    ok: true,
+    mediaId,
+    chunkIndex,
+    totalChunks: manifest.totalChunks,
+    fileName: manifest.fileName,
+    mimeType: manifest.mimeType,
+    size: manifest.size,
+    base64: Utilities.base64Encode(files.next().getBlob().getBytes())
+  };
+}
+
+function getPrivateMediaRoot_() {
   const properties = PropertiesService.getScriptProperties();
-  const storedId = properties.getProperty("LARGE_MEDIA_FOLDER_ID");
+  const storedId = properties.getProperty("PRIVATE_MEDIA_ROOT_ID");
   if (storedId) {
     try { return DriveApp.getFolderById(storedId); } catch (error) { console.warn(error); }
   }
-  const folders = DriveApp.getFoldersByName("GlobalMessenger_Media");
-  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("GlobalMessenger_Media");
-  properties.setProperty("LARGE_MEDIA_FOLDER_ID", folder.getId());
+  const folder = DriveApp.createFolder("GlobalMessenger_Private_Media");
+  properties.setProperty("PRIVATE_MEDIA_ROOT_ID", folder.getId());
   return folder;
 }
 
-function sanitizeMediaFileName_(value) {
-  const name = String(value || "file").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim();
-  return (name || "file").slice(0, 180);
+function getPrivateMediaManifest_(mediaId) {
+  return readPrivateMediaManifest_(DriveApp.getFolderById(validatePrivateMediaId_(mediaId)));
 }
 
-function validateDriveFileId_(value) {
+function readPrivateMediaManifest_(folder) {
+  const files = folder.getFilesByName(MEDIA_MANIFEST_FILE);
+  if (!files.hasNext()) throwApi_("MEDIA_NOT_FOUND", "Файл не найден");
+  try { return JSON.parse(files.next().getBlob().getDataAsString()); }
+  catch (error) { throwApi_("MEDIA_CORRUPTED", "Повреждены данные файла"); }
+}
+
+function writePrivateMediaManifest_(folder, manifest) {
+  const files = folder.getFilesByName(MEDIA_MANIFEST_FILE);
+  if (!files.hasNext()) throwApi_("MEDIA_NOT_FOUND", "Файл не найден");
+  files.next().setContent(JSON.stringify(manifest));
+}
+
+function assertPrivateMediaOwner_(auth, manifest) {
+  if (manifest.ownerUserId !== auth.user.userId) {
+    throwApi_("MEDIA_ACCESS_DENIED", "Нет доступа к загрузке");
+  }
+}
+
+function validatePrivateMediaId_(value) {
   const id = String(value || "").trim();
   if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) throwApi_("INVALID_MEDIA_ID", "Некорректный файл");
   return id;
+}
+
+function privateChunkName_(index) {
+  return MEDIA_CHUNK_PREFIX + String(index).padStart(6, "0");
+}
+
+function sanitizePrivateFileName_(value) {
+  const name = String(value || "file").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim();
+  return (name || "file").slice(0, 180);
 }
 
 function validatePushFid_(value) {
@@ -1016,9 +1008,37 @@ function base64UrlJson_(value) {
 }
 
 function getSpreadsheet_() {
-  const spreadsheetId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
-  if (!spreadsheetId) throwApi_("NOT_CONFIGURED", "Сначала запустите setupProject()");
-  return SpreadsheetApp.openById(spreadsheetId);
+  return openRequiredSpreadsheet_("SPREADSHEET_AUTH_ID");
+}
+
+function getMessagesSpreadsheet_() {
+  return openRequiredSpreadsheet_("SPREADSHEET_MESSAGES_ID");
+}
+
+function getArchiveSpreadsheet_() {
+  return openRequiredSpreadsheet_("SPREADSHEET_ARCHIVE_ID");
+}
+
+function openRequiredSpreadsheet_(propertyName) {
+  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = openConfiguredSpreadsheet_(propertyName, activeSpreadsheet);
+  if (!spreadsheet) throwApi_("NOT_CONFIGURED", "Сначала запустите setupProject()");
+  return spreadsheet;
+}
+
+function openConfiguredSpreadsheet_(propertyName, fallback) {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty(propertyName);
+  if (spreadsheetId) {
+    try {
+      return SpreadsheetApp.openById(spreadsheetId);
+    } catch (e) {}
+  }
+  if (DEFAULT_DATABASE_SPREADSHEET_ID) {
+    try {
+      return SpreadsheetApp.openById(DEFAULT_DATABASE_SPREADSHEET_ID);
+    } catch (e) {}
+  }
+  return fallback;
 }
 
 function getAuthPepper_() {
@@ -1148,4 +1168,3 @@ function jsonOutput_(value) {
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
 }
-
