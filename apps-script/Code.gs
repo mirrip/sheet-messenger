@@ -2,7 +2,8 @@ const SHEETS = Object.freeze({
   USERS: "Users",
   DEVICES: "Devices",
   MESSAGES: "Messages",
-  CONFIG: "Config"
+  CONFIG: "Config",
+  PROFILES: "Profiles"
 });
 
 const HEADERS = Object.freeze({
@@ -46,11 +47,12 @@ const HEADERS = Object.freeze({
     "edited_at",
     "deleted_at"
   ],
-  CONFIG: ["key", "value"]
+  CONFIG: ["key", "value"],
+  PROFILES: ["user_id", "username", "display_name", "bio", "avatar_url", "updated_at"]
 });
 
 const USERNAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}._]{2,31}$/u;
-const MESSAGE_TYPES = Object.freeze(["text", "photo", "video"]);
+const MESSAGE_TYPES = Object.freeze(["text", "photo", "video", "audio"]);
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_TEXT_LENGTH = 4000;
@@ -85,6 +87,10 @@ function api(action, payload) {
       return getMe_(payload);
     case "updatePhone":
       return updatePhone_(payload);
+    case "getProfile":
+      return getProfile_(payload);
+    case "updateProfile":
+      return updateProfile_(payload);
     case "searchUsers":
       return searchUsers_(payload);
     case "registerPush":
@@ -119,6 +125,7 @@ function setupProject() {
   ensureSheet_(spreadsheet, SHEETS.DEVICES, HEADERS.DEVICES);
   ensureSheet_(spreadsheet, SHEETS.MESSAGES, HEADERS.MESSAGES);
   ensureSheet_(spreadsheet, SHEETS.CONFIG, HEADERS.CONFIG);
+  ensureSheet_(spreadsheet, SHEETS.PROFILES, HEADERS.PROFILES);
 
   const properties = PropertiesService.getScriptProperties();
   properties.setProperty("SPREADSHEET_ID", spreadsheet.getId());
@@ -224,6 +231,64 @@ function updatePhone_(payload) {
   auth.usersSheet.getRange(auth.userRowIndex, 9).setValue(now);
   auth.user.phone = phone;
   return { ok: true, user: publicUser_(auth.user) };
+}
+
+function getProfilesSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(SHEETS.PROFILES);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(SHEETS.PROFILES);
+    sheet.getRange(1, 1, 1, HEADERS.PROFILES.length).setValues([HEADERS.PROFILES]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function profileFromRow_(row, fallbackUsername) {
+  return {
+    username: String(row && row[1] || fallbackUsername || ""),
+    displayName: String(row && row[2] || "") || ("@" + String(fallbackUsername || "")),
+    bio: String(row && row[3] || ""),
+    avatarUrl: String(row && row[4] || ""),
+    updatedAt: String(row && row[5] || "")
+  };
+}
+
+function getProfile_(payload) {
+  const auth = authenticate_(payload.sessionToken);
+  const usernameKey = normalizeUsername_(String(payload.username || auth.user.username));
+  const userRow = findRowByValue_(auth.usersSheet, 3, usernameKey);
+  if (!userRow || String(userRow.values[6]) !== "active") {
+    throwApi_("USER_NOT_FOUND", "Пользователь не найден");
+  }
+  const sheet = getProfilesSheet_(auth.spreadsheet);
+  const profileRow = findRowByValue_(sheet, 1, String(userRow.values[0]));
+  return {
+    ok: true,
+    profile: profileFromRow_(profileRow ? profileRow.values : null, String(userRow.values[1]))
+  };
+}
+
+function updateProfile_(payload) {
+  const auth = authenticate_(payload.sessionToken);
+  const displayName = String(payload.displayName || "").trim().slice(0, 48);
+  const bio = String(payload.bio || "").trim().slice(0, 160);
+  const avatarUrl = String(payload.avatarUrl || "").trim().slice(0, 2000);
+  if (avatarUrl && !/^https:\/\//i.test(avatarUrl)) {
+    throwApi_("INVALID_AVATAR_URL", "Некорректный адрес аватара");
+  }
+  const sheet = getProfilesSheet_(auth.spreadsheet);
+  const now = new Date().toISOString();
+  const values = [auth.user.userId, auth.user.username, displayName, bio, avatarUrl, now];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const row = findRowByValue_(sheet, 1, auth.user.userId);
+    if (row) sheet.getRange(row.rowIndex, 1, 1, values.length).setValues([values]);
+    else sheet.appendRow(values);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true, profile: profileFromRow_(values, auth.user.username) };
 }
 
 function searchUsers_(payload) {
@@ -461,7 +526,7 @@ function clearPrimaryDevices_(sheet, userId) {
 
 function normalizeMessageContent_(messageType, payload) {
   if (MESSAGE_TYPES.indexOf(messageType) === -1) {
-    throwApi_("INVALID_MESSAGE_TYPE", "Поддерживаются text, photo и video");
+    throwApi_("INVALID_MESSAGE_TYPE", "Поддерживаются text, photo, video и audio");
   }
 
   if (messageType === "text") {
@@ -491,6 +556,8 @@ function normalizeMessageContent_(messageType, payload) {
     mimeType: String(payload.mimeType || "").trim().slice(0, 100),
     size: Math.max(0, Number(payload.size || 0)),
     thumbnailUrl: String(payload.thumbnailUrl || "").trim().slice(0, 2000),
+    fileName: String(payload.fileName || "").trim().slice(0, 240),
+    mediaKind: String(payload.mediaKind || "").trim().slice(0, 30),
     caption
   };
 }
@@ -575,6 +642,12 @@ function getUserChats_(payload) {
 
   const rows = sheet.getRange(2, 1, lastRow - 1, HEADERS.MESSAGES.length).getValues();
   const chatMap = {};
+  const profilesSheet = getProfilesSheet_(auth.spreadsheet);
+  const profileRows = readDataRows_(profilesSheet, HEADERS.PROFILES.length);
+  const profileMap = {};
+  profileRows.forEach(function(row) {
+    profileMap[normalizeUsername_(String(row[1]))] = profileFromRow_(row, String(row[1]));
+  });
 
   rows.forEach(function(row) {
     const msg = messageFromRow_(row);
@@ -602,11 +675,17 @@ function getUserChats_(payload) {
         snippet = "🎬 Видео";
       } else if (msg.messageType === "photo") {
         snippet = "📷 Фото";
+      } else if (msg.messageType === "audio") {
+        snippet = "🎙 Голосовое сообщение";
       }
+
+      const peerProfile = peerUsername ? profileMap[peerUsername] : null;
 
       chatMap[msg.chatId] = {
         chatId: msg.chatId,
         peerUsername,
+        peerDisplayName: peerProfile ? peerProfile.displayName : (peerUsername ? "@" + peerUsername : ""),
+        peerAvatarUrl: peerProfile ? peerProfile.avatarUrl : "",
         lastSnippet: snippet,
         lastTime: new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         lastTimestamp: new Date(msg.createdAt).getTime(),
@@ -943,3 +1022,4 @@ function jsonOutput_(value) {
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
