@@ -5,10 +5,10 @@ window.GLOBAL_CONFIG = {
   APP_NAME: "Global Messenger",
   VERSION: "1.0.0",
   // Primary Apps Script Web App Endpoint
-  PRIMARY_ENDPOINT: "https://script.google.com/macros/s/AKfycbwcyFjnZkPZ7YB3z4kvVl9E_31rAcX-F6ryc2DHH6h6cZcoanr5OjUN2q3wWXc_S6X-hA/exec",
+  PRIMARY_ENDPOINT: "https://script.google.com/macros/s/AKfycbxeHtIu-WfsOEKZqkyGOmnWIGe362BcNt5_mKq6idGkDxMETYzSMd7wZthu4HEgri26wA/exec",
   // Failover pool for redundancy
   FAILOVER_ENDPOINTS: [
-    "https://script.google.com/macros/s/AKfycbwcyFjnZkPZ7YB3z4kvVl9E_31rAcX-F6ryc2DHH6h6cZcoanr5OjUN2q3wWXc_S6X-hA/exec"
+    "https://script.google.com/macros/s/AKfycbxeHtIu-WfsOEKZqkyGOmnWIGe362BcNt5_mKq6idGkDxMETYzSMd7wZthu4HEgri26wA/exec"
   ],
   // Sync interval when tab is active (RAM Cache in Apps Script is ~100-200ms fast)
   SYNC_INTERVAL_MS: 1500,
