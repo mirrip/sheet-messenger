@@ -1,4 +1,4 @@
-﻿/* ===================================================
+/* ===================================================
    TELEGRAM WEB A+ OFFICIAL DARK THEME & STYLES (v2.0.0)
    =================================================== */
 
@@ -1323,4 +1323,214 @@ html, body {
 
 .tg-small-btn:hover {
   background: var(--tg-primary-hover);
+}
+
+/* ===================================================
+   PROFILE AVATAR EDITING
+   =================================================== */
+.tg-profile-avatar-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.tg-avatar-edit-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--tg-primary);
+  border: 2px solid var(--tg-bg-sidebar);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.tg-avatar-edit-btn:hover {
+  transform: scale(1.1);
+  background: var(--tg-primary-hover);
+}
+
+.tg-profile-avatar-large img,
+.tg-avatar img,
+.tg-header-avatar img,
+.tg-menu-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* ===================================================
+   TELEGRAM REACTIONS & LONG PRESS POPUP
+   =================================================== */
+.tg-reactions-popup {
+  position: fixed;
+  background: rgba(23, 33, 43, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 28px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 500;
+  animation: tgPopupScale 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes tgPopupScale {
+  0% { transform: scale(0.6) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.tg-react-emoji {
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: transform 0.15s;
+  display: inline-block;
+  user-select: none;
+}
+
+.tg-react-emoji:hover {
+  transform: scale(1.35);
+}
+
+.tg-msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tg-reaction-badge {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  padding: 2px 7px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.12s, background 0.12s;
+}
+
+.tg-reaction-badge:hover {
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tg-reaction-badge.active {
+  background: rgba(51, 144, 236, 0.35);
+  border-color: var(--tg-primary);
+}
+
+/* ===================================================
+   MULTI-PHOTO GRID (ГАЛЕРЕЯ НЕСКОЛЬКИХ ФОТО)
+   =================================================== */
+.tg-photo-grid {
+  display: grid;
+  gap: 4px;
+  max-width: 440px;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.tg-photo-grid.grid-1 {
+  grid-template-columns: 1fr;
+}
+
+.tg-photo-grid.grid-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.tg-photo-grid.grid-3 {
+  grid-template-columns: 1fr 1fr;
+}
+.tg-photo-grid.grid-3 .tg-media-photo:first-child {
+  grid-column: span 2;
+}
+
+.tg-photo-grid.grid-4,
+.tg-photo-grid.grid-more {
+  grid-template-columns: 1fr 1fr;
+}
+
+.tg-photo-grid .tg-media-photo {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0;
+}
+
+.tg-photo-grid.grid-1 .tg-media-photo {
+  height: auto;
+  max-height: 380px;
+}
+
+/* ===================================================
+   ENHANCED MOBILE VERSION
+   =================================================== */
+@media (max-width: 768px) {
+  .tg-sidebar {
+    width: 100vw;
+  }
+
+  .tg-chat-view {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 25;
+    background: var(--tg-bg-chat);
+  }
+
+  .tg-mobile-back {
+    display: flex !important;
+  }
+
+  .tg-profile-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 40;
+  }
+
+  .tg-composer {
+    padding: 6px 8px 8px;
+  }
+
+  .tg-input-wrapper {
+    padding: 4px 10px 4px 14px;
+    min-height: 40px;
+  }
+
+  .tg-msg-bubble {
+    max-width: 86vw;
+  }
+
+  .tg-circle-card {
+    width: 200px;
+    height: 200px;
+  }
+
+  .tg-video-circle-preview {
+    width: 190px;
+    height: 190px;
+  }
 }
