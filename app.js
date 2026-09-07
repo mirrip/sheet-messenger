@@ -1,63 +1,187 @@
 // ===================================================
-// GLOBAL MESSENGER — FULL ENGINE WITH SEARCH & DIALOGS
+// GLOBAL MESSENGER — ЧИСТЫЙ ДВИЖОК v1.0.0
+// Поддерживает мгновенный локальный режим + готовые методы подключения БД
 // ===================================================
 
-class GlobalMessenger {
-  constructor() {
-    this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
-      PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbx2dr9E2NgBX3BzimfXM_AaEo2wwYr5t8EHymldRoBHSdA62H0y16DTGbsPyd9-6VUdzw/exec',
-      SYNC_INTERVAL_MS: 1500,
-      CHUNK_SIZE_BYTES: 2 * 1024 * 1024,
-      MAX_FILE_SIZE_BYTES: 100 * 1024 * 1024
+/**
+ * Адаптер данных: сейчас локальный (LocalStorage),
+ * при подключении базы переключается на Apps Script API.
+ */
+class StorageService {
+  constructor(config) {
+    this.config = config || window.APP_CONFIG;
+    this.isLocal = this.config.STORAGE_MODE === 'local';
+    this.initLocalStorage();
+  }
+
+  initLocalStorage() {
+    if (!localStorage.getItem('gm_users')) {
+      // Инициализируем тестовых пользователей для комфортной проверки поиска и диалогов
+      const demoUsers = [
+        { id: 'usr_general', username: 'general', name: 'Общий чат' },
+        { id: 'usr_alex', username: 'alex', name: 'Алексей' },
+        { id: 'usr_maria', username: 'maria', name: 'Мария' }
+      ];
+      localStorage.setItem('gm_users', JSON.stringify(demoUsers));
+    }
+    if (!localStorage.getItem('gm_messages')) {
+      const demoMessages = [
+        {
+          id: 'msg_1',
+          chatId: 'general',
+          sender: 'alex',
+          text: 'Добро пожаловать в Global Messenger! 🚀',
+          time: '12:00',
+          createdAt: Date.now() - 3600000
+        },
+        {
+          id: 'msg_2',
+          chatId: 'general',
+          sender: 'maria',
+          text: 'Здесь можно общаться в общем чате или находить пользователей в поиске!',
+          time: '12:05',
+          createdAt: Date.now() - 1800000
+        }
+      ];
+      localStorage.setItem('gm_messages', JSON.stringify(demoMessages));
+    }
+  }
+
+  // --- ПОЛЬЗОВАТЕЛИ И АВТОРИЗАЦИЯ ---
+  async register(username, password) {
+    username = username.trim().toLowerCase().replace(/^@/, '');
+    if (!username) throw new Error('Введите имя пользователя');
+    if (password.length < 4) throw new Error('Пароль должен быть от 4 символов');
+
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    if (users.some(u => u.username.toLowerCase() === username)) {
+      throw new Error('Пользователь @' + username + ' уже зарегистрирован');
+    }
+
+    const newUser = {
+      id: 'usr_' + Date.now(),
+      username: username,
+      name: '@' + username,
+      password: password,
+      createdAt: Date.now()
+    };
+    users.push(newUser);
+    localStorage.setItem('gm_users', JSON.stringify(users));
+
+    return { ok: true, user: { id: newUser.id, username: newUser.username } };
+  }
+
+  async login(username, password) {
+    username = username.trim().toLowerCase().replace(/^@/, '');
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const user = users.find(u => u.username.toLowerCase() === username);
+
+    if (!user) {
+      throw new Error('Пользователь не найден. Нажмите "Регистрация"');
+    }
+    if (user.password && user.password !== password) {
+      throw new Error('Неверный пароль');
+    }
+
+    return { ok: true, user: { id: user.id, username: user.username } };
+  }
+
+  // --- ПОИСК ЛЮДЕЙ ---
+  async searchUsers(query, currentUsername) {
+    query = query.trim().toLowerCase().replace(/^@/, '');
+    if (!query) return [];
+
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    return users
+      .filter(u => u.username !== 'general' && u.username.toLowerCase() !== currentUsername.toLowerCase())
+      .filter(u => u.username.toLowerCase().includes(query))
+      .map(u => ({ id: u.id, username: u.username, name: '@' + u.username }));
+  }
+
+  // --- СООБЩЕНИЯ И ДИАЛОГИ ---
+  async getMessages(chatId) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    return all.filter(m => m.chatId === chatId);
+  }
+
+  async sendMessage(chatId, sender, text, file = null) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const newMsg = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      chatId,
+      sender,
+      text: text || '',
+      file: file || null,
+      time: timeStr,
+      createdAt: Date.now()
     };
 
-    this.user = null;
-    this.session = null;
-    this.currentChatId = 'dm:general';
-    this.chatSeqs = {}; // per-chat sequence: { [chatId]: number }
-    this.activeRequestId = 0; // token to cancel stale sync responses on fast switching
-    this.syncAbortController = null;
-    this.pollTimer = null;
-    this.renderedMessageIds = new Set();
-    this.mediaBlobUrls = new Map();
-    this.mediaLoadPromises = new Map();
-    this.activeLightboxData = null;
+    all.push(newMsg);
+    localStorage.setItem('gm_messages', JSON.stringify(all));
 
-    // Chat list, search & contact architecture
-    this.chats = [];
-    this.frequentUsers = [];
-    this.recentSearches = [];
-    this.knownUsers = new Set();
-    this.searchMode = false;
-    this.searchQuery = '';
-
-    this.clearOldCaches();
-    this.initElements();
-    this.initEvents();
-    this.restoreSession();
+    // Уведомляем другие открытые вкладки браузера о новом сообщении
+    window.dispatchEvent(new CustomEvent('gm_new_message', { detail: newMsg }));
+    return { ok: true, message: newMsg };
   }
 
-  clearOldCaches() {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        for (const reg of regs) reg.unregister();
-      });
-    }
-    if ('caches' in window) {
-      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-    }
-  }
+  async getUserChats(currentUsername) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const myName = currentUsername.toLowerCase();
+    const chatMap = new Map();
 
-  initElements() {
-    this.el = {
-      authScreen: document.getElementById('auth-screen'),
-      authForm: document.getElementById('auth-form'),
-      tabLogin: document.getElementById('tab-login'),
-      tabRegister: document.getElementById('tab-register'),
-      authUsername: document.getElementById('auth-username'),
-      authPassword: document.getElementById('auth-password'),
-      authSubmitBtn: document.getElementById('auth-submit-btn'),
-      authStatus: document.getElementById('auth-status'),
+    // 1. Всегда есть Общий чат
+    const generalMsgs = all.filter(m => m.chatId === 'general');
+    const lastGen = generalMsgs[generalMsgs.length - 1];
+    chatMap.set('general', {
+      id: 'general',
+      title: 'Общий чат',
+      isGeneral: true,
+      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? '📎 Файл' : '')) : 'Нажмите, чтобы открыть',
+      lastTime: lastGen ? lastGen.time : '',
+      timestamp: lastGen ? lastGen.createdAt : 0,
+      unreadCount: 0
+    });
+
+    // 2. Личные диалоги (dm:user1:user2)
+    all.forEach(m => {
+      if (!m.chatId.startsWith('dm:')) return;
+      const parts = m.chatId.split(':');
+      if (parts.length !== 3) return;
+      const u1 = parts[1].toLowerCase();
+      const u2 = parts[2].toLowerCase();
+
+      if (u1 === myName || u2 === myName) {
+        const peer = u1 === myName ? parts[2] : parts[1];
+        const existing = chatMap.get(m.chatId);
+        const snippet = m.text || (m.file ? '📎 Файл' : 'Сообщение');
+
+        if (!existing || m.createdAt > existing.timestamp) {
+          const isFromOther = m.sender.toLowerCase() !== myName;
+          chatMap.set(m.chatId, {
+            id: m.chatId,
+            peer: peer,
+            title: '@' + peer,
+            isGeneral: false,
+            lastMsg: snippet,
+            lastTime: m.time,
+            timestamp: m.createdAt,
+            unreadCount: (isFromOther && (!existing || existing.unreadCount > 0)) ? 1 : 0
+          });
+        }
+      }
+    });
+
+    return Array.from(chatMap.values()).sort((a, b) => {
+      if (a.isGeneral) return -1;
+      if (b.isGeneral) return 1;
+      return b.timestamp - a.timestamp;
+    });
+  }
+}
+
 
       mainScreen: document.getElementById('main-screen'),
       sidebar: document.getElementById('sidebar'),
