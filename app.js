@@ -17,8 +17,17 @@ class GlobalMessenger {
     this.activeRequestId = 0; // token to cancel stale sync responses on fast switching
     this.syncAbortController = null;
     this.pollTimer = null;
+    this.chatPollTimer = null;
     this.renderedMessageIds = new Set();
     this.activeLightboxData = null;
+    this.profiles = new Map();
+    this.activeProfileUsername = null;
+    this.recorder = null;
+    this.recordingStream = null;
+    this.recordingChunks = [];
+    this.recordingKind = null;
+    this.recordingStartedAt = 0;
+    this.recordingTimer = null;
 
     // Chat list, search & contact architecture
     this.chats = [];
@@ -62,6 +71,10 @@ class GlobalMessenger {
       currentUserName: document.getElementById('current-user-name'),
       btnLogout: document.getElementById('btn-logout'),
       btnNewChat: document.getElementById('btn-new-chat'),
+      btnProfile: document.getElementById('btn-profile'),
+      btnSettings: document.getElementById('btn-settings'),
+      btnChatProfile: document.getElementById('btn-chat-profile'),
+      chatListCount: document.getElementById('chat-list-count'),
 
       chatSearch: document.getElementById('chat-search'),
       btnSearchClear: document.getElementById('btn-search-clear'),
@@ -87,6 +100,29 @@ class GlobalMessenger {
       btnSend: document.getElementById('btn-send'),
       btnAttach: document.getElementById('btn-attach'),
       fileInput: document.getElementById('file-input'),
+      btnVoice: document.getElementById('btn-voice'),
+      btnVideoNote: document.getElementById('btn-video-note'),
+
+      profileModal: document.getElementById('profile-modal'),
+      settingsModal: document.getElementById('settings-modal'),
+      settingsProfileLink: document.getElementById('settings-profile-link'),
+      profileAvatarPreview: document.getElementById('profile-avatar-preview'),
+      profileDisplayTitle: document.getElementById('profile-display-title'),
+      profileUsernameLabel: document.getElementById('profile-username-label'),
+      profileEditFields: document.getElementById('profile-edit-fields'),
+      profileDisplayName: document.getElementById('profile-display-name'),
+      profileBio: document.getElementById('profile-bio'),
+      profileBioReadonly: document.getElementById('profile-bio-readonly'),
+      profileSave: document.getElementById('btn-profile-save'),
+      profileAvatarInput: document.getElementById('profile-avatar-input'),
+      btnAvatarChange: document.getElementById('btn-avatar-change'),
+
+      recorderPanel: document.getElementById('recorder-panel'),
+      recorderPreview: document.getElementById('recorder-preview'),
+      recorderTitle: document.getElementById('recorder-title'),
+      recorderTimer: document.getElementById('recorder-timer'),
+      btnRecordCancel: document.getElementById('btn-record-cancel'),
+      btnRecordStop: document.getElementById('btn-record-stop'),
 
       uploadCard: document.getElementById('upload-progress-card'),
       uploadFileName: document.getElementById('upload-file-name'),
@@ -107,6 +143,16 @@ class GlobalMessenger {
     this.el.tabRegister.addEventListener('click', () => this.setAuthMode('register'));
     this.el.authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
     this.el.btnLogout.addEventListener('click', () => this.logout());
+    this.el.btnProfile.addEventListener('click', () => this.openProfile(this.user.username, true));
+    this.el.btnSettings.addEventListener('click', () => this.openModal(this.el.settingsModal));
+    this.el.settingsProfileLink.addEventListener('click', () => {
+      this.closeModal(this.el.settingsModal);
+      this.openProfile(this.user.username, true);
+    });
+    this.el.btnChatProfile.addEventListener('click', () => {
+      const chat = this.chats.find(c => c.id === this.currentChatId);
+      if (chat && chat.targetUser) this.openProfile(chat.targetUser, false);
+    });
 
     this.el.btnSend.addEventListener('click', () => this.sendTextMessage());
     this.el.messageInput.addEventListener('keydown', (e) => {
@@ -123,6 +169,17 @@ class GlobalMessenger {
 
     this.el.btnAttach.addEventListener('click', () => this.el.fileInput.click());
     this.el.fileInput.addEventListener('change', (e) => this.handleFileSelection(e));
+    this.el.btnVoice.addEventListener('click', () => this.startRecording('audio'));
+    this.el.btnVideoNote.addEventListener('click', () => this.startRecording('videoNote'));
+    this.el.btnRecordCancel.addEventListener('click', () => this.stopRecording(false));
+    this.el.btnRecordStop.addEventListener('click', () => this.stopRecording(true));
+    this.el.btnAvatarChange.addEventListener('click', () => this.el.profileAvatarInput.click());
+    this.el.profileAvatarInput.addEventListener('change', (e) => this.changeProfileAvatar(e));
+    this.el.profileSave.addEventListener('click', () => this.saveProfile());
+    document.querySelectorAll('[data-close-modal]').forEach(el => el.addEventListener('click', () => {
+      const modal = document.getElementById(el.dataset.closeModal);
+      if (modal) this.closeModal(modal);
+    }));
 
     this.el.btnNewChat.addEventListener('click', () => {
       this.el.chatSearch.focus();
@@ -235,9 +292,8 @@ class GlobalMessenger {
   showMainScreen() {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
-    this.el.currentUserName.innerText = '@' + this.user.username;
-    this.el.currentUserAvatar.innerText = this.user.username[0].toUpperCase();
-    this.el.currentUserAvatar.style.background = this.getAvatarGradient(this.user.username);
+    this.el.currentUserName.innerText = this.user.displayName || ('@' + this.user.username);
+    this.setAvatar(this.el.currentUserAvatar, this.user.username, this.user.avatarUrl);
 
     // Скрываем карусель в нормальном режиме — только при поиске
     if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
@@ -248,14 +304,20 @@ class GlobalMessenger {
 
     // Загружаем список диалогов с сервера (для восстановления на новом устройстве)
     this.fetchUserChats();
+    this.loadProfile(this.user.username).catch(() => {});
   }
 
-  logout() {
+  async logout() {
+    const token = this.session && this.session.sessionToken;
+    if (token) {
+      try { await this.apiRequest('logout', { sessionToken: token }); } catch (error) {}
+    }
     localStorage.removeItem('gm_session');
     localStorage.removeItem('gm_user');
     this.session = null;
     this.user = null;
     this.stopPolling();
+    this.stopRecording(false);
     this.renderedMessageIds.clear();
     this.el.messagesFeed.innerHTML = '';
     this.el.mainScreen.classList.add('hidden');
@@ -287,6 +349,134 @@ class GlobalMessenger {
     let hash = 0;
     for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
     return gradients[Math.abs(hash) % gradients.length];
+  }
+
+  setAvatar(element, username, avatarUrl = '') {
+    if (!element) return;
+    element.innerText = avatarUrl ? '' : ((username && username[0]) || '?').toUpperCase();
+    element.style.background = avatarUrl
+      ? `url("${String(avatarUrl).replace(/["\\]/g, '')}") center/cover no-repeat`
+      : this.getAvatarGradient(username);
+  }
+
+  openModal(modal) {
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  closeModal(modal) {
+    if (modal) modal.classList.add('hidden');
+  }
+
+  async loadProfile(username) {
+    const clean = String(username || '').replace(/^@/, '').toLowerCase();
+    if (!clean) return null;
+    try {
+      const res = await this.apiRequest('getProfile', {
+        sessionToken: this.session.sessionToken,
+        username: clean
+      });
+      const profile = res.profile || { username: clean, displayName: '@' + clean, bio: '', avatarUrl: '' };
+      this.profiles.set(clean, profile);
+      if (clean === this.user.username.toLowerCase()) {
+        this.user = { ...this.user, ...profile };
+        localStorage.setItem('gm_user', JSON.stringify(this.user));
+        this.el.currentUserName.innerText = profile.displayName || ('@' + clean);
+        this.setAvatar(this.el.currentUserAvatar, clean, profile.avatarUrl);
+      }
+      this.chats.forEach(chat => {
+        if (chat.targetUser && chat.targetUser.toLowerCase() === clean) {
+          chat.displayName = profile.displayName || ('@' + clean);
+          chat.avatarUrl = profile.avatarUrl || '';
+        }
+      });
+      this.renderChatList();
+      return profile;
+    } catch (error) {
+      const fallback = { username: clean, displayName: '@' + clean, bio: '', avatarUrl: '' };
+      this.profiles.set(clean, fallback);
+      return fallback;
+    }
+  }
+
+  async openProfile(username, editable) {
+    const clean = String(username || '').replace(/^@/, '').toLowerCase();
+    this.activeProfileUsername = clean;
+    const cached = this.profiles.get(clean) || {
+      username: clean,
+      displayName: editable && this.user.displayName ? this.user.displayName : '@' + clean,
+      bio: '',
+      avatarUrl: editable && this.user.avatarUrl ? this.user.avatarUrl : ''
+    };
+    this.renderProfileModal(cached, editable);
+    this.openModal(this.el.profileModal);
+    const profile = await this.loadProfile(clean);
+    if (this.activeProfileUsername === clean) this.renderProfileModal(profile, editable);
+  }
+
+  renderProfileModal(profile, editable) {
+    this.setAvatar(this.el.profileAvatarPreview, profile.username, profile.avatarUrl);
+    this.el.profileDisplayTitle.innerText = profile.displayName || ('@' + profile.username);
+    this.el.profileUsernameLabel.innerText = '@' + profile.username;
+    this.el.profileEditFields.classList.toggle('hidden', !editable);
+    this.el.profileSave.classList.toggle('hidden', !editable);
+    this.el.btnAvatarChange.classList.toggle('hidden', !editable);
+    this.el.profileBioReadonly.classList.toggle('hidden', editable);
+    if (editable) {
+      this.el.profileDisplayName.value = profile.displayName && profile.displayName[0] !== '@' ? profile.displayName : '';
+      this.el.profileBio.value = profile.bio || '';
+    } else {
+      this.el.profileBioReadonly.innerText = profile.bio || 'Пользователь пока ничего не рассказал о себе.';
+    }
+  }
+
+  async changeProfileAvatar(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+      alert('Для аватара выберите изображение до 2 МБ');
+      return;
+    }
+    this.el.btnAvatarChange.disabled = true;
+    this.el.btnAvatarChange.innerText = 'Загрузка…';
+    try {
+      const avatarUrl = await this.uploadFileToServer(file, () => {});
+      const profile = this.profiles.get(this.user.username.toLowerCase()) || {};
+      profile.avatarUrl = avatarUrl;
+      profile.username = this.user.username.toLowerCase();
+      this.profiles.set(profile.username, profile);
+      this.setAvatar(this.el.profileAvatarPreview, profile.username, avatarUrl);
+    } catch (error) {
+      alert('Не удалось загрузить аватар: ' + error.message);
+    } finally {
+      this.el.btnAvatarChange.disabled = false;
+      this.el.btnAvatarChange.innerText = 'Сменить фото';
+    }
+  }
+
+  async saveProfile() {
+    const username = this.user.username.toLowerCase();
+    const cached = this.profiles.get(username) || {};
+    this.el.profileSave.disabled = true;
+    try {
+      const res = await this.apiRequest('updateProfile', {
+        sessionToken: this.session.sessionToken,
+        displayName: this.el.profileDisplayName.value.trim(),
+        bio: this.el.profileBio.value.trim(),
+        avatarUrl: cached.avatarUrl || ''
+      });
+      this.profiles.set(username, res.profile);
+      this.user = { ...this.user, ...res.profile };
+      localStorage.setItem('gm_user', JSON.stringify(this.user));
+      this.el.currentUserName.innerText = res.profile.displayName || ('@' + username);
+      this.setAvatar(this.el.currentUserAvatar, username, res.profile.avatarUrl);
+      this.closeModal(this.el.profileModal);
+      this.renderChatList();
+    } catch (error) {
+      alert('Не удалось сохранить профиль: ' + error.message);
+    } finally {
+      this.el.profileSave.disabled = false;
+    }
   }
 
   loadUserStorage() {
@@ -464,9 +654,16 @@ class GlobalMessenger {
       this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type general">Общий канал</span> • в сети';
     } else {
       const u = targetUser || title.replace('@', '');
-      this.el.activeChatAvatar.innerText = (u[0] || '?').toUpperCase();
-      this.el.activeChatAvatar.style.background = this.getAvatarGradient(u);
+      const profile = this.profiles.get(u.toLowerCase());
+      this.setAvatar(this.el.activeChatAvatar, u, profile && profile.avatarUrl);
+      if (profile && profile.displayName) this.el.activeChatTitle.innerText = profile.displayName;
       this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type dm">Личный диалог</span> • в сети';
+      if (!profile) this.loadProfile(u).then(loaded => {
+        if (this.currentChatId === chatId && loaded) {
+          this.setAvatar(this.el.activeChatAvatar, u, loaded.avatarUrl);
+          this.el.activeChatTitle.innerText = loaded.displayName || ('@' + u);
+        }
+      }).catch(() => {});
     }
 
     // 2. Мгновенно отображаем сообщения из локального кэша для этого chatId
@@ -494,8 +691,21 @@ class GlobalMessenger {
     const list = this.el.chatList;
     if (!list) return;
     list.innerHTML = '';
+    if (this.el.chatListCount) this.el.chatListCount.innerText = String(Math.max(0, this.chats.length - 1));
 
-    this.chats.forEach(chat => {
+    this.chats.forEach((chat, index) => {
+      if (index === 0 && chat.isGeneral) {
+        const label = document.createElement('div');
+        label.className = 'sidebar-section-header';
+        label.innerHTML = '<span class="sidebar-section-title">Закреплено</span>';
+        list.appendChild(label);
+      }
+      if (!chat.isGeneral && (index === 0 || this.chats[index - 1].isGeneral)) {
+        const label = document.createElement('div');
+        label.className = 'sidebar-section-header';
+        label.innerHTML = '<span class="sidebar-section-title">Личные диалоги</span>';
+        list.appendChild(label);
+      }
       const isActive = chat.id === this.currentChatId;
       const item = document.createElement('div');
       item.className = 'chat-item' + (isActive ? ' active' : '');
@@ -507,7 +717,10 @@ class GlobalMessenger {
       } else {
         const u = chat.targetUser || chat.title.replace('@', '');
         const initial = u ? u[0].toUpperCase() : '?';
-        avatarHtml = `<div class="avatar" style="background: ${this.getAvatarGradient(u)}">${initial}</div>`;
+        const avatarStyle = chat.avatarUrl
+          ? `url(&quot;${this.escapeHtml(chat.avatarUrl)}&quot;) center/cover no-repeat`
+          : this.getAvatarGradient(u);
+        avatarHtml = `<div class="avatar" style="background:${avatarStyle}">${chat.avatarUrl ? '' : initial}</div>`;
       }
 
       const badgeHtml = chat.isGeneral
@@ -519,17 +732,21 @@ class GlobalMessenger {
         <div class="chat-item-meta">
           <div class="chat-item-top">
             <div class="chat-title-wrap">
-              <span class="chat-title">${this.escapeHtml(chat.title)}</span>
+              ${chat.isGeneral ? '<span class="chat-pin">◆</span>' : ''}
+              <span class="chat-title">${this.escapeHtml(chat.displayName || chat.title)}</span>
               ${badgeHtml}
             </div>
             <span class="chat-time">${this.escapeHtml(chat.lastTime || '')}</span>
           </div>
           <div class="chat-preview">${this.escapeHtml(chat.lastMsg || 'Нажмите, чтобы начать общение')}</div>
         </div>
+        ${chat.unread ? `<span class="unread-badge">${Math.min(99, chat.unread)}</span>` : ''}
       `;
 
       item.addEventListener('click', () => {
-        this.openChat(chat.id, chat.title, chat.targetUser);
+        chat.unread = 0;
+        this.saveUserStorage();
+        this.openChat(chat.id, chat.displayName || chat.title, chat.targetUser);
       });
 
       list.appendChild(item);
@@ -805,75 +1022,118 @@ class GlobalMessenger {
     const file = e.target.files[0];
     if (!file) return;
     this.el.fileInput.value = '';
+    await this.sendMediaFile(file, 'file');
+  }
 
+  async sendMediaFile(file, mediaKind = 'file') {
     if (file.size > this.config.MAX_FILE_SIZE_BYTES) {
-      alert('Размер файла превышает лимит в 100 МБ');
+      alert('Размер файла превышает текущий лимит');
       return;
     }
-
-    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
+    const isVideo = mediaKind === 'videoNote' || file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
+    const isAudio = mediaKind === 'audio' || file.type.startsWith('audio/');
     const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|svg)$/i.test(file.name);
+    const messageType = isAudio ? 'audio' : (isVideo ? 'video' : 'photo');
+    const targetChatId = this.currentChatId;
+    const caption = mediaKind === 'file' ? this.el.messageInput.value.trim() : '';
+    if (mediaKind === 'file') this.el.messageInput.value = '';
 
     this.el.uploadCard.classList.remove('hidden');
-    this.el.uploadFileName.innerText = file.name;
-    this.el.uploadProgressFill.style.width = '10%';
-    this.el.uploadFileStats.innerText = 'Подготовка...';
-
+    this.el.uploadFileName.innerText = mediaKind === 'audio' ? 'Голосовое сообщение' : (mediaKind === 'videoNote' ? 'Видеокружок' : file.name);
     try {
       const fileUrl = await this.uploadFileToServer(file, (pct, statusText) => {
         this.el.uploadProgressFill.style.width = pct + '%';
         this.el.uploadFileStats.innerText = `${statusText} (${pct}%)`;
       });
-
-      const messageText = this.el.messageInput.value.trim();
-      this.el.messageInput.value = '';
-
-      const mimeType = file.type || (isVideo ? 'video/mp4' : (isImage ? 'image/jpeg' : 'application/octet-stream'));
-      const serverMessageType = isVideo ? 'video' : (isImage ? 'photo' : 'photo'); // бэкенд: text/photo/video
-
-      // Оптимистичный пузырь для UX
-      const filePayload = {
-        id: 'file_' + Date.now(),
-        name: file.name,
-        size: file.size,
-        mimeType,
-        url: fileUrl,
-        downloadUrl: fileUrl
-      };
-      const targetChatId = this.currentChatId;
-      const tempId = 'tmp_' + Date.now();
+      const filePayload = { id:'file_' + Date.now(), name:file.name, size:file.size, mimeType:file.type, url:fileUrl, downloadUrl:fileUrl, mediaKind };
       this.appendMessage({
-        id: tempId,
-        messageId: tempId,
-        chatId: targetChatId,
-        senderUsername: this.user.username,
-        content: { text: messageText, file: filePayload },
-        createdAt: new Date().toISOString()
+        id:'tmp_' + Date.now(), chatId:targetChatId, senderUsername:this.user.username,
+        content:{ text:caption, file:filePayload }, createdAt:new Date().toISOString()
       }, true, targetChatId);
-
-      // Сохраняем на сервере (бэкенд ожидает mediaUrl, mimeType и caption на верхнем уровне payload)
       const res = await this.apiRequest('send', {
-        sessionToken: this.session.sessionToken,
-        chatId: targetChatId,
-        messageType: serverMessageType,
-        mediaUrl: fileUrl,
-        mimeType,
-        size: file.size,
-        caption: messageText
+        sessionToken:this.session.sessionToken, chatId:targetChatId, messageType,
+        mediaUrl:fileUrl, mimeType:file.type || 'application/octet-stream', size:file.size,
+        fileName:file.name, mediaKind, caption
       });
-
       if (res && res.message) {
-        const currentSeq = this.chatSeqs[targetChatId] || 0;
-        this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
-        this.saveUserStorage();
+        this.chatSeqs[targetChatId] = Math.max(this.chatSeqs[targetChatId] || 0, res.message.seq);
         this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
+        this.saveUserStorage();
       }
-
-      this.el.uploadCard.classList.add('hidden');
-    } catch (err) {
-      alert('Ошибка отправки файла: ' + err.message);
+    } catch (error) {
+      alert('Ошибка отправки: ' + error.message);
+    } finally {
       this.el.uploadCard.classList.add('hidden');
     }
+  }
+
+  async startRecording(kind) {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      alert('Этот браузер не поддерживает запись медиа');
+      return;
+    }
+    if (this.recorder) return;
+    try {
+      const constraints = kind === 'videoNote'
+        ? { audio:true, video:{ facingMode:'user', width:{ ideal:720 }, height:{ ideal:720 } } }
+        : { audio:{ echoCancellation:true, noiseSuppression:true }, video:false };
+      this.recordingStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.recordingChunks = [];
+      this.recordingKind = kind;
+      const preferred = kind === 'videoNote' ? 'video/webm;codecs=vp8,opus' : 'audio/webm;codecs=opus';
+      const options = MediaRecorder.isTypeSupported(preferred) ? { mimeType:preferred } : undefined;
+      this.recorder = new MediaRecorder(this.recordingStream, options);
+      this.recorder.ondataavailable = event => { if (event.data && event.data.size) this.recordingChunks.push(event.data); };
+      this.recorder.start(500);
+      this.recordingStartedAt = Date.now();
+      this.el.recorderTitle.innerText = kind === 'videoNote' ? 'Записываем видеокружок' : 'Записываем голос';
+      if (kind === 'videoNote') {
+        const video = document.createElement('video');
+        video.autoplay = true; video.muted = true; video.playsInline = true; video.srcObject = this.recordingStream;
+        this.el.recorderPreview.innerHTML = '';
+        this.el.recorderPreview.appendChild(video);
+      } else {
+        this.el.recorderPreview.innerHTML = '<div class="record-pulse"></div>';
+      }
+      this.el.recorderPanel.classList.remove('hidden');
+      this.updateRecordingTimer();
+      this.recordingTimer = setInterval(() => this.updateRecordingTimer(), 500);
+    } catch (error) {
+      alert('Не удалось получить доступ к ' + (kind === 'videoNote' ? 'камере' : 'микрофону'));
+      this.cleanupRecording();
+    }
+  }
+
+  updateRecordingTimer() {
+    const elapsed = Math.floor((Date.now() - this.recordingStartedAt) / 1000);
+    const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const sec = String(elapsed % 60).padStart(2, '0');
+    this.el.recorderTimer.innerText = `${min}:${sec}`;
+  }
+
+  stopRecording(send) {
+    if (!this.recorder) { this.cleanupRecording(); return; }
+    const recorder = this.recorder;
+    const kind = this.recordingKind;
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || (kind === 'videoNote' ? 'video/webm' : 'audio/webm');
+      const blob = new Blob(this.recordingChunks, { type:mimeType });
+      this.cleanupRecording();
+      if (send && blob.size) {
+        const ext = kind === 'videoNote' ? 'webm' : 'webm';
+        const file = new File([blob], `${kind === 'videoNote' ? 'circle' : 'voice'}-${Date.now()}.${ext}`, { type:mimeType });
+        await this.sendMediaFile(file, kind);
+      }
+    };
+    if (recorder.state !== 'inactive') recorder.stop();
+  }
+
+  cleanupRecording() {
+    if (this.recordingTimer) clearInterval(this.recordingTimer);
+    if (this.recordingStream) this.recordingStream.getTracks().forEach(track => track.stop());
+    this.recordingTimer = null; this.recordingStream = null; this.recorder = null;
+    this.recordingChunks = []; this.recordingKind = null;
+    if (this.el.recorderPanel) this.el.recorderPanel.classList.add('hidden');
   }
 
   // ===================================================
@@ -908,6 +1168,8 @@ class GlobalMessenger {
     if (msg.content && msg.content.file) {
       const f = msg.content.file;
       const isVideo = (f.mimeType && f.mimeType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name);
+      const isAudio = f.mediaKind === 'audio' || (f.mimeType && f.mimeType.startsWith('audio/'));
+      const isVideoNote = f.mediaKind === 'videoNote';
       const isImage = (f.mimeType && f.mimeType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|svg)$/i.test(f.name);
 
       let streamUrl = f.url || '';
@@ -915,7 +1177,16 @@ class GlobalMessenger {
       let downloadTarget = f.downloadUrl || f.url || '';
       if (isVideo && downloadTarget.startsWith('data:image/')) downloadTarget = '';
 
-      if (isVideo) {
+      if (isAudio) {
+        const bars = Array.from({ length: 34 }, (_, i) => `<i style="height:${8 + ((i * 13) % 22)}px"></i>`).join('');
+        contentHtml = `
+          <div class="tg-audio-card">
+            <audio controls preload="metadata" src="${this.escapeHtml(streamUrl)}"></audio>
+            <div class="tg-audio-wave" aria-hidden="true">${bars}</div>
+          </div>`;
+      } else if (isVideoNote) {
+        contentHtml = `<video class="tg-video-note" controls playsinline preload="metadata" src="${this.escapeHtml(streamUrl)}"></video>`;
+      } else if (isVideo) {
         contentHtml = `
           <div class="tg-video-card">
             <video controls playsinline preload="metadata" src="${this.escapeHtml(streamUrl)}"></video>
@@ -997,8 +1268,11 @@ class GlobalMessenger {
     if (msg.content && msg.content.file) {
       const f = msg.content.file;
       const isV = (f.mimeType && f.mimeType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name);
+      const isA = f.mediaKind === 'audio' || (f.mimeType && f.mimeType.startsWith('audio/'));
       const isI = (f.mimeType && f.mimeType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|svg)$/i.test(f.name);
-      if (isV) snippet = '🎬 Видео';
+      if (isA) snippet = '🎙 Голосовое сообщение';
+      else if (f.mediaKind === 'videoNote') snippet = '◉ Видеокружок';
+      else if (isV) snippet = '🎬 Видео';
       else if (isI) snippet = '📷 Фото';
       else snippet = '📁 ' + (f.name || 'Документ');
     } else if (msg.content && msg.content.text) {
@@ -1088,10 +1362,10 @@ class GlobalMessenger {
   // Нормализует сообщение сервера к формату, понятному appendMessage
   normalizeServerMsg(msg) {
     const { messageType, content } = msg;
-    if (messageType === 'photo' || messageType === 'video') {
+    if (messageType === 'photo' || messageType === 'video' || messageType === 'audio') {
       // Бэкенд хранит { mediaUrl, mimeType, size, caption } в content_json
       const url = content.mediaUrl || '';
-      const name = url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
+      const name = content.fileName || url.split('/').pop() || (messageType === 'audio' ? 'voice.webm' : (messageType === 'video' ? 'video.mp4' : 'photo.jpg'));
       return {
         ...msg,
         content: {
@@ -1099,7 +1373,8 @@ class GlobalMessenger {
           file: {
             name,
             size: content.size || 0,
-            mimeType: content.mimeType || (messageType === 'video' ? 'video/mp4' : 'image/jpeg'),
+            mimeType: content.mimeType || (messageType === 'audio' ? 'audio/webm' : (messageType === 'video' ? 'video/mp4' : 'image/jpeg')),
+            mediaKind: content.mediaKind || (messageType === 'audio' ? 'audio' : ''),
             url,
             downloadUrl: url
           }
@@ -1167,10 +1442,11 @@ class GlobalMessenger {
       if (res && res.chats && res.chats.length > 0) {
         let changed = false;
         for (const serverChat of res.chats) {
-          const exists = this.chats.find(c => c.id === serverChat.chatId);
+          const chatId = serverChat.chatId === 'general' ? 'dm:general' : serverChat.chatId;
+          const exists = this.chats.find(c => c.id === chatId);
           if (!exists) {
             // Определяем собеседника из chatId вида dm:uid1:uid2
-            const parts = serverChat.chatId.split(':');
+            const parts = chatId.split(':');
             let targetUser = null;
             if (parts.length === 3 && parts[0] === 'dm') {
               // Находим userId который не наш
@@ -1179,14 +1455,39 @@ class GlobalMessenger {
             }
             const title = targetUser ? '@' + targetUser : serverChat.chatId;
             this.chats.push({
-              id: serverChat.chatId,
+              id: chatId,
               title,
               targetUser,
+              displayName: serverChat.peerDisplayName || title,
+              avatarUrl: serverChat.peerAvatarUrl || '',
               lastMsg: serverChat.lastSnippet || 'Диалог',
               lastTime: serverChat.lastTime || '',
-              lastTimestamp: serverChat.lastTimestamp || 0
+              lastTimestamp: serverChat.lastTimestamp || 0,
+              serverSeq: serverChat.seq || 0,
+              unread: chatId === this.currentChatId ? 0 : 1
             });
             changed = true;
+          } else {
+            if (serverChat.peerDisplayName && serverChat.peerDisplayName !== exists.displayName) {
+              exists.displayName = serverChat.peerDisplayName;
+              changed = true;
+            }
+            if ((serverChat.peerAvatarUrl || '') !== (exists.avatarUrl || '')) {
+              exists.avatarUrl = serverChat.peerAvatarUrl || '';
+              changed = true;
+            }
+            const incomingSeq = Number(serverChat.seq || 0);
+            const previousSeq = Number(exists.serverSeq || 0);
+            if (incomingSeq > previousSeq || Number(serverChat.lastTimestamp || 0) > Number(exists.lastTimestamp || 0)) {
+              if (chatId !== this.currentChatId && previousSeq > 0) exists.unread = Math.min(99, Number(exists.unread || 0) + 1);
+              exists.lastMsg = serverChat.lastSnippet || exists.lastMsg;
+              exists.lastTime = serverChat.lastTime || exists.lastTime;
+              exists.lastTimestamp = serverChat.lastTimestamp || exists.lastTimestamp;
+              exists.serverSeq = incomingSeq;
+              exists.displayName = serverChat.peerDisplayName || exists.displayName;
+              exists.avatarUrl = serverChat.peerAvatarUrl || exists.avatarUrl;
+              changed = true;
+            }
           }
         }
         if (changed) {
@@ -1204,12 +1505,17 @@ class GlobalMessenger {
   }
 
   startPolling() {
+    this.stopPolling();
     this.syncMessages();
     this.pollTimer = setInterval(() => this.syncMessages(), this.config.SYNC_INTERVAL_MS);
+    this.chatPollTimer = setInterval(() => this.fetchUserChats(), Math.max(3000, this.config.SYNC_INTERVAL_MS * 2));
   }
 
   stopPolling() {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.chatPollTimer) clearInterval(this.chatPollTimer);
+    this.pollTimer = null;
+    this.chatPollTimer = null;
   }
 
   formatBytes(bytes) {
@@ -1230,3 +1536,4 @@ class GlobalMessenger {
 window.addEventListener('DOMContentLoaded', () => {
   window.messenger = new GlobalMessenger();
 });
+
