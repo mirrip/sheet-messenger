@@ -7,7 +7,9 @@ class GlobalMessenger {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
       PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbxeHtIu-WfsOEKZqkyGOmnWIGe362BcNt5_mKq6idGkDxMETYzSMd7wZthu4HEgri26wA/exec',
       SYNC_INTERVAL_MS: 1500,
-      MAX_FILE_SIZE_BYTES: 50 * 1024 * 1024
+      RESUMABLE_CHUNK_SIZE_BYTES: 8 * 1024 * 1024,
+      LEGACY_UPLOAD_LIMIT_BYTES: 25 * 1024 * 1024,
+      MAX_FILE_SIZE_BYTES: 1024 * 1024 * 1024
     };
 
     this.user = null;
@@ -780,7 +782,12 @@ class GlobalMessenger {
     });
   }
 
-  async uploadFileToServer(file, onProgress) {
+  async uploadFileToServer(file, chatId, onProgress) {
+    const legacyLimit = this.config.LEGACY_UPLOAD_LIMIT_BYTES || (25 * 1024 * 1024);
+    if (file.size > legacyLimit) {
+      return this.uploadFileResumable(file, chatId, onProgress);
+    }
+
     onProgress(25, 'Подготовка файла к отправке...');
     const base64Content = await this.readFileAsBase64(file);
 
@@ -798,7 +805,102 @@ class GlobalMessenger {
     }
 
     onProgress(100, 'Готово!');
-    return uploadRes.mediaUrl;
+    return {
+      fileId: uploadRes.fileId || '',
+      mediaUrl: uploadRes.mediaUrl,
+      downloadUrl: uploadRes.downloadUrl || uploadRes.mediaUrl,
+      checksum: uploadRes.checksum || ''
+    };
+  }
+
+  async uploadFileResumable(file, chatId, onProgress) {
+    const chunkSize = this.config.RESUMABLE_CHUNK_SIZE_BYTES || (8 * 1024 * 1024);
+    onProgress(1, 'Создание защищённой сессии загрузки...');
+    const start = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      operation: 'startResumable',
+      chatId,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size
+    });
+
+    let offset = 0;
+    let driveFile = null;
+    while (offset < file.size) {
+      const endExclusive = Math.min(file.size, offset + chunkSize);
+      const response = await this.putResumableChunkWithRetry(
+        start.sessionUrl,
+        file.slice(offset, endExclusive),
+        offset,
+        endExclusive,
+        file.size,
+        file.type || 'application/octet-stream'
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        driveFile = await response.json();
+        offset = file.size;
+      } else if (response.status === 308) {
+        const range = response.headers.get('Range');
+        const match = range && range.match(/bytes=0-(\d+)/i);
+        offset = match ? Number(match[1]) + 1 : endExclusive;
+      } else {
+        throw new Error('Drive отклонил часть файла: HTTP ' + response.status);
+      }
+
+      const pct = Math.min(98, Math.max(2, Math.round((offset / file.size) * 98)));
+      onProgress(pct, `Передано ${this.formatBytes(offset)} из ${this.formatBytes(file.size)}...`);
+    }
+
+    if (!driveFile || !driveFile.id) throw new Error('Drive не подтвердил завершение загрузки');
+    const finished = await this.apiRequest('uploadMedia', {
+      sessionToken: this.session.sessionToken,
+      operation: 'finishResumable',
+      chatId,
+      fileId: driveFile.id,
+      expectedSize: file.size
+    });
+    onProgress(100, 'Размер проверен, файл готов!');
+    return finished;
+  }
+
+  async putResumableChunkWithRetry(sessionUrl, blob, offset, endExclusive, totalSize, mimeType) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const response = await fetch(sessionUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Range': `bytes ${offset}-${endExclusive - 1}/${totalSize}`
+          },
+          body: blob
+        });
+        if (response.status === 200 || response.status === 201 || response.status === 308) return response;
+        if (response.status < 500 && response.status !== 429) return response;
+        lastError = new Error('HTTP ' + response.status);
+      } catch (error) {
+        lastError = error;
+      }
+
+      try {
+        const statusResponse = await fetch(sessionUrl, {
+          method: 'PUT',
+          headers: { 'Content-Range': `bytes */${totalSize}` }
+        });
+        if (statusResponse.status === 200 || statusResponse.status === 201) return statusResponse;
+        if (statusResponse.status === 308) {
+          const range = statusResponse.headers.get('Range');
+          const match = range && range.match(/bytes=0-(\d+)/i);
+          if (match && Number(match[1]) + 1 > offset) return statusResponse;
+        }
+      } catch (statusError) {
+        lastError = statusError;
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(8000, 500 * (2 ** attempt))));
+    }
+    throw lastError || new Error('Не удалось передать часть файла');
   }
 
   async handleFileSelection(e) {
@@ -807,7 +909,7 @@ class GlobalMessenger {
     this.el.fileInput.value = '';
 
     if (file.size > this.config.MAX_FILE_SIZE_BYTES) {
-      alert('Размер файла превышает лимит в 100 МБ');
+      alert('Размер файла превышает лимит в 1 ГБ');
       return;
     }
 
@@ -820,7 +922,8 @@ class GlobalMessenger {
     this.el.uploadFileStats.innerText = 'Подготовка...';
 
     try {
-      const fileUrl = await this.uploadFileToServer(file, (pct, statusText) => {
+      const targetChatId = this.currentChatId;
+      const upload = await this.uploadFileToServer(file, targetChatId, (pct, statusText) => {
         this.el.uploadProgressFill.style.width = pct + '%';
         this.el.uploadFileStats.innerText = `${statusText} (${pct}%)`;
       });
@@ -833,14 +936,13 @@ class GlobalMessenger {
 
       // Оптимистичный пузырь для UX
       const filePayload = {
-        id: 'file_' + Date.now(),
+        id: upload.fileId || ('file_' + Date.now()),
         name: file.name,
         size: file.size,
         mimeType,
-        url: fileUrl,
-        downloadUrl: fileUrl
+        url: upload.mediaUrl,
+        downloadUrl: upload.downloadUrl || upload.mediaUrl
       };
-      const targetChatId = this.currentChatId;
       const tempId = 'tmp_' + Date.now();
       this.appendMessage({
         id: tempId,
@@ -856,7 +958,11 @@ class GlobalMessenger {
         sessionToken: this.session.sessionToken,
         chatId: targetChatId,
         messageType: serverMessageType,
-        mediaUrl: fileUrl,
+        mediaFileId: upload.fileId || '',
+        mediaUrl: upload.mediaUrl,
+        downloadUrl: upload.downloadUrl || upload.mediaUrl,
+        fileName: file.name,
+        checksum: upload.checksum || '',
         mimeType,
         size: file.size,
         caption: messageText
@@ -931,10 +1037,11 @@ class GlobalMessenger {
         `;
       } else if (isImage) {
         const imgUrl = f.url || f.previewUrl || '';
+        const imageDownloadUrl = f.downloadUrl || imgUrl;
         contentHtml = `
           <div class="tg-photo-card" data-url="${this.escapeHtml(imgUrl)}" data-name="${this.escapeHtml(f.name)}">
             <img src="${this.escapeHtml(imgUrl)}" alt="${this.escapeHtml(f.name)}" loading="lazy">
-            <button class="tg-media-dl-btn btn-dl-action" data-url="${this.escapeHtml(imgUrl)}" data-name="${this.escapeHtml(f.name)}" title="Скачать фото">
+            <button class="tg-media-dl-btn btn-dl-action" data-url="${this.escapeHtml(imageDownloadUrl)}" data-name="${this.escapeHtml(f.name)}" title="Скачать фото">
               <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
               <span>Скачать</span>
             </button>
@@ -944,14 +1051,14 @@ class GlobalMessenger {
       } else {
         contentHtml = `
           <div class="tg-doc-item">
-            <div class="tg-doc-round-btn btn-dl-action" data-url="${this.escapeHtml(f.url)}" data-name="${this.escapeHtml(f.name)}" title="Скачать">
+            <div class="tg-doc-round-btn btn-dl-action" data-url="${this.escapeHtml(f.downloadUrl || f.url)}" data-name="${this.escapeHtml(f.name)}" title="Скачать">
               <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             </div>
             <div class="tg-doc-meta">
               <div class="tg-doc-title" title="${this.escapeHtml(f.name)}">${this.escapeHtml(f.name)}</div>
               <div class="tg-doc-size">${this.formatBytes(f.size)}</div>
             </div>
-            <button class="tg-doc-action-btn btn-dl-action" data-url="${this.escapeHtml(f.url)}" data-name="${this.escapeHtml(f.name)}">
+            <button class="tg-doc-action-btn btn-dl-action" data-url="${this.escapeHtml(f.downloadUrl || f.url)}" data-name="${this.escapeHtml(f.name)}">
               Скачать
             </button>
           </div>
@@ -1056,6 +1163,18 @@ class GlobalMessenger {
       return;
     }
 
+    if (/^https:\/\/(?:drive\.google\.com|lh3\.googleusercontent\.com)\//i.test(url)) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || 'file';
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 500);
+      return;
+    }
+
     fetch(url)
       .then(resp => {
         if (!resp.ok) throw new Error('Ошибка скачивания: HTTP ' + resp.status);
@@ -1089,9 +1208,9 @@ class GlobalMessenger {
   normalizeServerMsg(msg) {
     const { messageType, content } = msg;
     if (messageType === 'photo' || messageType === 'video') {
-      // Бэкенд хранит { mediaUrl, mimeType, size, caption } в content_json
+      // Ссылка хранится только в данных сообщения; интерфейс показывает обычный файл.
       const url = content.mediaUrl || '';
-      const name = url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
+      const name = content.fileName || url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
       return {
         ...msg,
         content: {
@@ -1101,7 +1220,8 @@ class GlobalMessenger {
             size: content.size || 0,
             mimeType: content.mimeType || (messageType === 'video' ? 'video/mp4' : 'image/jpeg'),
             url,
-            downloadUrl: url
+            downloadUrl: content.downloadUrl || url,
+            checksum: content.checksum || ''
           }
         }
       };
@@ -1230,3 +1350,4 @@ class GlobalMessenger {
 window.addEventListener('DOMContentLoaded', () => {
   window.messenger = new GlobalMessenger();
 });
+
