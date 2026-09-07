@@ -1,4 +1,4 @@
-﻿// ===================================================
+// ===================================================
 // TELEGRAM WEB — POLISHED ENGINE & UI CONTROLLER v2.0.0
 // ===================================================
 
@@ -98,7 +98,7 @@ class StorageService {
     return all.filter(m => m.chatId === chatId);
   }
 
-  async sendMessage(chatId, sender, text, file = null) {
+  async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -109,6 +109,8 @@ class StorageService {
       sender,
       text: text || '',
       file: file || null,
+      voice: voice || null,
+      circleVideo: circleVideo || null,
       time: timeStr,
       createdAt: Date.now()
     };
@@ -149,7 +151,7 @@ class StorageService {
       if (u1 === myName || u2 === myName) {
         const peer = u1 === myName ? parts[2] : parts[1];
         const existing = chatMap.get(m.chatId);
-        const snippet = m.text || (m.file ? '📎 Фото/Файл' : 'Сообщение');
+        const snippet = m.voice ? '🎤 Голосовое сообщение' : (m.circleVideo ? '📹 Видеокружок' : (m.file ? (m.file.type && m.file.type.startsWith('image/') ? '📷 Фото' : '📎 ' + m.file.name) : (m.text || 'Сообщение')));
 
         if (!existing || m.createdAt > existing.timestamp) {
           const isFromOther = m.sender.toLowerCase() !== myName;
@@ -186,6 +188,15 @@ class TelegramApp {
     this.currentChatTitle = 'Общий чат';
     this.activeFolder = 'all'; // 'all' | 'dm' | 'channels'
     this.authMode = 'login';
+    this.recordMode = 'mic'; // 'mic' | 'video'
+
+    // Media recording state
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
+    this.recInterval = null;
+    this.recStartTime = null;
+    this.mediaStream = null;
+    this.shouldSendRecorded = false;
 
     this.initElements();
     this.bindEvents();
@@ -241,7 +252,35 @@ class TelegramApp {
       lightboxClose: document.getElementById('lightbox-close'),
       lightboxImg: document.getElementById('lightbox-img'),
       lightboxFilename: document.getElementById('lightbox-filename'),
-      lightboxDownload: document.getElementById('lightbox-download')
+      lightboxDownload: document.getElementById('lightbox-download'),
+
+      btnModeToggle: document.getElementById('btn-mode-toggle'),
+      iconModeMic: document.getElementById('icon-mode-mic'),
+      iconModeVideo: document.getElementById('icon-mode-video'),
+
+      audioRecordingPanel: document.getElementById('audio-recording-panel'),
+      audioRecordTimer: document.getElementById('audio-record-timer'),
+      btnCancelVoice: document.getElementById('btn-cancel-voice'),
+      btnSendVoice: document.getElementById('btn-send-voice'),
+
+      videoRecordingPanel: document.getElementById('video-recording-panel'),
+      videoStreamPreview: document.getElementById('video-stream-preview'),
+      recordTimer: document.getElementById('record-timer'),
+      btnCancelVideoNote: document.getElementById('btn-cancel-video-note'),
+      btnSendVideoNote: document.getElementById('btn-send-video-note'),
+
+      profilePanel: document.getElementById('profile-panel'),
+      btnCloseProfile: document.getElementById('btn-close-profile'),
+      profileAvatarLarge: document.getElementById('profile-avatar-large'),
+      profileName: document.getElementById('profile-name'),
+      profileStatus: document.getElementById('profile-status'),
+      profileUsernameVal: document.getElementById('profile-username-val'),
+      profileBioVal: document.getElementById('profile-bio-val'),
+      btnEditBio: document.getElementById('btn-edit-bio'),
+      btnOpenMyProfile: document.getElementById('btn-open-my-profile'),
+      btnMenuProfile: document.getElementById('btn-menu-profile'),
+      btnOpenChatProfile: document.getElementById('btn-open-chat-profile'),
+      btnChatInfoPanel: document.getElementById('btn-chat-info-panel')
     };
   }
 
@@ -264,6 +303,57 @@ class TelegramApp {
     });
 
     this.el.btnMenuLogout.addEventListener('click', () => this.logout());
+
+    // Профиль (открытие информации)
+    if (this.el.btnOpenMyProfile) {
+      this.el.btnOpenMyProfile.addEventListener('click', () => {
+        this.el.menuDropdown.classList.add('hidden');
+        this.openUserProfile(this.currentUser.username, true);
+      });
+    }
+    if (this.el.btnMenuProfile) {
+      this.el.btnMenuProfile.addEventListener('click', () => {
+        this.el.menuDropdown.classList.add('hidden');
+        this.openUserProfile(this.currentUser.username, true);
+      });
+    }
+    if (this.el.btnOpenChatProfile) {
+      this.el.btnOpenChatProfile.addEventListener('click', () => {
+        const u = this.currentChatTitle.replace('@', '');
+        this.openUserProfile(u, u.toLowerCase() === this.currentUser.username.toLowerCase());
+      });
+    }
+    if (this.el.btnChatInfoPanel) {
+      this.el.btnChatInfoPanel.addEventListener('click', () => {
+        const u = this.currentChatTitle.replace('@', '');
+        this.openUserProfile(u, u.toLowerCase() === this.currentUser.username.toLowerCase());
+      });
+    }
+    if (this.el.btnCloseProfile) {
+      this.el.btnCloseProfile.addEventListener('click', () => {
+        this.el.profilePanel.classList.add('hidden');
+      });
+    }
+    if (this.el.btnEditBio) {
+      this.el.btnEditBio.addEventListener('click', () => this.editBio());
+    }
+
+    // Переключение Микрофон / Видеокружок
+    if (this.el.btnModeToggle) {
+      this.el.btnModeToggle.addEventListener('click', () => this.toggleRecordMode());
+    }
+    if (this.el.btnCancelVoice) {
+      this.el.btnCancelVoice.addEventListener('click', () => this.stopRecording(false));
+    }
+    if (this.el.btnSendVoice) {
+      this.el.btnSendVoice.addEventListener('click', () => this.stopRecording(true));
+    }
+    if (this.el.btnCancelVideoNote) {
+      this.el.btnCancelVideoNote.addEventListener('click', () => this.stopRecording(false));
+    }
+    if (this.el.btnSendVideoNote) {
+      this.el.btnSendVideoNote.addEventListener('click', () => this.stopRecording(true));
+    }
 
     // Папки чатов
     this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => {
@@ -494,12 +584,46 @@ class TelegramApp {
       const wrap = document.createElement('div');
       wrap.className = 'tg-bubble-wrap ' + (isOut ? 'out' : 'in');
 
-      let fileHtml = '';
-      if (m.file) {
+      let specialContent = '';
+
+      // 1. ВИДЕОКРУЖОЧЕК TELEGRAM
+      if (m.circleVideo) {
+        specialContent = [
+          '<div class="tg-circle-card" data-video-src="' + m.circleVideo.data + '">',
+          '  <video src="' + m.circleVideo.data + '" playsinline loop></video>',
+          '  <div class="tg-circle-play-overlay">▶</div>',
+          '</div>'
+        ].join('');
+      }
+      // 2. ГОЛОСОВОЕ СООБЩЕНИЕ TELEGRAM
+      else if (m.voice) {
+        specialContent = [
+          '<div class="tg-voice-card">',
+          '  <button class="tg-voice-play-btn" data-audio-src="' + m.voice.data + '">▶</button>',
+          '  <div class="tg-voice-meta">',
+          '    <div class="tg-voice-waveform">',
+          '      <span class="tg-wave-bar" style="height: 6px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 14px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 18px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 10px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 22px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 16px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 8px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 20px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 12px;"></span>',
+          '      <span class="tg-wave-bar" style="height: 18px;"></span>',
+          '    </div>',
+          '    <span class="tg-voice-time">00:' + String(m.voice.duration || '00').padStart(2, '0') + '</span>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      }
+      // 3. ФОТОГРАФИЯ ИЛИ ФАЙЛ
+      else if (m.file) {
         if (m.file.type && m.file.type.startsWith('image/')) {
-          fileHtml = '<img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '">';
+          specialContent = '<img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '">';
         } else {
-          fileHtml = [
+          specialContent = [
             '<div class="tg-file-card">',
             '  <div class="tg-file-icon">📄</div>',
             '  <div class="tg-file-meta">',
@@ -514,7 +638,7 @@ class TelegramApp {
       wrap.innerHTML = [
         '<div class="tg-msg-bubble">',
         (!isOut ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
-        fileHtml,
+        specialContent,
         (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
         '  <div class="tg-msg-meta">',
         '    <span>' + m.time + '</span>',
@@ -523,7 +647,38 @@ class TelegramApp {
         '</div>'
       ].join('');
 
-      // Клик по картинке для открытия лайтбокса
+      // Интерактив для видеокружка
+      const circleCard = wrap.querySelector('.tg-circle-card');
+      if (circleCard) {
+        const vid = circleCard.querySelector('video');
+        circleCard.addEventListener('click', () => {
+          if (vid.paused) {
+            vid.play();
+            circleCard.classList.add('playing');
+          } else {
+            vid.pause();
+            circleCard.classList.remove('playing');
+          }
+        });
+      }
+
+      // Интерактив для голосового
+      const voicePlayBtn = wrap.querySelector('.tg-voice-play-btn');
+      if (voicePlayBtn) {
+        const audio = new Audio(voicePlayBtn.getAttribute('data-audio-src'));
+        voicePlayBtn.addEventListener('click', () => {
+          if (audio.paused) {
+            audio.play();
+            voicePlayBtn.innerText = '❚❚';
+            audio.onended = () => { voicePlayBtn.innerText = '▶'; };
+          } else {
+            audio.pause();
+            voicePlayBtn.innerText = '▶';
+          }
+        });
+      }
+
+      // Лайтбокс для фото
       const imgEl = wrap.querySelector('.tg-media-photo');
       if (imgEl) {
         imgEl.addEventListener('click', () => {
@@ -628,6 +783,169 @@ class TelegramApp {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  toggleRecordMode() {
+    if (this.recordMode === 'mic') {
+      this.recordMode = 'video';
+      this.el.iconModeMic.classList.add('hidden');
+      this.el.iconModeVideo.classList.remove('hidden');
+      this.startVideoCircleRecording();
+    } else {
+      this.recordMode = 'mic';
+      this.el.iconModeVideo.classList.add('hidden');
+      this.el.iconModeMic.classList.remove('hidden');
+      this.startVoiceRecording();
+    }
+  }
+
+  async startVoiceRecording() {
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.recordedChunks = [];
+      this.mediaRecorder = new MediaRecorder(this.mediaStream);
+
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.recordedChunks.push(e.data);
+      };
+
+      this.mediaRecorder.onstop = async () => {
+        if (this.shouldSendRecorded) {
+          const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+          const base64 = await this.blobToBase64(blob);
+          await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
+            data: base64,
+            duration: this.getElapsedSeconds()
+          });
+          await this.refreshData();
+        }
+        this.cleanupStream();
+      };
+
+      this.mediaRecorder.start();
+      this.el.audioRecordingPanel.classList.remove('hidden');
+      this.startTimer(this.el.audioRecordTimer);
+    } catch (err) {
+      alert('Не удалось получить доступ к микрофону: ' + err.message);
+      this.cleanupStream();
+    }
+  }
+
+  async startVideoCircleRecording() {
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 400, height: 400, facingMode: 'user' },
+        audio: true
+      });
+      this.el.videoStreamPreview.srcObject = this.mediaStream;
+      this.recordedChunks = [];
+      this.mediaRecorder = new MediaRecorder(this.mediaStream);
+
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.recordedChunks.push(e.data);
+      };
+
+      this.mediaRecorder.onstop = async () => {
+        if (this.shouldSendRecorded) {
+          const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+          const base64 = await this.blobToBase64(blob);
+          await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
+            data: base64,
+            duration: this.getElapsedSeconds()
+          });
+          await this.refreshData();
+        }
+        this.cleanupStream();
+      };
+
+      this.mediaRecorder.start();
+      this.el.videoRecordingPanel.classList.remove('hidden');
+      this.startTimer(this.el.recordTimer);
+    } catch (err) {
+      alert('Не удалось получить доступ к камере: ' + err.message);
+      this.cleanupStream();
+    }
+  }
+
+  stopRecording(send = true) {
+    this.shouldSendRecorded = send;
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    } else {
+      this.cleanupStream();
+    }
+    this.el.audioRecordingPanel.classList.add('hidden');
+    this.el.videoRecordingPanel.classList.add('hidden');
+    clearInterval(this.recInterval);
+  }
+
+  cleanupStream() {
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(t => t.stop());
+      this.mediaStream = null;
+    }
+    if (this.el.videoStreamPreview) {
+      this.el.videoStreamPreview.srcObject = null;
+    }
+  }
+
+  startTimer(timerEl) {
+    this.recStartTime = Date.now();
+    timerEl.innerText = '00:00';
+    clearInterval(this.recInterval);
+    this.recInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this.recStartTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      timerEl.innerText = m + ':' + s;
+    }, 1000);
+  }
+
+  getElapsedSeconds() {
+    return Math.floor((Date.now() - (this.recStartTime || Date.now())) / 1000);
+  }
+
+  blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async openUserProfile(username, isOwn = false) {
+    username = username.toLowerCase();
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const user = users.find(u => u.username.toLowerCase() === username) || {
+      username: username,
+      bio: isOwn ? (this.currentUser.bio || 'Пользуюсь Telegram Web ✨') : 'Пользователь Telegram Web'
+    };
+
+    this.el.profileAvatarLarge.innerText = username === 'general' ? '🌐' : username[0].toUpperCase();
+    this.el.profileName.innerText = '@' + username;
+    this.el.profileStatus.innerText = 'в сети';
+    this.el.profileUsernameVal.innerText = '@' + username;
+    this.el.profileBioVal.innerText = user.bio || 'О себе пока ничего не написано';
+
+    this.el.btnEditBio.style.display = isOwn ? 'block' : 'none';
+    this.el.profilePanel.classList.remove('hidden');
+  }
+
+  async editBio() {
+    const currentBio = this.currentUser.bio || '';
+    const newBio = prompt('Введите новый статус "О себе":', currentBio);
+    if (newBio !== null) {
+      const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+      const user = users.find(u => u.username.toLowerCase() === this.currentUser.username.toLowerCase());
+      if (user) {
+        user.bio = newBio;
+        localStorage.setItem('gm_users', JSON.stringify(users));
+      }
+      this.currentUser.bio = newBio;
+      localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
+      this.el.profileBioVal.innerText = newBio;
+    }
   }
 
   escape(str) {
