@@ -1,22 +1,22 @@
-// ===================================================
+﻿// ===================================================
 // GLOBAL MESSENGER — ЧИСТЫЙ ДВИЖОК v1.0.0
-// Поддерживает мгновенный локальный режим + готовые методы подключения БД
+// Поддерживает мгновенный локальный режим + готовую архитектуру для базы данных
 // ===================================================
 
 /**
- * Адаптер данных: сейчас локальный (LocalStorage),
- * при подключении базы переключается на Apps Script API.
+ * Адаптер данных: локальный (LocalStorage),
+ * при подключении базы переключается на Apps Script API без изменения логики UI.
  */
 class StorageService {
   constructor(config) {
-    this.config = config || window.APP_CONFIG;
+    this.config = config || (typeof window !== 'undefined' ? window.APP_CONFIG : null) || { STORAGE_MODE: 'local' };
     this.isLocal = this.config.STORAGE_MODE === 'local';
     this.initLocalStorage();
   }
 
   initLocalStorage() {
+    if (typeof localStorage === 'undefined') return;
     if (!localStorage.getItem('gm_users')) {
-      // Инициализируем тестовых пользователей для комфортной проверки поиска и диалогов
       const demoUsers = [
         { id: 'usr_general', username: 'general', name: 'Общий чат' },
         { id: 'usr_alex', username: 'alex', name: 'Алексей' },
@@ -122,8 +122,9 @@ class StorageService {
     all.push(newMsg);
     localStorage.setItem('gm_messages', JSON.stringify(all));
 
-    // Уведомляем другие открытые вкладки браузера о новом сообщении
-    window.dispatchEvent(new CustomEvent('gm_new_message', { detail: newMsg }));
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('gm_new_message', { detail: newMsg }));
+    }
     return { ok: true, message: newMsg };
   }
 
@@ -182,24 +183,50 @@ class StorageService {
   }
 }
 
+/**
+ * Главный UI контроллер мессенджера
+ */
+class GlobalMessengerApp {
+  constructor() {
+    this.storage = new StorageService(typeof window !== 'undefined' ? window.APP_CONFIG : null);
+    this.currentUser = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
+    this.currentChatId = 'general';
+    this.currentChatTitle = 'Общий чат';
+    this.authMode = 'login';
+
+    this.initElements();
+    this.bindEvents();
+
+    if (this.currentUser) {
+      this.showMainScreen();
+    } else {
+      this.showAuthScreen();
+    }
+  }
+
+  initElements() {
+    this.el = {
+      authScreen: document.getElementById('auth-screen'),
+      authCard: document.querySelector('.auth-card'),
+      authTabs: document.querySelector('.auth-tabs'),
+      tabLogin: document.getElementById('tab-login'),
+      tabRegister: document.getElementById('tab-register'),
+      authForm: document.getElementById('auth-form'),
+      authUsername: document.getElementById('auth-username'),
+      authPassword: document.getElementById('auth-password'),
+      authSubmitBtn: document.getElementById('auth-submit-btn'),
+      authStatus: document.getElementById('auth-status'),
 
       mainScreen: document.getElementById('main-screen'),
       sidebar: document.getElementById('sidebar'),
       currentUserAvatar: document.getElementById('current-user-avatar'),
       currentUserName: document.getElementById('current-user-name'),
       btnLogout: document.getElementById('btn-logout'),
-      btnNewChat: document.getElementById('btn-new-chat'),
 
       chatSearch: document.getElementById('chat-search'),
       btnSearchClear: document.getElementById('btn-search-clear'),
-      frequentUsersSection: document.getElementById('frequent-users-section'),
-      frequentCarousel: document.getElementById('frequent-carousel'),
-      searchHistorySection: document.getElementById('search-history-section'),
-      searchHistoryList: document.getElementById('search-history-list'),
-      btnClearSearchHistory: document.getElementById('btn-clear-search-history'),
       searchResultsSection: document.getElementById('search-results-section'),
-      localResultsList: document.getElementById('local-results-list'),
-      globalResultsList: document.getElementById('global-results-list'),
+      searchResultsList: document.getElementById('search-results-list'),
       chatList: document.getElementById('chat-list'),
 
       chatView: document.querySelector('.chat-view'),
@@ -207,87 +234,56 @@ class StorageService {
       activeChatAvatar: document.getElementById('active-chat-avatar'),
       activeChatTitle: document.getElementById('active-chat-title'),
       activeChatStatus: document.getElementById('active-chat-status'),
+
       messagesContainer: document.getElementById('messages-container'),
       messagesFeed: document.getElementById('messages-feed'),
-
       messageInput: document.getElementById('message-input'),
-      btnSend: document.getElementById('btn-send'),
       btnAttach: document.getElementById('btn-attach'),
       fileInput: document.getElementById('file-input'),
-
-      uploadCard: document.getElementById('upload-progress-card'),
-      uploadFileName: document.getElementById('upload-file-name'),
-      uploadFileStats: document.getElementById('upload-file-stats'),
-      uploadProgressFill: document.getElementById('upload-progress-fill'),
-
-      lightboxModal: document.getElementById('lightbox-modal'),
-      lightboxImg: document.getElementById('lightbox-img'),
-      lightboxTitle: document.getElementById('lightbox-title'),
-      lightboxDownloadBtn: document.getElementById('lightbox-download-btn'),
-      lightboxCloseBtn: document.getElementById('lightbox-close-btn')
+      btnSend: document.getElementById('btn-send')
     };
-    this.authMode = 'login';
   }
 
-  initEvents() {
+  bindEvents() {
     this.el.tabLogin.addEventListener('click', () => this.setAuthMode('login'));
     this.el.tabRegister.addEventListener('click', () => this.setAuthMode('register'));
     this.el.authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
+
     this.el.btnLogout.addEventListener('click', () => this.logout());
 
-    this.el.btnSend.addEventListener('click', () => this.sendTextMessage());
+    this.el.btnSend.addEventListener('click', () => this.sendMessage());
     this.el.messageInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        this.sendTextMessage();
+        this.sendMessage();
       }
     });
 
-    this.el.messageInput.addEventListener('input', () => {
-      this.el.messageInput.style.height = 'auto';
-      this.el.messageInput.style.height = Math.min(this.el.messageInput.scrollHeight, 120) + 'px';
-    });
-
     this.el.btnAttach.addEventListener('click', () => this.el.fileInput.click());
-    this.el.fileInput.addEventListener('change', (e) => this.handleFileSelection(e));
+    this.el.fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
 
-    this.el.btnNewChat.addEventListener('click', () => {
-      this.el.chatSearch.focus();
-      this.handleSearchFocus();
+    this.el.chatSearch.addEventListener('input', () => this.handleSearch(this.el.chatSearch.value));
+    this.el.btnSearchClear.addEventListener('click', () => {
+      this.el.chatSearch.value = '';
+      this.handleSearch('');
     });
 
-    // SEARCH EVENTS
-    this.el.chatSearch.addEventListener('focus', () => this.handleSearchFocus());
-    this.el.chatSearch.addEventListener('input', () => this.handleSearchInput(this.el.chatSearch.value));
-    this.el.btnSearchClear.addEventListener('click', () => this.closeSearch());
-    this.el.btnClearSearchHistory.addEventListener('click', () => {
-      this.recentSearches = [];
-      this.saveUserStorage();
-      this.renderSearchHistory();
-    });
-
-    // MOBILE BACK BUTTON
     this.el.btnBack.addEventListener('click', () => {
       if (this.el.chatView) this.el.chatView.classList.remove('active');
     });
 
-    // ESCAPE KEY
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        if (!this.el.lightboxModal.classList.contains('hidden')) {
-          this.closeLightbox();
-        } else if (this.searchMode) {
-          this.closeSearch();
-        }
+    window.addEventListener('gm_new_message', (e) => {
+      const msg = e.detail;
+      if (msg.chatId === this.currentChatId) {
+        this.renderMessages();
       }
+      this.renderChatList();
     });
 
-    // LIGHTBOX EVENTS
-    this.el.lightboxCloseBtn.addEventListener('click', () => this.closeLightbox());
-    this.el.lightboxModal.querySelector('.lightbox-backdrop').addEventListener('click', () => this.closeLightbox());
-    this.el.lightboxDownloadBtn.addEventListener('click', () => {
-      if (this.activeLightboxData) {
-        this.downloadMedia(this.activeLightboxData.url, this.activeLightboxData.name);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'gm_messages') {
+        this.renderChatList();
+        this.renderMessages();
       }
     });
   }
@@ -298,20 +294,7 @@ class StorageService {
     this.el.tabRegister.classList.toggle('active', mode === 'register');
     this.el.authSubmitBtn.innerText = mode === 'login' ? 'Войти в систему' : 'Зарегистрироваться';
     this.el.authStatus.innerText = '';
-  }
-
-  async apiRequest(action, payload = {}, signal = null) {
-    const postData = JSON.stringify({ action, payload });
-    const options = {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: postData
-    };
-    if (signal) options.signal = signal;
-    const response = await fetch(this.config.PRIMARY_ENDPOINT, options);
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || 'Ошибка запроса');
-    return data; // backend returns { ok, messages, ... } directly
+    this.el.authStatus.className = 'status-msg';
   }
 
   async handleAuthSubmit(e) {
@@ -321,1210 +304,241 @@ class StorageService {
 
     this.el.authSubmitBtn.disabled = true;
     this.el.authStatus.className = 'status-msg';
-    this.el.authStatus.innerText = 'Подключение к серверу...';
+    this.el.authStatus.innerText = 'Выполняется вход...';
 
     try {
-      const result = await this.apiRequest(this.authMode, {
-        username,
-        password,
-        deviceName: navigator.userAgent.includes('Mobile') ? 'Телефон' : 'Компьютер'
-      });
+      let res;
+      if (this.authMode === 'register') {
+        res = await this.storage.register(username, password);
+      } else {
+        res = await this.storage.login(username, password);
+      }
 
-      this.session = result.session;
-      this.user = result.user;
-      localStorage.setItem('gm_session', JSON.stringify(this.session));
-      localStorage.setItem('gm_user', JSON.stringify(this.user));
-
+      this.currentUser = res.user;
+      localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
+      this.el.authStatus.innerText = '';
       this.showMainScreen();
     } catch (err) {
       this.el.authStatus.className = 'status-msg error';
-      this.el.authStatus.innerText = err.message;
+      this.el.authStatus.innerText = err.message || 'Ошибка входа';
     } finally {
       this.el.authSubmitBtn.disabled = false;
     }
   }
 
-  restoreSession() {
-    const s = localStorage.getItem('gm_session');
-    const u = localStorage.getItem('gm_user');
-    if (s && u) {
-      try {
-        this.session = JSON.parse(s);
-        this.user = JSON.parse(u);
-        this.showMainScreen();
-      } catch (e) {
-        localStorage.removeItem('gm_session');
-        localStorage.removeItem('gm_user');
-      }
-    }
+  logout() {
+    localStorage.removeItem('gm_current_user');
+    this.currentUser = null;
+    this.showAuthScreen();
+  }
+
+  showAuthScreen() {
+    this.el.authScreen.classList.remove('hidden');
+    this.el.mainScreen.classList.add('hidden');
   }
 
   showMainScreen() {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
-    this.el.currentUserName.innerText = '@' + this.user.username;
-    this.el.currentUserAvatar.innerText = this.user.username[0].toUpperCase();
-    this.el.currentUserAvatar.style.background = this.getAvatarGradient(this.user.username);
 
-    // Скрываем карусель в нормальном режиме — только при поиске
-    if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
+    this.el.currentUserName.innerText = '@' + this.currentUser.username;
+    this.el.currentUserAvatar.innerText = this.currentUser.username[0].toUpperCase();
 
-    this.loadUserStorage();
-    this.renderChatList();
-    this.startPolling();
-
-    // Загружаем список диалогов с сервера (для восстановления на новом устройстве)
-    this.fetchUserChats();
+    this.refreshData();
   }
 
-  logout() {
-    localStorage.removeItem('gm_session');
-    localStorage.removeItem('gm_user');
-    this.session = null;
-    this.user = null;
-    this.stopPolling();
-    this.renderedMessageIds.clear();
-    this.el.messagesFeed.innerHTML = '';
-    this.el.mainScreen.classList.add('hidden');
-    this.el.authScreen.classList.remove('hidden');
-    this.el.authPassword.value = '';
+  async refreshData() {
+    await this.renderChatList();
+    await this.renderMessages();
   }
-
-  // ===================================================
-  // CHAT LIST, FREQUENT USERS & STORAGE ENGINE
-  // ===================================================
 
   getDmChatId(u1, u2) {
-    if (!u1 || !u2) return 'dm:general';
-    const sorted = [u1.trim().toLowerCase(), u2.trim().toLowerCase()].sort();
-    return 'dm:' + sorted.join(':');
+    const sorted = [u1.toLowerCase(), u2.toLowerCase()].sort();
+    return 'dm:' + sorted[0] + ':' + sorted[1];
   }
 
-  getAvatarGradient(str) {
-    if (!str || str === 'general' || str === 'Общий чат') return 'linear-gradient(135deg, #3390ec, #1f69b3)';
-    const gradients = [
-      'linear-gradient(135deg, #e17076, #ff885e)',
-      'linear-gradient(135deg, #faa357, #f68136)',
-      'linear-gradient(135deg, #3390ec, #0077d7)',
-      'linear-gradient(135deg, #a695e7, #856be2)',
-      'linear-gradient(135deg, #7bc862, #53a73c)',
-      'linear-gradient(135deg, #6dc9cb, #3caab2)',
-      'linear-gradient(135deg, #ee7aae, #d8508e)'
-    ];
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
-    return gradients[Math.abs(hash) % gradients.length];
+  openDirectChat(targetUsername) {
+    const chatId = this.getDmChatId(this.currentUser.username, targetUsername);
+    const title = '@' + targetUsername;
+    this.openChat(chatId, title);
+
+    this.el.chatSearch.value = '';
+    this.handleSearch('');
   }
 
-  loadUserStorage() {
-    if (!this.user) return;
-    const uid = this.user.username.toLowerCase();
-
-    // 1. Chats
-    try {
-      const savedChats = localStorage.getItem('gm_chats_' + uid);
-      this.chats = savedChats ? JSON.parse(savedChats) : [];
-    } catch (e) {
-      this.chats = [];
-    }
-    if (!this.chats.some(c => c.id === 'dm:general')) {
-      this.chats.unshift({
-        id: 'dm:general',
-        title: 'Общий чат',
-        isGeneral: true,
-        lastMsg: 'Добро пожаловать в мессенджер',
-        lastTime: '',
-        lastTimestamp: 0
-      });
-    }
-
-    // 2. Frequent users
-    try {
-      const savedFreq = localStorage.getItem('gm_frequent_' + uid);
-      this.frequentUsers = savedFreq ? JSON.parse(savedFreq) : [];
-    } catch (e) {
-      this.frequentUsers = [];
-    }
-
-    // 3. Recent searches
-    try {
-      const savedRecents = localStorage.getItem('gm_recent_searches_' + uid);
-      this.recentSearches = savedRecents ? JSON.parse(savedRecents) : [];
-    } catch (e) {
-      this.recentSearches = [];
-    }
-
-    // 4. Per-chat sequences
-    try {
-      const savedSeqs = localStorage.getItem('gm_seqs_' + uid);
-      this.chatSeqs = savedSeqs ? JSON.parse(savedSeqs) : {};
-    } catch (e) {
-      this.chatSeqs = {};
-    }
-
-    // Populate known users registry
-    this.knownUsers = new Set();
-    this.frequentUsers.forEach(f => this.knownUsers.add(f.username.toLowerCase()));
-    this.recentSearches.forEach(r => this.knownUsers.add(r.toLowerCase()));
-    this.chats.forEach(c => {
-      if (c.targetUser) this.knownUsers.add(c.targetUser.toLowerCase());
-    });
-  }
-
-  saveUserStorage() {
-    if (!this.user) return;
-    const uid = this.user.username.toLowerCase();
-    localStorage.setItem('gm_chats_' + uid, JSON.stringify(this.chats));
-    localStorage.setItem('gm_frequent_' + uid, JSON.stringify(this.frequentUsers));
-    localStorage.setItem('gm_recent_searches_' + uid, JSON.stringify(this.recentSearches));
-    localStorage.setItem('gm_seqs_' + uid, JSON.stringify(this.chatSeqs));
-  }
-
-  getChatCacheKey(chatId) {
-    if (!this.user) return null;
-    const uid = this.user.username.toLowerCase();
-    return `gm_msgs_${uid}_${chatId}`;
-  }
-
-  getChatMessages(chatId) {
-    const key = this.getChatCacheKey(chatId);
-    if (!key) return [];
-    try {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  saveChatMessages(chatId, messages) {
-    const key = this.getChatCacheKey(chatId);
-    if (!key) return;
-    try {
-      // Сохраняем последние 200 сообщений чата в кэше для быстрого открытия
-      const toSave = (messages || []).slice(-200);
-      localStorage.setItem(key, JSON.stringify(toSave));
-    } catch (e) {
-      console.warn('Ошибка сохранения сообщений чата в localStorage:', e);
-    }
-  }
-
-  appendMessageToCache(chatId, msg) {
-    if (!chatId || !msg) return;
-    const list = this.getChatMessages(chatId);
-    const msgId = msg.id || msg.messageId;
-    if (msgId && list.some(m => (m.id || m.messageId) === msgId)) return;
-    list.push(msg);
-    this.saveChatMessages(chatId, list);
-  }
-
-  recordUserInteraction(targetUser) {
-    if (!targetUser) return;
-    const clean = targetUser.replace('@', '').trim().toLowerCase();
-    if (!clean || (this.user && clean === this.user.username.toLowerCase())) return;
-
-    this.knownUsers.add(clean);
-
-    // Update frequent users
-    const existing = this.frequentUsers.find(f => f.username.toLowerCase() === clean);
-    if (existing) {
-      existing.count = (existing.count || 1) + 1;
-      existing.lastTime = Date.now();
-    } else {
-      this.frequentUsers.push({ username: clean, count: 1, lastTime: Date.now() });
-    }
-    this.frequentUsers.sort((a, b) => (b.count * 1000 + b.lastTime) - (a.count * 1000 + a.lastTime));
-    if (this.frequentUsers.length > 20) this.frequentUsers = this.frequentUsers.slice(0, 20);
-
-    // Update recent searches
-    this.recentSearches = [clean, ...this.recentSearches.filter(u => u.toLowerCase() !== clean)].slice(0, 15);
-
-    this.saveUserStorage();
-    if (this.searchMode) {
-      this.renderFrequentUsers();
-    }
-  }
-
-  openChatWithUser(targetUsername) {
-    const clean = targetUsername.replace('@', '').trim().toLowerCase();
-    if (!clean) return;
-    const chatId = this.getDmChatId(this.user.username, clean);
-    const title = '@' + clean;
-
-    this.recordUserInteraction(clean);
-
-    let chat = this.chats.find(c => c.id === chatId);
-    if (!chat) {
-      chat = {
-        id: chatId,
-        title,
-        targetUser: clean,
-        lastMsg: 'Диалог начат',
-        lastTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        lastTimestamp: Date.now()
-      };
-      this.chats.splice(1, 0, chat);
-    }
-
-    this.saveUserStorage();
-    this.closeSearch();
-    this.renderChatList();
-    this.openChat(chatId, title, clean);
-  }
-
-  openChat(chatId, title, targetUser = null) {
-    // 1. Увеличиваем токен переключения, отменяем старый сетевой запрос
-    this.activeRequestId++;
-    if (this.syncAbortController) {
-      try { this.syncAbortController.abort(); } catch (e) {}
-      this.syncAbortController = null;
-    }
-
+  openChat(chatId, title) {
     this.currentChatId = chatId;
-    this.renderedMessageIds.clear();
-    this.el.messagesFeed.innerHTML = '';
+    this.currentChatTitle = title;
+
+    const isGeneral = chatId === 'general';
     this.el.activeChatTitle.innerText = title;
+    this.el.activeChatAvatar.innerText = isGeneral ? '🌐' : title.replace('@', '')[0].toUpperCase();
+    this.el.activeChatStatus.innerText = isGeneral ? 'канал общения' : 'в сети';
 
-    if (chatId === 'dm:general') {
-      this.el.activeChatAvatar.innerText = '🌐';
-      this.el.activeChatAvatar.style.background = 'linear-gradient(135deg, #3390ec, #1f69b3)';
-      this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type general">Общий канал</span> • в сети';
-    } else {
-      const u = targetUser || title.replace('@', '');
-      this.el.activeChatAvatar.innerText = (u[0] || '?').toUpperCase();
-      this.el.activeChatAvatar.style.background = this.getAvatarGradient(u);
-      this.el.activeChatStatus.innerHTML = '<span class="badge-tag-type dm">Личный диалог</span> • в сети';
-    }
-
-    // 2. Мгновенно отображаем сообщения из локального кэша для этого chatId
-    const cachedMessages = this.getChatMessages(chatId);
-    if (cachedMessages.length > 0) {
-      cachedMessages.forEach(msg => {
-        this.appendMessage(msg, false, chatId);
-      });
-    }
-
-    // Сбрасываем счетчик непрочитанных для этого чата
-    const currentChatObj = this.chats.find(c => c.id === chatId);
-    if (currentChatObj && currentChatObj.unreadCount) {
-      currentChatObj.unreadCount = 0;
-      this.saveUserStorage();
+    if (this.el.chatView) {
+      this.el.chatView.classList.add('active');
     }
 
     this.renderChatList();
-
-    if (this.el.chatView) this.el.chatView.classList.add('active');
-    
-    // 3. Запускаем досинхронизацию только свежих сообщений
-    this.syncMessages();
+    this.renderMessages();
   }
 
-  renderFrequentUsers() {
-    // Карусель частых контактов полностью отключена по требованию
-    return;
-  }
+  async renderChatList() {
+    const chats = await this.storage.getUserChats(this.currentUser.username);
+    this.el.chatList.innerHTML = '';
 
-  renderChatList() {
-    const list = this.el.chatList;
-    if (!list) return;
-    list.innerHTML = '';
-
-    this.chats.forEach(chat => {
+    chats.forEach(chat => {
       const isActive = chat.id === this.currentChatId;
       const item = document.createElement('div');
       item.className = 'chat-item' + (isActive ? ' active' : '');
-      item.setAttribute('data-chat-id', chat.id);
 
-      let avatarHtml = '';
-      if (chat.isGeneral) {
-        avatarHtml = '<div class="avatar general-avatar">🌐</div>';
-      } else {
-        const u = chat.targetUser || chat.title.replace('@', '');
-        const initial = u ? u[0].toUpperCase() : '?';
-        avatarHtml = `<div class="avatar" style="background: ${this.getAvatarGradient(u)}">${initial}</div>`;
-      }
+      const avatarContent = chat.isGeneral ? '🌐' : (chat.peer ? chat.peer[0].toUpperCase() : '?');
 
-      const badgeHtml = chat.isGeneral
-        ? '<span class="chat-type-badge general">Канал</span>'
-        : '<span class="chat-type-badge dm">Диалог</span>';
-
-      item.innerHTML = `
-        ${avatarHtml}
-        <div class="chat-item-meta">
-          <div class="chat-item-top">
-            <div class="chat-title-wrap">
-              <span class="chat-title">${this.escapeHtml(chat.title)}</span>
-              ${badgeHtml}
-            </div>
-            <span class="chat-time">${this.escapeHtml(chat.lastTime || '')}</span>
-          </div>
-          <div class="chat-preview-wrap">
-            <span class="chat-preview">${this.escapeHtml(chat.lastMsg || 'Нажмите, чтобы начать общение')}</span>
-            ${chat.unreadCount > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : ''}
-          </div>
-        </div>
-      `;
+      item.innerHTML = [
+        '<div class="avatar" style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#2abee8,#1f8ecc);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;">',
+        avatarContent,
+        '</div>',
+        '<div class="chat-item-meta" style="flex:1;min-width:0;margin-left:12px;">',
+        '  <div class="chat-item-top" style="display:flex;justify-content:space-between;align-items:center;">',
+        '    <span class="chat-title" style="font-weight:600;font-size:14.5px;">' + this.escape(chat.title) + '</span>',
+        '    <span class="chat-time" style="font-size:12px;color:var(--text-secondary);">' + this.escape(chat.lastTime) + '</span>',
+        '  </div>',
+        '  <div class="chat-preview-wrap" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">',
+        '    <div class="chat-preview" style="font-size:13px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">' + this.escape(chat.lastMsg) + '</div>',
+        (chat.unreadCount > 0 ? '    <span class="unread-badge" style="background:#3390ec;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;">' + chat.unreadCount + '</span>' : ''),
+        '  </div>',
+        '</div>'
+      ].join('');
 
       item.addEventListener('click', () => {
-        this.openChat(chat.id, chat.title, chat.targetUser);
+        this.openChat(chat.id, chat.title);
       });
 
-      list.appendChild(item);
+      this.el.chatList.appendChild(item);
     });
   }
 
-  // ===================================================
-  // 2-TIER SEARCH & RECENT SEARCH HISTORY
-  // ===================================================
+  async renderMessages() {
+    const msgs = await this.storage.getMessages(this.currentChatId);
+    this.el.messagesFeed.innerHTML = '';
 
-  handleSearchFocus() {
-    this.searchMode = true;
-    if (!this.el.chatSearch.value.trim()) {
-      this.el.btnSearchClear.classList.remove('hidden');
-      if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
-      this.el.searchHistorySection.classList.remove('hidden');
-      this.el.searchResultsSection.classList.add('hidden');
-      this.el.chatList.classList.add('hidden');
-      this.renderSearchHistory();
-    } else {
-      this.handleSearchInput(this.el.chatSearch.value);
-    }
-  }
-
-  renderSearchHistory() {
-    const list = this.el.searchHistoryList;
-    if (!list) return;
-    list.innerHTML = '';
-
-    if (this.recentSearches.length === 0) {
-      list.innerHTML = '<div class="empty-search-hint">Нет недавних поисков</div>';
+    if (msgs.length === 0) {
+      this.el.messagesFeed.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:30px;font-size:13.5px;">Здесь пока нет сообщений. Начните диалог первым! 💬</div>';
       return;
     }
 
-    this.recentSearches.forEach(u => {
-      const initial = (u[0] || '?').toUpperCase();
-      const grad = this.getAvatarGradient(u);
+    msgs.forEach(m => {
+      const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
+      const bubble = document.createElement('div');
+      bubble.className = 'tg-bubble ' + (isOut ? 'outgoing' : 'incoming');
 
-      const item = document.createElement('div');
-      item.className = 'history-item';
-      item.innerHTML = `
-        <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${grad}">${initial}</div>
-        <div class="history-item-meta">
-          <div class="history-title">@${this.escapeHtml(u)}</div>
-          <div class="history-subtitle">Недавний контакт</div>
-        </div>
-        <button class="history-remove-btn" title="Удалить из истории">✕</button>
-      `;
-
-      item.addEventListener('click', (e) => {
-        if (e.target.closest('.history-remove-btn')) return;
-        this.openChatWithUser(u);
-      });
-
-      item.querySelector('.history-remove-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.recentSearches = this.recentSearches.filter(x => x.toLowerCase() !== u.toLowerCase());
-        this.saveUserStorage();
-        this.renderSearchHistory();
-      });
-
-      list.appendChild(item);
-    });
-  }
-
-  createSearchResultElement(username, subtitle) {
-    const clean = username.replace('@', '');
-    const initial = (clean[0] || '?').toUpperCase();
-    const grad = this.getAvatarGradient(clean);
-
-    const el = document.createElement('div');
-    el.className = 'search-result-item';
-    el.innerHTML = `
-      <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${grad}">${initial}</div>
-      <div class="search-item-meta">
-        <div class="search-item-title">@${this.escapeHtml(clean)}</div>
-        <div class="search-item-sub">${this.escapeHtml(subtitle)}</div>
-      </div>
-    `;
-    el.addEventListener('click', () => {
-      this.openChatWithUser(clean);
-    });
-    return el;
-  }
-
-  handleSearchInput(q) {
-    q = q.trim().toLowerCase().replace(/^@/, '');
-    this.searchQuery = q;
-    this.searchMode = true;
-
-    if (!q) {
-      this.handleSearchFocus();
-      return;
-    }
-
-    this.el.btnSearchClear.classList.remove('hidden');
-    if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
-    this.el.searchHistorySection.classList.add('hidden');
-    this.el.searchResultsSection.classList.remove('hidden');
-    this.el.chatList.classList.add('hidden');
-
-    const seenUsers = new Set();
-    const localMatches = [];
-
-    // Tier 1: Search among close contacts & active chats
-    this.frequentUsers.forEach(f => {
-      const u = f.username.toLowerCase();
-      if (u.includes(q) && !seenUsers.has(u)) {
-        seenUsers.add(u);
-        localMatches.push({ username: f.username, type: 'Близкий контакт' });
-      }
-    });
-
-    this.chats.forEach(c => {
-      if (c.targetUser) {
-        const u = c.targetUser.toLowerCase();
-        if (u.includes(q) && !seenUsers.has(u)) {
-          seenUsers.add(u);
-          localMatches.push({ username: c.targetUser, type: 'Существующий чат' });
+      let fileHtml = '';
+      if (m.file) {
+        if (m.file.type && m.file.type.startsWith('image/')) {
+          fileHtml = '<div style="margin-bottom:6px;"><img src="' + m.file.data + '" style="max-width:100%;border-radius:8px;max-height:240px;display:block;"></div>';
+        } else {
+          fileHtml = '<div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:8px;margin-bottom:6px;">📎 <span style="font-size:13px;font-weight:600;">' + this.escape(m.file.name) + '</span></div>';
         }
       }
+
+      bubble.innerHTML = [
+        (!isOut ? '<div class="tg-sender-name">@' + this.escape(m.sender) + '</div>' : ''),
+        fileHtml,
+        (m.text ? '<div class="tg-msg-text">' + this.escape(m.text) + '</div>' : ''),
+        '<div class="tg-bubble-footer">',
+        '  <span class="tg-msg-time">' + m.time + '</span>',
+        (isOut ? '  <span class="tg-checkmarks" style="color:#4fae4e;margin-left:4px;">✓✓</span>' : ''),
+        '</div>'
+      ].join('');
+
+      this.el.messagesFeed.appendChild(bubble);
     });
 
-    this.recentSearches.forEach(r => {
-      const u = r.toLowerCase();
-      if (u.includes(q) && !seenUsers.has(u)) {
-        seenUsers.add(u);
-        localMatches.push({ username: r, type: 'Недавний контакт' });
-      }
-    });
-
-    const localList = this.el.localResultsList;
-    localList.innerHTML = '';
-    const localGroup = document.getElementById('local-results-group');
-    if (localMatches.length > 0) {
-      localGroup.classList.remove('hidden');
-      localMatches.forEach(m => {
-        localList.appendChild(this.createSearchResultElement(m.username, m.type));
-      });
-    } else {
-      localGroup.classList.add('hidden');
-    }
-
-    // Tier 2: Global Search (known users & direct chat option)
-    const globalMatches = [];
-    this.knownUsers.forEach(u => {
-      if (u.includes(q) && !seenUsers.has(u)) {
-        seenUsers.add(u);
-        globalMatches.push(u);
-      }
-    });
-
-    const globalList = this.el.globalResultsList;
-    globalList.innerHTML = '';
-
-    // Direct message shortcut button
-    if (!seenUsers.has(q) && q.length >= 2) {
-      const directEl = document.createElement('div');
-      directEl.className = 'search-result-item';
-      directEl.innerHTML = `
-        <div class="avatar" style="width:38px;height:38px;font-size:15px;background:${this.getAvatarGradient(q)}">@</div>
-        <div class="search-item-meta">
-          <div class="search-item-title">@${this.escapeHtml(q)}</div>
-          <div class="search-item-sub" style="color:var(--accent);font-weight:600;">Начать новый диалог</div>
-        </div>
-      `;
-      directEl.addEventListener('click', () => {
-        this.openChatWithUser(q);
-      });
-      globalList.appendChild(directEl);
-    }
-
-    globalMatches.forEach(u => {
-      globalList.appendChild(this.createSearchResultElement(u, 'Пользователь сети'));
-    });
-
-    if (globalList.children.length === 0 && localMatches.length === 0) {
-      globalList.innerHTML = `<div class="empty-search-hint" id="search-loading-hint">Поиск в базе данных...</div>`;
-    }
-
-    // Серверный поиск в базе данных пользователей с debounce
-    if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
-    if (q.length >= 1) {
-      this.searchDebounceTimer = setTimeout(async () => {
-        if (!this.searchMode || this.searchQuery !== q) return;
-        try {
-          const res = await this.apiRequest('searchUsers', {
-            sessionToken: this.session ? this.session.sessionToken : '',
-            query: q
-          });
-          if (!this.searchMode || this.searchQuery !== q) return;
-
-          const loadHint = document.getElementById('search-loading-hint');
-          if (loadHint) loadHint.remove();
-
-          if (res && res.users && res.users.length > 0) {
-            res.users.forEach(su => {
-              const u = su.username.toLowerCase();
-              if (!seenUsers.has(u)) {
-                seenUsers.add(u);
-                this.knownUsers.add(u);
-                globalList.appendChild(this.createSearchResultElement(su.username, 'Найден в базе данных'));
-              }
-            });
-          }
-
-          if (globalList.children.length === 0 && localMatches.length === 0) {
-            globalList.innerHTML = `<div class="empty-search-hint">По запросу «${this.escapeHtml(q)}» ничего не найдено</div>`;
-          }
-        } catch (e) {
-          const loadHint = document.getElementById('search-loading-hint');
-          if (loadHint) {
-            loadHint.innerText = globalList.children.length > 0 ? '' : `По запросу «${this.escapeHtml(q)}» ничего не найдено`;
-          }
-        }
-      }, 300);
-    }
+    this.el.messagesContainer.scrollTop = this.el.messagesContainer.scrollHeight;
   }
 
-  closeSearch() {
-    this.searchMode = false;
-    this.searchQuery = '';
-    this.el.chatSearch.value = '';
-    this.el.btnSearchClear.classList.add('hidden');
-    this.el.searchHistorySection.classList.add('hidden');
-    this.el.searchResultsSection.classList.add('hidden');
-    if (this.el.frequentUsersSection) this.el.frequentUsersSection.classList.add('hidden');
-    this.el.chatList.classList.remove('hidden');
-    this.renderChatList();
-  }
-
-  // ===================================================
-  // MESSAGING & EXACT FORMAT STORAGE
-  // ===================================================
-
-  async sendTextMessage() {
+  async sendMessage() {
     const text = this.el.messageInput.value.trim();
     if (!text) return;
 
     this.el.messageInput.value = '';
     this.el.messageInput.style.height = 'auto';
 
-    const targetChatId = this.currentChatId;
-    const tempId = 'tmp_' + Date.now();
-    const optimisticMsg = {
-      id: tempId,
-      messageId: tempId,
-      chatId: targetChatId,
-      senderUsername: this.user.username,
-      content: { text },
-      createdAt: new Date().toISOString()
-    };
-
-    this.appendMessage(optimisticMsg, true, targetChatId);
-
-    try {
-      const sendPayload = {
-        sessionToken: this.session.sessionToken,
-        chatId: targetChatId,
-        messageType: 'text',
-        text
-      };
-      const res = await this.apiRequest('send', sendPayload);
-      if (res && res.message) {
-        const currentSeq = this.chatSeqs[targetChatId] || 0;
-        this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
-        this.saveUserStorage();
-        // Сохраняем подтвержденное сообщение в локальный кэш этого чата
-        this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
-      }
-    } catch (err) {
-      console.error('Ошибка отправки:', err);
-    }
+    await this.storage.sendMessage(this.currentChatId, this.currentUser.username, text);
+    await this.refreshData();
   }
 
-  readBlobAsBase64(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        const base64 = result.substring(result.indexOf(',') + 1);
-        resolve(base64);
-      };
-      reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  async uploadFileToServer(file, chatId, onProgress) {
-    const chunkSize = this.config.CHUNK_SIZE_BYTES || (2 * 1024 * 1024);
-    const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
-    onProgress(2, 'Создание защищённой загрузки...');
-
-    const start = await this.apiRequest('uploadMedia', {
-      sessionToken: this.session.sessionToken,
-      operation: 'start',
-      chatId,
-      fileName: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      size: file.size,
-      chunkSize,
-      totalChunks
-    });
-
-    for (let index = 0; index < totalChunks; index += 1) {
-      const from = index * chunkSize;
-      const slice = file.slice(from, Math.min(file.size, from + chunkSize));
-      const base64 = await this.readBlobAsBase64(slice);
-      await this.apiRequest('uploadMedia', {
-        sessionToken: this.session.sessionToken,
-        operation: 'chunk',
-        mediaId: start.mediaId,
-        chunkIndex: index,
-        base64
-      });
-      const pct = Math.min(96, Math.round(((index + 1) / totalChunks) * 94) + 2);
-      onProgress(pct, `Загрузка части ${index + 1} из ${totalChunks}...`);
-    }
-
-    const uploadRes = await this.apiRequest('uploadMedia', {
-      sessionToken: this.session.sessionToken,
-      operation: 'finish',
-      mediaId: start.mediaId
-    });
-    onProgress(100, 'Готово!');
-    return uploadRes;
-  }
-
-  async handleFileSelection(e) {
+  async handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-    this.el.fileInput.value = '';
 
-    if (file.size > this.config.MAX_FILE_SIZE_BYTES) {
-      alert('Размер файла превышает лимит в 100 МБ');
-      return;
-    }
-
-    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
-    const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|svg)$/i.test(file.name);
-
-    this.el.uploadCard.classList.remove('hidden');
-    this.el.uploadFileName.innerText = file.name;
-    this.el.uploadProgressFill.style.width = '10%';
-    this.el.uploadFileStats.innerText = 'Подготовка...';
-
-    try {
-      const targetChatId = this.currentChatId;
-      const upload = await this.uploadFileToServer(file, targetChatId, (pct, statusText) => {
-        this.el.uploadProgressFill.style.width = pct + '%';
-        this.el.uploadFileStats.innerText = `${statusText} (${pct}%)`;
-      });
-
-      const messageText = this.el.messageInput.value.trim();
-      this.el.messageInput.value = '';
-
-      const mimeType = file.type || (isVideo ? 'video/mp4' : (isImage ? 'image/jpeg' : 'application/octet-stream'));
-      const serverMessageType = isVideo ? 'video' : (isImage ? 'photo' : 'photo'); // бэкенд: text/photo/video
-
-      // Оптимистичный пузырь для UX
-      const filePayload = {
-        id: upload.mediaId,
-        mediaId: upload.mediaId,
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const fileData = {
         name: file.name,
+        type: file.type,
         size: file.size,
-        mimeType,
-        url: URL.createObjectURL(file),
-        downloadUrl: ''
+        data: reader.result
       };
-      const tempId = 'tmp_' + Date.now();
-      this.appendMessage({
-        id: tempId,
-        messageId: tempId,
-        chatId: targetChatId,
-        senderUsername: this.user.username,
-        content: { text: messageText, file: filePayload },
-        createdAt: new Date().toISOString()
-      }, true, targetChatId);
-
-      // В сообщении хранится только приватный идентификатор, публичной ссылки нет.
-      const res = await this.apiRequest('send', {
-        sessionToken: this.session.sessionToken,
-        chatId: targetChatId,
-        messageType: serverMessageType,
-        mediaFileId: upload.mediaId,
-        fileName: file.name,
-        mimeType,
-        size: file.size,
-        caption: messageText
-      });
-
-      if (res && res.message) {
-        const currentSeq = this.chatSeqs[targetChatId] || 0;
-        this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
-        this.saveUserStorage();
-        this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
-      }
-
-      this.el.uploadCard.classList.add('hidden');
-    } catch (err) {
-      alert('Ошибка отправки файла: ' + err.message);
-      this.el.uploadCard.classList.add('hidden');
-    }
-  }
-
-  // ===================================================
-  // FULL FORMAT TELEGRAM MESSAGE RENDERING
-  // ===================================================
-
-  appendMessage(msg, isOptimistic = false, targetChatId = null) {
-    const msgChatId = targetChatId || msg.chatId || this.currentChatId;
-
-    // Железная защита от гонок: сообщение никогда не отобразится, если пользователь уже переключил чат
-    if (msgChatId !== this.currentChatId) {
-      return;
-    }
-
-    const msgId = msg.id || msg.messageId || null;
-    if (!isOptimistic && msgId && this.renderedMessageIds.has(msgId)) {
-      return;
-    }
-    if (!isOptimistic && msgId) {
-      this.renderedMessageIds.add(msgId);
-    }
-
-    const isOutgoing = msg.senderUsername === this.user.username;
-    const bubble = document.createElement('div');
-    bubble.className = 'tg-bubble ' + (isOutgoing ? 'outgoing' : 'incoming');
-    if (isOptimistic) bubble.style.opacity = '0.75';
-
-    let contentHtml = '';
-    const time = new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const checkmarks = isOutgoing ? '<span class="tg-checkmarks">✓✓</span>' : '';
-
-    if (msg.content && msg.content.file) {
-      const f = msg.content.file;
-      const isVideo = (f.mimeType && f.mimeType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name);
-      const isImage = (f.mimeType && f.mimeType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|svg)$/i.test(f.name);
-
-      let streamUrl = f.url || '';
-      if (isVideo && streamUrl.startsWith('data:image/')) streamUrl = '';
-      let downloadTarget = f.downloadUrl || f.url || '';
-      if (isVideo && downloadTarget.startsWith('data:image/')) downloadTarget = '';
-
-      if (isVideo) {
-        contentHtml = `
-          <div class="tg-video-card">
-            <video controls playsinline preload="metadata" src="${this.escapeHtml(streamUrl)}"></video>
-            <div class="tg-video-bottom">
-              <span class="tg-video-title" title="${this.escapeHtml(f.name)}">${this.escapeHtml(f.name)} (${this.formatBytes(f.size)})</span>
-              <button class="tg-media-dl-btn btn-dl-action" data-url="${this.escapeHtml(downloadTarget)}" data-name="${this.escapeHtml(f.name)}" title="Скачать исходное видео">
-                <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                <span>Скачать</span>
-              </button>
-            </div>
-          </div>
-          ${msg.content.text ? '<div class="tg-msg-text" style="margin-top:4px;">' + this.escapeHtml(msg.content.text) + '</div>' : ''}
-        `;
-      } else if (isImage) {
-        const imgUrl = f.url || f.previewUrl || '';
-        contentHtml = `
-          <div class="tg-photo-card" data-url="${this.escapeHtml(imgUrl)}" data-name="${this.escapeHtml(f.name)}">
-            <img src="${this.escapeHtml(imgUrl)}" alt="${this.escapeHtml(f.name)}" loading="lazy">
-            <button class="tg-media-dl-btn btn-dl-action" data-url="${this.escapeHtml(imgUrl)}" data-name="${this.escapeHtml(f.name)}" title="Скачать фото">
-              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-              <span>Скачать</span>
-            </button>
-          </div>
-          ${msg.content.text ? '<div class="tg-msg-text" style="margin-top:4px;">' + this.escapeHtml(msg.content.text) + '</div>' : ''}
-        `;
-      } else {
-        contentHtml = `
-          <div class="tg-doc-item">
-            <div class="tg-doc-round-btn btn-dl-action" data-url="${this.escapeHtml(f.url)}" data-name="${this.escapeHtml(f.name)}" title="Скачать">
-              <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-            </div>
-            <div class="tg-doc-meta">
-              <div class="tg-doc-title" title="${this.escapeHtml(f.name)}">${this.escapeHtml(f.name)}</div>
-              <div class="tg-doc-size">${this.formatBytes(f.size)}</div>
-            </div>
-            <button class="tg-doc-action-btn btn-dl-action" data-url="${this.escapeHtml(f.url)}" data-name="${this.escapeHtml(f.name)}">
-              Скачать
-            </button>
-          </div>
-          ${msg.content.text ? '<div class="tg-msg-text" style="margin-top:4px;">' + this.escapeHtml(msg.content.text) + '</div>' : ''}
-        `;
-      }
-    } else {
-      contentHtml = `<div class="tg-msg-text">${this.escapeHtml(msg.content ? msg.content.text : '')}</div>`;
-    }
-
-    bubble.innerHTML = `
-      ${!isOutgoing ? '<span class="tg-sender-name">@' + this.escapeHtml(msg.senderUsername) + '</span>' : ''}
-      ${contentHtml}
-      <div class="tg-meta">
-        <span>${time}</span>
-        ${checkmarks}
-      </div>
-    `;
-
-    const privateMediaId = msg.content && msg.content.file && msg.content.file.mediaId;
-    if (privateMediaId && !msg.content.file.url) {
-      this.hydratePrivateMedia(bubble, privateMediaId, msgChatId).catch((error) => {
-        console.warn('Не удалось загрузить защищённый файл:', error.message);
-      });
-    }
-
-    bubble.querySelectorAll('.tg-photo-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-dl-action')) return;
-        const url = card.getAttribute('data-url');
-        const name = card.getAttribute('data-name');
-        this.openLightbox(url, name);
-      });
-    });
-
-    bubble.querySelectorAll('.btn-dl-action').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const url = btn.getAttribute('data-url');
-        const name = btn.getAttribute('data-name');
-        this.downloadMedia(url, name);
-      });
-    });
-
-    this.el.messagesFeed.appendChild(bubble);
-    this.el.messagesContainer.scrollTop = this.el.messagesContainer.scrollHeight;
-
-    // UPDATE CHAT SNIPPET IN SIDEBAR LIST
-    let snippet = 'Новое сообщение';
-    if (msg.content && msg.content.file) {
-      const f = msg.content.file;
-      const isV = (f.mimeType && f.mimeType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name);
-      const isI = (f.mimeType && f.mimeType.startsWith('image/')) || /\.(jpe?g|png|webp|gif|svg)$/i.test(f.name);
-      if (isV) snippet = '🎬 Видео';
-      else if (isI) snippet = '📷 Фото';
-      else snippet = '📁 ' + (f.name || 'Документ');
-    } else if (msg.content && msg.content.text) {
-      snippet = msg.content.text;
-    }
-    if (snippet.length > 35) snippet = snippet.slice(0, 35) + '...';
-
-    let chat = this.chats.find(c => c.id === this.currentChatId);
-    if (!chat) {
-      const isGen = this.currentChatId === 'dm:general';
-      chat = {
-        id: this.currentChatId,
-        title: isGen ? 'Общий чат' : this.el.activeChatTitle.innerText,
-        isGeneral: isGen,
-        lastMsg: snippet,
-        lastTime: time,
-        lastTimestamp: Date.now()
-      };
-      this.chats.push(chat);
-    } else {
-      chat.lastMsg = snippet;
-      chat.lastTime = time;
-      chat.lastTimestamp = Date.now();
-    }
-
-    if (msg.senderUsername && msg.senderUsername !== this.user.username) {
-      this.knownUsers.add(msg.senderUsername.toLowerCase());
-    }
-
-    // Sort chats: general on top, others by recent activity
-    const gen = this.chats.filter(c => c.isGeneral);
-    const others = this.chats.filter(c => !c.isGeneral).sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
-    this.chats = [...gen, ...others];
-
-    this.saveUserStorage();
-    if (!this.searchMode) this.renderChatList();
-  }
-
-  openLightbox(url, fileName) {
-    this.activeLightboxData = { url, name: fileName };
-    this.el.lightboxImg.src = url;
-    this.el.lightboxTitle.innerText = fileName || 'Фотография';
-    this.el.lightboxModal.classList.remove('hidden');
-  }
-
-  closeLightbox() {
-    this.el.lightboxModal.classList.add('hidden');
-    this.el.lightboxImg.src = '';
-    this.activeLightboxData = null;
-  }
-
-  downloadMedia(url, fileName) {
-    if (!url || url === '#' || url.startsWith('blob:tmp_')) {
-      alert('Файл недоступен для скачивания');
-      return;
-    }
-
-    fetch(url)
-      .then(resp => {
-        if (!resp.ok) throw new Error('Ошибка скачивания: HTTP ' + resp.status);
-        return resp.blob();
-      })
-      .then(blob => {
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = fileName || 'video.mp4';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
-        }, 500);
-      })
-      .catch(() => {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName || 'video.mp4';
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => document.body.removeChild(a), 500);
-      });
-  }
-
-  async getPrivateMediaUrl(mediaId, chatId) {
-    if (this.mediaBlobUrls.has(mediaId)) return this.mediaBlobUrls.get(mediaId);
-    if (this.mediaLoadPromises.has(mediaId)) return this.mediaLoadPromises.get(mediaId);
-
-    const loading = (async () => {
-      const parts = [];
-      let totalChunks = 1;
-      let mimeType = 'application/octet-stream';
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
-        const response = await this.apiRequest('uploadMedia', {
-          sessionToken: this.session.sessionToken,
-          operation: 'download',
-          mediaId,
-          chatId,
-          chunkIndex
-        });
-        totalChunks = Number(response.totalChunks || 1);
-        mimeType = response.mimeType || mimeType;
-        const binary = atob(response.base64 || '');
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        parts.push(bytes);
-      }
-      const url = URL.createObjectURL(new Blob(parts, { type: mimeType }));
-      this.mediaBlobUrls.set(mediaId, url);
-      return url;
-    })();
-
-    this.mediaLoadPromises.set(mediaId, loading);
-    try {
-      return await loading;
-    } finally {
-      this.mediaLoadPromises.delete(mediaId);
-    }
-  }
-
-  async hydratePrivateMedia(bubble, mediaId, chatId) {
-    const url = await this.getPrivateMediaUrl(mediaId, chatId);
-    const img = bubble.querySelector('.tg-photo-card img');
-    const video = bubble.querySelector('.tg-video-card video');
-    if (img) img.src = url;
-    if (video) video.src = url;
-    bubble.querySelectorAll('.tg-photo-card, .btn-dl-action').forEach((element) => {
-      element.setAttribute('data-url', url);
-    });
-  }
-
-  // Нормализует сообщение сервера к формату, понятному appendMessage
-  normalizeServerMsg(msg) {
-    const { messageType, content } = msg;
-    if (messageType === 'photo' || messageType === 'video') {
-      // Новые файлы хранятся приватно и загружаются через авторизованный API.
-      const url = content.mediaUrl || '';
-      const name = content.fileName || url.split('/').pop() || (messageType === 'video' ? 'video.mp4' : 'photo.jpg');
-      return {
-        ...msg,
-        content: {
-          text: content.caption || '',
-          file: {
-            id: content.mediaFileId || '',
-            mediaId: content.mediaFileId || '',
-            name,
-            size: content.size || 0,
-            mimeType: content.mimeType || (messageType === 'video' ? 'video/mp4' : 'image/jpeg'),
-            url,
-            downloadUrl: url
-          }
-        }
-      };
-    }
-    return msg;
-  }
-
-  async syncMessages() {
-    if (!this.session) return;
-    const targetChatId = this.currentChatId;
-    const currentReqId = this.activeRequestId;
-    const afterSeq = this.chatSeqs[targetChatId] || 0;
-
-    // Создаем AbortController для возможности отмены при быстром переключении
-    this.syncAbortController = new AbortController();
-
-    try {
-      const res = await this.apiRequest('sync', {
-        sessionToken: this.session.sessionToken,
-        chatId: targetChatId,
-        afterSeq
-      }, this.syncAbortController.signal);
-
-      // Проверяем, актуален ли ответ (пользователь мог переключить чат во время запроса)
-      if (currentReqId !== this.activeRequestId || targetChatId !== this.currentChatId) {
-        return;
-      }
-
-      if (res.messages && res.messages.length > 0) {
-        let maxSeq = afterSeq;
-        for (const rawMsg of res.messages) {
-          // Игнорируем чужой chatId, если бэкенд случайно вернул чужое сообщение
-          const msgChatId = rawMsg.chatId === 'general' ? 'dm:general' : rawMsg.chatId;
-          if (msgChatId !== targetChatId) continue;
-
-          if (rawMsg.seq > maxSeq) {
-            maxSeq = rawMsg.seq;
-          }
-          const normMsg = this.normalizeServerMsg(rawMsg);
-          this.appendMessage(normMsg, false, targetChatId);
-          this.appendMessageToCache(targetChatId, normMsg);
-        }
-
-        if (maxSeq > afterSeq) {
-          this.chatSeqs[targetChatId] = maxSeq;
-          this.saveUserStorage();
-        }
-      }
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.warn('Синхронизация:', err.message);
-      }
-    }
-  }
-
-  // Загружает список диалогов пользователя с сервера (для нового устройства и получения новых чатов)
-  async fetchUserChats() {
-    if (!this.session) return;
-    try {
-      const res = await this.apiRequest('getUserChats', {
-        sessionToken: this.session.sessionToken
-      });
-      if (res && res.chats && res.chats.length > 0) {
-        let changed = false;
-        const myUsername = (this.user.username || '').toLowerCase();
-
-        for (const serverChat of res.chats) {
-          const parts = serverChat.chatId.split(':');
-          let targetUser = serverChat.peerUsername || null;
-          if (!targetUser && parts.length === 3 && parts[0] === 'dm') {
-            targetUser = parts[1] === myUsername ? parts[2] : parts[1];
-          }
-          const title = targetUser ? '@' + targetUser : serverChat.chatId;
-
-          // Добавляем собеседника в известный список пользователей
-          if (targetUser) {
-            this.knownUsers.add(targetUser.toLowerCase());
-          }
-
-          let existing = this.chats.find(c => c.id === serverChat.chatId);
-          if (!existing) {
-            // НОВЫЙ ДИАЛОГ: если сообщение отправил другой пользователь, выставляем 1 непрочитанное
-            const isFromOther = serverChat.lastSender
-              ? serverChat.lastSender.toLowerCase() !== myUsername
-              : (targetUser && targetUser.toLowerCase() !== myUsername);
-
-            const newChat = {
-              id: serverChat.chatId,
-              title,
-              targetUser,
-              lastMsg: serverChat.lastSnippet || 'Новое сообщение',
-              lastTime: serverChat.lastTime || '',
-              lastTimestamp: serverChat.lastTimestamp || Date.now(),
-              lastSeq: serverChat.seq || 0,
-              unreadCount: (isFromOther && this.currentChatId !== serverChat.chatId) ? 1 : 0
-            };
-            this.chats.push(newChat);
-            changed = true;
-          } else {
-            // СУЩЕСТВУЮЩИЙ ДИАЛОГ: проверяем, поступило ли новое сообщение
-            if (serverChat.seq && (!existing.lastSeq || serverChat.seq > existing.lastSeq)) {
-              existing.lastSeq = serverChat.seq;
-              existing.lastMsg = serverChat.lastSnippet || existing.lastMsg;
-              existing.lastTime = serverChat.lastTime || existing.lastTime;
-              existing.lastTimestamp = serverChat.lastTimestamp || Date.now();
-
-              // Если чат сейчас не открыт и сообщение от собеседника — увеличиваем unreadCount
-              const isFromOther = serverChat.lastSender
-                ? serverChat.lastSender.toLowerCase() !== myUsername
-                : (targetUser && targetUser.toLowerCase() !== myUsername);
-
-              if (isFromOther && this.currentChatId !== existing.id) {
-                existing.unreadCount = (existing.unreadCount || 0) + 1;
-              }
-              changed = true;
-            }
-          }
-        }
-
-        if (changed) {
-          // Сортировка: general наверху, остальные по времени последнего сообщения
-          const gen = this.chats.filter(c => c.isGeneral);
-          const others = this.chats.filter(c => !c.isGeneral).sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
-          this.chats = [...gen, ...others];
-          this.saveUserStorage();
-          if (!this.searchMode) this.renderChatList();
-        }
-      }
-    } catch (err) {
-      console.warn('fetchUserChats:', err.message);
-    }
-  }
-
-  startPolling() {
-    this.stopPolling();
-    let tickCount = 0;
-    const pollTick = () => {
-      this.syncMessages();
-      tickCount++;
-      // Каждые 2 цикла (каждые 3 секунды при SYNC_INTERVAL_MS=1500) проверяем новые чаты и непрочитанные
-      if (tickCount % 2 === 0) {
-        this.fetchUserChats();
-      }
+      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', fileData);
+      await this.refreshData();
     };
-
-    pollTick();
-    this.pollTimer = setInterval(pollTick, this.config.SYNC_INTERVAL_MS);
+    reader.readAsDataURL(file);
+    this.el.fileInput.value = '';
   }
 
-  stopPolling() {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+  async handleSearch(q) {
+    q = q.trim().toLowerCase().replace(/^@/, '');
+    if (!q) {
+      this.el.btnSearchClear.classList.add('hidden');
+      this.el.searchResultsSection.classList.add('hidden');
+      this.el.chatList.classList.remove('hidden');
+      return;
     }
+
+    this.el.btnSearchClear.classList.remove('hidden');
+    this.el.chatList.classList.add('hidden');
+    this.el.searchResultsSection.classList.remove('hidden');
+
+    const results = await this.storage.searchUsers(q, this.currentUser.username);
+    this.el.searchResultsList.innerHTML = '';
+
+    if (results.length === 0) {
+      this.el.searchResultsList.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:13px;">Никого не найдено</div>';
+      return;
+    }
+
+    results.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'search-result-item';
+      item.innerHTML = [
+        '<div class="avatar" style="width:36px;height:36px;font-size:15px;">' + u.username[0].toUpperCase() + '</div>',
+        '<div class="search-item-meta">',
+        '  <div class="search-item-title">@' + this.escape(u.username) + '</div>',
+        '  <div class="search-item-sub" style="font-size:12px;color:var(--text-secondary);">Нажмите, чтобы открыть диалог</div>',
+        '</div>'
+      ].join('');
+      item.addEventListener('click', () => {
+        this.openDirectChat(u.username);
+      });
+      this.el.searchResultsList.appendChild(item);
+    });
   }
 
-  formatBytes(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  escapeHtml(str) {
+  escape(str) {
+    if (!str) return '';
     const div = document.createElement('div');
-    div.innerText = str || '';
+    div.innerText = str;
     return div.innerHTML;
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  window.messenger = new GlobalMessenger();
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    window.messengerApp = new GlobalMessengerApp();
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { StorageService, GlobalMessengerApp };
+}
