@@ -5,7 +5,7 @@
 class GlobalMessenger {
   constructor() {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
-      PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbzq1QJHelEdQ-H-XO7jAF2dBe73hxegP320C0kH80dsw76n4_hfygGnh0nWFRo_ufQJIw/exec',
+      PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbzQ9zNSB9846dYDGMt3_5OoAiiGmz4SI_UEWbTbuVHh3l91ZRRnN-JnyOR8wF0HNFBDaA/exec',
       SYNC_INTERVAL_MS: 1500,
       LEGACY_UPLOAD_LIMIT_BYTES: 25 * 1024 * 1024,
       RESUMABLE_CHUNK_SIZE_BYTES: 8 * 1024 * 1024,
