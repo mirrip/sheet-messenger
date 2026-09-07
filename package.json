@@ -5,7 +5,7 @@
   "description": "Minimal messenger powered by Google Apps Script and Google Sheets",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "check": "node --check web/app.js && node --check web/config.js && node --check web/sw.js && node --check scripts/dev-server.mjs && node --check scripts/test-backend.mjs && node -e \"new Function(require('fs').readFileSync('apps-script/Code.gs', 'utf8'))\"",
+    "check": "node --check app.js && node --check config.js && node --check sw.js && node --check scripts/dev-server.mjs && node --check scripts/test-backend.mjs && node -e \"new Function(require('fs').readFileSync('apps-script/Code.gs', 'utf8'))\"",
     "test": "node scripts/test-backend.mjs"
   },
   "engines": {

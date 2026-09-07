@@ -6,8 +6,10 @@ class GlobalMessenger {
   constructor() {
     this.config = window.GLOBAL_CONFIG || window.GM_CONFIG || {
       PRIMARY_ENDPOINT: 'https://script.google.com/macros/s/AKfycbzQ9zNSB9846dYDGMt3_5OoAiiGmz4SI_UEWbTbuVHh3l91ZRRnN-JnyOR8wF0HNFBDaA/exec',
+      FAILOVER_ENDPOINTS: [],
       SYNC_INTERVAL_MS: 1500,
-      LEGACY_UPLOAD_LIMIT_BYTES: 25 * 1024 * 1024,
+      REQUEST_TIMEOUT_MS: 25000,
+      LEGACY_UPLOAD_LIMIT_BYTES: 0,
       RESUMABLE_CHUNK_SIZE_BYTES: 8 * 1024 * 1024,
       MAX_FILE_SIZE_BYTES: 1024 * 1024 * 1024
     };
@@ -30,6 +32,11 @@ class GlobalMessenger {
     this.recordingKind = null;
     this.recordingStartedAt = 0;
     this.recordingTimer = null;
+    this.syncInFlight = false;
+    this.chatsInFlight = false;
+    this.connectionState = navigator.onLine ? 'online' : 'offline';
+    this.toastTimer = null;
+    this.pendingTextSend = false;
 
     // Chat list, search & contact architecture
     this.chats = [];
@@ -137,7 +144,9 @@ class GlobalMessenger {
       lightboxImg: document.getElementById('lightbox-img'),
       lightboxTitle: document.getElementById('lightbox-title'),
       lightboxDownloadBtn: document.getElementById('lightbox-download-btn'),
-      lightboxCloseBtn: document.getElementById('lightbox-close-btn')
+      lightboxCloseBtn: document.getElementById('lightbox-close-btn'),
+      networkBanner: document.getElementById('network-banner'),
+      toast: document.getElementById('app-toast')
     };
     this.authMode = 'login';
   }
@@ -224,6 +233,21 @@ class GlobalMessenger {
         this.downloadMedia(this.activeLightboxData.url, this.activeLightboxData.name);
       }
     });
+    window.addEventListener('online', () => {
+      this.setConnectionState('online');
+      if (this.session) {
+        this.syncMessages();
+        this.fetchUserChats();
+      }
+    });
+    window.addEventListener('offline', () => this.setConnectionState('offline'));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.session) {
+        this.syncMessages();
+        this.fetchUserChats();
+      }
+    });
+    this.setConnectionState(navigator.onLine ? 'online' : 'offline');
   }
 
   setAuthMode(mode) {
@@ -234,18 +258,98 @@ class GlobalMessenger {
     this.el.authStatus.innerText = '';
   }
 
+  getApiEndpoints() {
+    return [...new Set([
+      this.config.PRIMARY_ENDPOINT,
+      ...(Array.isArray(this.config.FAILOVER_ENDPOINTS) ? this.config.FAILOVER_ENDPOINTS : [])
+    ].filter(Boolean))];
+  }
+
+  isSafeToRetry(action) {
+    return ['health', 'login', 'me', 'getProfile', 'searchUsers', 'sync', 'getUserChats'].includes(action);
+  }
+
   async apiRequest(action, payload = {}, signal = null) {
     const postData = JSON.stringify({ action, payload });
-    const options = {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: postData
-    };
-    if (signal) options.signal = signal;
-    const response = await fetch(this.config.PRIMARY_ENDPOINT, options);
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || 'Ошибка запроса');
-    return data; // backend returns { ok, messages, ... } directly
+    const endpoints = this.getApiEndpoints();
+    const attempts = this.isSafeToRetry(action) ? Math.max(2, endpoints.length) : 1;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort('timeout'), Number(this.config.REQUEST_TIMEOUT_MS) || 25000);
+      const abortFromCaller = () => controller.abort('cancelled');
+      if (signal) signal.addEventListener('abort', abortFromCaller, { once: true });
+      try {
+        const response = await fetch(endpoints[attempt % endpoints.length], {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: postData,
+          cache: 'no-store',
+          redirect: 'follow',
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`Сервер ответил HTTP ${response.status}`);
+        const raw = await response.text();
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (_) {
+          throw new Error('Сервер вернул некорректный ответ');
+        }
+        if (!data.ok) {
+          const apiError = new Error(data.error || 'Ошибка запроса');
+          apiError.code = data.code || 'API_ERROR';
+          throw apiError;
+        }
+        this.setConnectionState('online');
+        return data;
+      } catch (error) {
+        if (signal && signal.aborted) throw new DOMException('Запрос отменён', 'AbortError');
+        lastError = error;
+        if (attempt + 1 < attempts) await this.delay(500 * (attempt + 1));
+      } finally {
+        clearTimeout(timeoutId);
+        if (signal) signal.removeEventListener('abort', abortFromCaller);
+      }
+    }
+
+    this.setConnectionState(navigator.onLine ? 'error' : 'offline');
+    throw this.friendlyError(lastError);
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  friendlyError(error) {
+    const message = String(error && error.message ? error.message : error || '');
+    if (!navigator.onLine) return new Error('Нет подключения к интернету. Проверьте сеть и повторите попытку.');
+    if (error && error.name === 'AbortError') return new Error('Сервер отвечает слишком долго. Повторите попытку.');
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+      return new Error('Не удалось связаться с сервером. Проверьте интернет и повторите попытку.');
+    }
+    return error instanceof Error ? error : new Error(message || 'Неизвестная ошибка');
+  }
+
+  setConnectionState(state) {
+    this.connectionState = state;
+    if (!this.el.networkBanner) return;
+    const offline = state !== 'online';
+    this.el.networkBanner.classList.toggle('hidden', !offline);
+    this.el.networkBanner.classList.toggle('error', state === 'error');
+    this.el.networkBanner.textContent = state === 'offline'
+      ? 'Нет интернета — сообщения отправятся после восстановления связи'
+      : 'Сервер временно недоступен — повторяем подключение';
+  }
+
+  showToast(message, type = 'info', duration = 3500) {
+    if (!this.el.toast) return;
+    clearTimeout(this.toastTimer);
+    this.el.toast.textContent = message;
+    this.el.toast.className = `app-toast ${type}`;
+    requestAnimationFrame(() => this.el.toast.classList.add('visible'));
+    this.toastTimer = setTimeout(() => this.el.toast.classList.remove('visible'), duration);
   }
 
   async handleAuthSubmit(e) {
@@ -258,11 +362,22 @@ class GlobalMessenger {
     this.el.authStatus.innerText = 'Подключение к серверу...';
 
     try {
-      const result = await this.apiRequest(this.authMode, {
+      const credentials = {
         username,
         password,
         deviceName: navigator.userAgent.includes('Mobile') ? 'Телефон' : 'Компьютер'
-      });
+      };
+      let result;
+      try {
+        result = await this.apiRequest(this.authMode, credentials);
+      } catch (requestError) {
+        // Если регистрация успела пройти, но ответ потерялся, повторный клик безопасно восстановит вход.
+        if (this.authMode === 'register' && requestError.code === 'USERNAME_TAKEN') {
+          result = await this.apiRequest('login', credentials);
+        } else {
+          throw requestError;
+        }
+      }
 
       this.session = result.session;
       this.user = result.user;
@@ -278,17 +393,23 @@ class GlobalMessenger {
     }
   }
 
-  restoreSession() {
+  async restoreSession() {
     const s = localStorage.getItem('gm_session');
     const u = localStorage.getItem('gm_user');
     if (s && u) {
       try {
         this.session = JSON.parse(s);
         this.user = JSON.parse(u);
+        this.el.authStatus.innerText = 'Восстанавливаем сессию...';
+        const verified = await this.apiRequest('me', { sessionToken: this.session.sessionToken });
+        if (verified && verified.user) this.user = { ...this.user, ...verified.user };
         this.showMainScreen();
       } catch (e) {
         localStorage.removeItem('gm_session');
         localStorage.removeItem('gm_user');
+        this.session = null;
+        this.user = null;
+        this.el.authStatus.innerText = '';
       }
     }
   }
@@ -438,7 +559,7 @@ class GlobalMessenger {
     event.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
-      alert('Для аватара выберите изображение до 2 МБ');
+      this.showToast('Для аватара выберите изображение до 2 МБ', 'error');
       return;
     }
     this.el.btnAvatarChange.disabled = true;
@@ -452,7 +573,7 @@ class GlobalMessenger {
       this.profiles.set(profile.username, profile);
       this.setAvatar(this.el.profileAvatarPreview, profile.username, avatarUrl);
     } catch (error) {
-      alert('Не удалось загрузить аватар: ' + error.message);
+      this.showToast('Не удалось загрузить аватар: ' + this.friendlyError(error).message, 'error');
     } finally {
       this.el.btnAvatarChange.disabled = false;
       this.el.btnAvatarChange.innerText = 'Сменить фото';
@@ -477,8 +598,9 @@ class GlobalMessenger {
       this.setAvatar(this.el.currentUserAvatar, username, res.profile.avatarUrl);
       this.closeModal(this.el.profileModal);
       this.renderChatList();
+      this.showToast('Профиль обновлён', 'success');
     } catch (error) {
-      alert('Не удалось сохранить профиль: ' + error.message);
+      this.showToast('Не удалось сохранить профиль: ' + this.friendlyError(error).message, 'error');
     } finally {
       this.el.profileSave.disabled = false;
     }
@@ -978,10 +1100,10 @@ class GlobalMessenger {
 
   async sendTextMessage() {
     const text = this.el.messageInput.value.trim();
-    if (!text) return;
+    if (!text || this.pendingTextSend) return;
 
-    this.el.messageInput.value = '';
-    this.el.messageInput.style.height = 'auto';
+    this.pendingTextSend = true;
+    this.el.btnSend.disabled = true;
 
     const targetChatId = this.currentChatId;
     const tempId = 'tmp_' + Date.now();
@@ -1005,14 +1127,30 @@ class GlobalMessenger {
       };
       const res = await this.apiRequest('send', sendPayload);
       if (res && res.message) {
+        const optimisticEl = this.el.messagesFeed.querySelector(`[data-message-id="${tempId}"]`);
+        const confirmedId = res.message.messageId || res.message.id;
+        if (optimisticEl) {
+          optimisticEl.style.opacity = '';
+          if (confirmedId) optimisticEl.dataset.messageId = confirmedId;
+        }
+        if (confirmedId) this.renderedMessageIds.add(confirmedId);
         const currentSeq = this.chatSeqs[targetChatId] || 0;
         this.chatSeqs[targetChatId] = Math.max(currentSeq, res.message.seq);
         this.saveUserStorage();
         // Сохраняем подтвержденное сообщение в локальный кэш этого чата
         this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
       }
+      this.el.messageInput.value = '';
+      this.el.messageInput.style.height = 'auto';
     } catch (err) {
       console.error('Ошибка отправки:', err);
+      const optimisticEl = this.el.messagesFeed.querySelector(`[data-message-id="${tempId}"]`);
+      if (optimisticEl) optimisticEl.remove();
+      this.showToast(this.friendlyError(err).message, 'error');
+      this.el.messageInput.focus();
+    } finally {
+      this.pendingTextSend = false;
+      this.el.btnSend.disabled = false;
     }
   }
 
@@ -1030,7 +1168,8 @@ class GlobalMessenger {
   }
 
   async uploadFileToServer(file, chatId, onProgress) {
-    const legacyLimit = this.config.LEGACY_UPLOAD_LIMIT_BYTES || (25 * 1024 * 1024);
+    const configuredLegacyLimit = Number(this.config.LEGACY_UPLOAD_LIMIT_BYTES);
+    const legacyLimit = Number.isFinite(configuredLegacyLimit) ? configuredLegacyLimit : (25 * 1024 * 1024);
     if (file.size > legacyLimit) {
       return this.uploadFileResumable(file, chatId, onProgress);
     }
@@ -1150,7 +1289,7 @@ class GlobalMessenger {
 
   async sendMediaFile(file, mediaKind = 'file') {
     if (file.size > this.config.MAX_FILE_SIZE_BYTES) {
-      alert('Размер файла превышает текущий лимит');
+      this.showToast(`Максимальный размер файла — ${this.formatBytes(this.config.MAX_FILE_SIZE_BYTES)}`, 'error');
       return;
     }
     const isVideo = mediaKind === 'videoNote' || file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
@@ -1163,6 +1302,7 @@ class GlobalMessenger {
 
     this.el.uploadCard.classList.remove('hidden');
     this.el.uploadFileName.innerText = mediaKind === 'audio' ? 'Голосовое сообщение' : (mediaKind === 'videoNote' ? 'Видеокружок' : file.name);
+    let optimisticId = null;
     try {
       const uploaded = await this.uploadFileToServer(file, targetChatId, (pct, statusText) => {
         this.el.uploadProgressFill.style.width = pct + '%';
@@ -1170,8 +1310,10 @@ class GlobalMessenger {
       });
       const fileUrl = uploaded.mediaUrl;
       const filePayload = { id:uploaded.fileId || ('file_' + Date.now()), name:file.name, size:file.size, mimeType:file.type, url:fileUrl, downloadUrl:uploaded.downloadUrl || fileUrl, checksum:uploaded.checksum || '', mediaKind };
+      const tempId = 'tmp_' + Date.now();
+      optimisticId = tempId;
       this.appendMessage({
-        id:'tmp_' + Date.now(), chatId:targetChatId, senderUsername:this.user.username,
+        id:tempId, chatId:targetChatId, senderUsername:this.user.username,
         content:{ text:caption, file:filePayload }, createdAt:new Date().toISOString()
       }, true, targetChatId);
       const res = await this.apiRequest('send', {
@@ -1181,12 +1323,24 @@ class GlobalMessenger {
         fileName:file.name, mediaKind, caption
       });
       if (res && res.message) {
+        const optimisticEl = this.el.messagesFeed.querySelector(`[data-message-id="${tempId}"]`);
+        const confirmedId = res.message.messageId || res.message.id;
+        if (optimisticEl) {
+          optimisticEl.style.opacity = '';
+          if (confirmedId) optimisticEl.dataset.messageId = confirmedId;
+        }
+        if (confirmedId) this.renderedMessageIds.add(confirmedId);
         this.chatSeqs[targetChatId] = Math.max(this.chatSeqs[targetChatId] || 0, res.message.seq);
         this.appendMessageToCache(targetChatId, this.normalizeServerMsg(res.message));
         this.saveUserStorage();
       }
     } catch (error) {
-      alert('Ошибка отправки: ' + error.message);
+      if (optimisticId) {
+        const optimisticEl = this.el.messagesFeed.querySelector(`[data-message-id="${optimisticId}"]`);
+        if (optimisticEl) optimisticEl.remove();
+      }
+      this.showToast('Не удалось отправить файл: ' + this.friendlyError(error).message, 'error', 6000);
+      if (mediaKind === 'file' && caption) this.el.messageInput.value = caption;
     } finally {
       this.el.uploadCard.classList.add('hidden');
     }
@@ -1194,7 +1348,7 @@ class GlobalMessenger {
 
   async startRecording(kind) {
     if (!navigator.mediaDevices || !window.MediaRecorder) {
-      alert('Этот браузер не поддерживает запись медиа');
+      this.showToast('Этот браузер не поддерживает запись медиа', 'error');
       return;
     }
     if (this.recorder) return;
@@ -1224,7 +1378,7 @@ class GlobalMessenger {
       this.updateRecordingTimer();
       this.recordingTimer = setInterval(() => this.updateRecordingTimer(), 500);
     } catch (error) {
-      alert('Не удалось получить доступ к ' + (kind === 'videoNote' ? 'камере' : 'микрофону'));
+      this.showToast('Не удалось получить доступ к ' + (kind === 'videoNote' ? 'камере' : 'микрофону'), 'error');
       this.cleanupRecording();
     }
   }
@@ -1287,6 +1441,7 @@ class GlobalMessenger {
     const isOutgoing = msg.senderUsername === this.user.username;
     const bubble = document.createElement('div');
     bubble.className = 'tg-bubble ' + (isOutgoing ? 'outgoing' : 'incoming');
+    if (msgId) bubble.dataset.messageId = msgId;
     if (isOptimistic) bubble.style.opacity = '0.75';
 
     let contentHtml = '';
@@ -1454,7 +1609,7 @@ class GlobalMessenger {
 
   downloadMedia(url, fileName) {
     if (!url || url === '#' || url.startsWith('blob:tmp_')) {
-      alert('Файл недоступен для скачивания');
+      this.showToast('Файл недоступен для скачивания', 'error');
       return;
     }
 
@@ -1513,7 +1668,8 @@ class GlobalMessenger {
   }
 
   async syncMessages() {
-    if (!this.session) return;
+    if (!this.session || this.syncInFlight || document.hidden || !navigator.onLine) return;
+    this.syncInFlight = true;
     const targetChatId = this.currentChatId;
     const currentReqId = this.activeRequestId;
     const afterSeq = this.chatSeqs[targetChatId] || 0;
@@ -1557,12 +1713,15 @@ class GlobalMessenger {
       if (err.name !== 'AbortError') {
         console.warn('Синхронизация:', err.message);
       }
+    } finally {
+      this.syncInFlight = false;
     }
   }
 
   // Загружает список диалогов пользователя с сервера (для нового устройства)
   async fetchUserChats() {
-    if (!this.session) return;
+    if (!this.session || this.chatsInFlight || document.hidden || !navigator.onLine) return;
+    this.chatsInFlight = true;
     try {
       const res = await this.apiRequest('getUserChats', {
         sessionToken: this.session.sessionToken
@@ -1629,6 +1788,8 @@ class GlobalMessenger {
       }
     } catch (err) {
       console.warn('fetchUserChats:', err.message);
+    } finally {
+      this.chatsInFlight = false;
     }
   }
 
