@@ -534,23 +534,13 @@ class TelegramApp {
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
         if (hasText || hasFiles) return; // если есть текст или файлы — обычная отправка, не запись
 
-        // Блокируем нативные жесты браузера (жест «назад» с края экрана, скролл страницы)
-        if (e.cancelable) e.preventDefault();
-        try {
-          if (e.pointerId !== undefined && this.el.btnMainAction.setPointerCapture) {
-            this.el.btnMainAction.setPointerCapture(e.pointerId);
-          }
-        } catch (_) {}
-
         isPointerDown = true;
         isHoldRecording = false;
         startY = e.clientY;
 
         if (holdTimer) clearTimeout(holdTimer);
 
-        // Порог зажатия — 280 мс
-        // Если палец/мышь отпущены раньше 280 мс — ЭТО ЧИСТЫЙ КЛИК ДЛЯ СМЕНЫ РЕЖИМА!
-        // Запись вообще не запускается, микрофон не дергается!
+        // Порог зажатия — 180 мс для моментального и четкого старта
         holdTimer = setTimeout(() => {
           if (!isPointerDown) return;
           isHoldRecording = true;
@@ -558,7 +548,7 @@ class TelegramApp {
 
           // Легкий виброотклик на смартфонах
           if (navigator.vibrate) {
-            try { navigator.vibrate(25); } catch (_) {}
+            try { navigator.vibrate(30); } catch (_) {}
           }
 
           // Показываем замочек для свайпа вверх
@@ -572,7 +562,7 @@ class TelegramApp {
           } else {
             this.startVideoCircleRecording();
           }
-        }, 280);
+        }, 180);
       };
 
       const onPointerMove = (e) => {
@@ -580,16 +570,10 @@ class TelegramApp {
         if (!startY) return;
 
         const deltaY = startY - e.clientY;
-        // Свайп вверх от 45px фиксирует запись (Lock)
-        if (deltaY > 45) {
+        // Свайп вверх от 35px фиксирует запись (Lock)
+        if (deltaY > 35) {
           this.isRecordingLocked = true;
-          isPointerDown = false; // Палец свободен, отпускание не остановит запись!
-
-          try {
-            if (e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
-              this.el.btnMainAction.releasePointerCapture(e.pointerId);
-            }
-          } catch (_) {}
+          isPointerDown = false;
 
           if (this.el.recordLock) {
             this.el.recordLock.classList.add('locked');
@@ -605,12 +589,6 @@ class TelegramApp {
       };
 
       const onPointerUp = (e) => {
-        try {
-          if (e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
-            this.el.btnMainAction.releasePointerCapture(e.pointerId);
-          }
-        } catch (_) {}
-
         if (holdTimer) {
           clearTimeout(holdTimer);
           holdTimer = null;
@@ -620,46 +598,42 @@ class TelegramApp {
         if (this.isRecordingLocked) return;
 
         if (!isPointerDown) return;
+        const wasRecording = isHoldRecording;
         isPointerDown = false;
         this.isHoldingMainAction = false;
 
         if (this.el.recordLock) this.el.recordLock.classList.add('hidden');
 
-        if (isHoldRecording) {
-          // Реально шла запись по зажатию — останавливаем и отправляем!
+        if (wasRecording) {
+          // Шла запись по зажатию — останавливаем и отправляем!
           isHoldRecording = false;
           this.stopRecording(true);
         } else {
-          // Палец/кнопка отпущены до 280 мс — ЭТО ЧИСТЫЙ КОРОТКИЙ КЛИК!
-          // Мгновенное и чёткое переключение микрофон <-> видеокамера!
+          // Палец/кнопка отпущены до порога — ЭТО ЧИСТЫЙ КОРОТКИЙ КЛИК!
+          // Переключаем режим: микрофон <-> видеокамера
           this.toggleRecordMode();
         }
       };
 
       const onPointerCancel = (e) => {
-        try {
-          if (e && e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
-            this.el.btnMainAction.releasePointerCapture(e.pointerId);
-          }
-        } catch (_) {}
-
         if (holdTimer) {
           clearTimeout(holdTimer);
           holdTimer = null;
         }
         if (this.isRecordingLocked) return;
+        const wasRecording = isHoldRecording;
         isPointerDown = false;
         this.isHoldingMainAction = false;
 
         if (this.el.recordLock) this.el.recordLock.classList.add('hidden');
 
-        if (isHoldRecording) {
+        if (wasRecording) {
           isHoldRecording = false;
           this.stopRecording(false);
         }
       };
 
-      // Pointer Events — идеальная работа на ПК и сенсорных смартфонах без багов эмуляции
+      // Pointer Events для современных браузеров и мобильных
       this.el.btnMainAction.addEventListener('pointerdown', onPointerDown);
       window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
