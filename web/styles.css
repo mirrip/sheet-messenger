@@ -815,6 +815,7 @@ html, body {
 }
 
 .tg-composer {
+  position: relative;
   padding: 8px 16px 12px;
   display: flex;
   align-items: flex-end;
@@ -822,6 +823,52 @@ html, body {
   max-width: 740px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* SWIPE UP LOCK BADGE */
+.tg-record-lock {
+  position: absolute;
+  bottom: 66px;
+  right: 18px;
+  z-index: 105;
+  background: rgba(23, 33, 43, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 8px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: tg-lock-float 1s infinite ease-in-out alternate;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.tg-record-lock.hidden {
+  display: none !important;
+}
+
+.tg-record-lock.locked {
+  background: var(--tg-primary);
+  border-color: var(--tg-primary);
+}
+
+.tg-lock-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tg-lock-arrow {
+  font-size: 9px;
+  color: var(--tg-primary);
+  line-height: 1;
+}
+
+@keyframes tg-lock-float {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-8px); }
 }
 
 .tg-clip-btn {
