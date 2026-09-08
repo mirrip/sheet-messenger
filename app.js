@@ -1,14 +1,57 @@
 // ===================================================
-// TELEGRAM WEB — POLISHED ENGINE & UI CONTROLLER v2.0.0
+// TELEGRAM WEB — POLISHED ENGINE & UI CONTROLLER v3.0.0
 // ===================================================
 
 /**
- * Сервис хранения: локальный режим + готовые интерфейсы
+ * Сервис хранения: localStorage для метаданных, IndexedDB для медиа-блобов
  */
 class StorageService {
   constructor(config) {
     this.config = config || (typeof window !== 'undefined' ? window.APP_CONFIG : null) || { STORAGE_MODE: 'local' };
+    this.mediaDB = null;
     this.initLocalStorage();
+  }
+
+  // --- IndexedDB для медиа (голос, видеокружки) ---
+  async initMediaDB() {
+    if (this.mediaDB) return;
+    return new Promise((resolve) => {
+      try {
+        const req = indexedDB.open('gm_media_store', 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('blobs')) {
+            db.createObjectStore('blobs', { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = (e) => { this.mediaDB = e.target.result; resolve(); };
+        req.onerror = () => resolve(); // не блокируем приложение
+      } catch (e) { resolve(); }
+    });
+  }
+
+  async saveMediaBlob(id, blob) {
+    if (!this.mediaDB) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.mediaDB.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').put({ id, blob, ts: Date.now() });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  async getMediaBlob(id) {
+    if (!this.mediaDB || !id) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.mediaDB.transaction('blobs', 'readonly');
+        const r = tx.objectStore('blobs').get(id);
+        r.onsuccess = () => resolve(r.result ? r.result.blob : null);
+        r.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
   }
 
   initLocalStorage() {
@@ -136,7 +179,7 @@ class StorageService {
   }
 
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
-    let all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -147,39 +190,21 @@ class StorageService {
       text: text || '',
       file: file || null,
       files: files || (file ? [file] : null),
-      voice: voice || null,
-      circleVideo: circleVideo || null,
+      voice: voice || null,        // { mediaId, duration } — блоб в IDB
+      circleVideo: circleVideo || null, // { mediaId, duration } — блоб в IDB
       reactions: {},
       time: timeStr,
       createdAt: Date.now()
     };
 
     all.push(newMsg);
-
-    // Безопасное сохранение в localStorage с защитой от квоты QuotaExceededError
     try {
       localStorage.setItem('gm_messages', JSON.stringify(all));
-    } catch (quotaErr) {
-      console.warn('LocalStorage quota reached, pruning old heavy media items...', quotaErr);
-      // Если квота превышена, удаляем тяжелые медиа из старых сообщений (старше 5 последних)
-      while (all.length > 5) {
-        // Ищем старое сообщение с тяжелым файлом/видео/аудио
-        const heavyIdx = all.findIndex((m, idx) => idx < all.length - 5 && (m.circleVideo || m.file || m.voice || m.files));
-        if (heavyIdx !== -1) {
-          if (all[heavyIdx].circleVideo) all[heavyIdx].circleVideo.data = '';
-          if (all[heavyIdx].file) all[heavyIdx].file.data = '';
-          if (all[heavyIdx].voice) all[heavyIdx].voice.data = '';
-          if (all[heavyIdx].files) all[heavyIdx].files = null;
-        } else {
-          all.shift(); // Удаляем самое старое сообщение
-        }
-        try {
-          localStorage.setItem('gm_messages', JSON.stringify(all));
-          break;
-        } catch (e) {
-          // Продолжаем очищать
-        }
-      }
+    } catch (e) {
+      // Квота: убираем самое старое сообщение и повторяем
+      console.warn('localStorage quota, removing oldest message');
+      all.shift();
+      try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (e2) { /* ignore */ }
     }
 
     if (typeof window !== 'undefined' && window.dispatchEvent) {
@@ -261,6 +286,10 @@ class TelegramApp {
     this.recStartTime = null;
     this.mediaStream = null;
     this.pendingFiles = []; // Вложения перед отправкой
+    this._activeObjectURLs = []; // Для очистки Blob URL при ререндере
+
+    // Инициализация IndexedDB для медиа (async, не блокирует UI)
+    this.storage.initMediaDB();
 
     this.initElements();
     this.bindEvents();
@@ -730,6 +759,12 @@ class TelegramApp {
   }
 
   async renderMessages() {
+    // Очищаем старые Object URL от предыдущего рендера (предотвращает утечки памяти)
+    if (this._activeObjectURLs && this._activeObjectURLs.length > 0) {
+      this._activeObjectURLs.forEach(u => URL.revokeObjectURL(u));
+    }
+    this._activeObjectURLs = [];
+
     const msgs = await this.storage.getMessages(this.currentChatId);
     this.el.messagesFeed.innerHTML = '';
 
@@ -747,22 +782,24 @@ class TelegramApp {
 
       const isCircle = Boolean(m.circleVideo);
 
-      // 1. ВИДЕОКРУЖОЧЕК TELEGRAM
+      // 1. ВИДЕОКРУЖОЧЕК TELEGRAM (медиа грузится из IndexedDB)
       if (m.circleVideo) {
         const dur = m.circleVideo.duration ? String(m.circleVideo.duration).padStart(2, '0') : '00';
+        const mediaId = m.circleVideo.mediaId || '';
         specialContent = [
-          '<div class="tg-circle-card" data-video-src="' + m.circleVideo.data + '">',
-          '  <video src="' + m.circleVideo.data + '" autoplay muted playsinline loop></video>',
+          '<div class="tg-circle-card" data-media-id="' + mediaId + '">',
+          '  <video autoplay muted playsinline loop></video>',
           '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
           '  <div class="tg-circle-play-overlay">▶</div>',
           '</div>'
         ].join('');
       }
-      // 2. ГОЛОСОВОЕ СООБЩЕНИЕ TELEGRAM
+      // 2. ГОЛОСОВОЕ СООБЩЕНИЕ TELEGRAM (медиа грузится из IndexedDB)
       else if (m.voice) {
+        const voiceMediaId = m.voice.mediaId || '';
         specialContent = [
           '<div class="tg-voice-card">',
-          '  <button class="tg-voice-play-btn" data-audio-src="' + m.voice.data + '">▶</button>',
+          '  <button class="tg-voice-play-btn" data-media-id="' + voiceMediaId + '">▶</button>',
           '  <div class="tg-voice-meta">',
           '    <div class="tg-voice-waveform">',
           '      <span class="tg-wave-bar" style="height: 6px;"></span>',
@@ -850,10 +887,26 @@ class TelegramApp {
         '</div>'
       ].join('');
 
-      // Интерактив для видеокружка
+      // Интерактив для видеокружка — загрузка блоба из IndexedDB
       const circleCard = wrap.querySelector('.tg-circle-card');
       if (circleCard) {
         const vid = circleCard.querySelector('video');
+        const mediaId = circleCard.getAttribute('data-media-id');
+
+        // Асинхронная загрузка видео из IndexedDB -> Blob URL
+        if (mediaId) {
+          this.storage.getMediaBlob(mediaId).then(blob => {
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              this._activeObjectURLs.push(url);
+              vid.src = url;
+            }
+          });
+        } else if (m.circleVideo && m.circleVideo.data) {
+          // Обратная совместимость: старые сообщения с base64
+          vid.src = m.circleVideo.data;
+        }
+
         circleCard.addEventListener('click', () => {
           if (vid.muted) {
             vid.muted = false;
@@ -869,11 +922,29 @@ class TelegramApp {
         });
       }
 
-      // Интерактив для голосового
+      // Интерактив для голосового — загрузка блоба из IndexedDB
       const voicePlayBtn = wrap.querySelector('.tg-voice-play-btn');
       if (voicePlayBtn) {
-        const audio = new Audio(voicePlayBtn.getAttribute('data-audio-src'));
-        voicePlayBtn.addEventListener('click', () => {
+        const voiceMediaId = voicePlayBtn.getAttribute('data-media-id');
+        let audio = null;
+
+        // Ленивая загрузка аудио при первом клике
+        voicePlayBtn.addEventListener('click', async () => {
+          if (!audio) {
+            if (voiceMediaId) {
+              const blob = await this.storage.getMediaBlob(voiceMediaId);
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                this._activeObjectURLs.push(url);
+                audio = new Audio(url);
+              }
+            } else if (m.voice && m.voice.data) {
+              // Обратная совместимость: старые base64
+              audio = new Audio(m.voice.data);
+            }
+          }
+          if (!audio) return;
+
           if (audio.paused) {
             audio.play();
             voicePlayBtn.innerText = '❚❚';
@@ -1176,11 +1247,12 @@ class TelegramApp {
       };
 
       this.mediaRecorder.onstop = async () => {
-        if (this.shouldSendRecorded) {
+        if (this.shouldSendRecorded && this.recordedChunks.length > 0) {
           const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
-          const base64 = await this.blobToBase64(blob);
+          const mediaId = 'voice_' + Date.now();
+          await this.storage.saveMediaBlob(mediaId, blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
-            data: base64,
+            mediaId: mediaId,
             duration: this.getElapsedSeconds()
           });
           await this.refreshData();
@@ -1235,9 +1307,10 @@ class TelegramApp {
         if (this.shouldSendRecorded && this.recordedChunks.length > 0) {
           const finalType = selectedMime || (this.recordedChunks[0] && this.recordedChunks[0].type) || 'video/webm';
           const blob = new Blob(this.recordedChunks, { type: finalType });
-          const base64 = await this.blobToBase64(blob);
+          const mediaId = 'circle_' + Date.now();
+          await this.storage.saveMediaBlob(mediaId, blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
-            data: base64,
+            mediaId: mediaId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
           await this.refreshData();
@@ -1250,9 +1323,9 @@ class TelegramApp {
       this.startTimer(this.el.recordTimer);
     } catch (err) {
       console.warn('Camera error or blocked:', err);
-      // Если веб-камера заблокирована или отсутствует — предлагаем мгновенный демо-кружок
+      // Если веб-камера заблокирована или отсутствует — отправляем демо-кружок
       const confirmDemo = confirm(
-        'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный анимированный видеокружок в чат?'
+        'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный видеокружок?'
       );
       if (confirmDemo) {
         await this.sendDemoVideoCircle();
@@ -1268,15 +1341,25 @@ class TelegramApp {
       canvas.height = 240;
       const ctx = canvas.getContext('2d');
       const stream = canvas.captureStream(25);
-      const rec = new MediaRecorder(stream, { videoBitsPerSecond: 250000 });
+
+      // Находим поддерживаемый mime
+      let demoMime = '';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        demoMime = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+      }
+      const recOpts = { videoBitsPerSecond: 250000 };
+      if (demoMime) recOpts.mimeType = demoMime;
+
+      const rec = new MediaRecorder(stream, recOpts);
       const chunks = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
       rec.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const base64 = await this.blobToBase64(blob);
+        const blob = new Blob(chunks, { type: demoMime || 'video/webm' });
+        const mediaId = 'circle_demo_' + Date.now();
+        await this.storage.saveMediaBlob(mediaId, blob);
         await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
-          data: base64,
+          mediaId: mediaId,
           duration: 3
         });
         await this.refreshData();
@@ -1315,7 +1398,7 @@ class TelegramApp {
         }
       }, 40);
     } catch (demoErr) {
-      console.error('Failed to generate demo video note:', demoErr);
+      console.error('Demo circle error:', demoErr);
     }
   }
 
