@@ -1218,22 +1218,18 @@ html, body {
   opacity: 0;
 }
 
-/* RECORDING MODALS & PANELS */
-.tg-audio-record-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #17212b;
-  border-radius: 20px;
-  padding: 8px 16px;
-  margin: 0 16px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.tg-rec-indicator {
+/* ВСТРОЕННАЯ СТРОКА ЗАПИСИ (ВНУТРИ СТРОКИ СООБЩЕНИЯ) */
+.tg-composer-rec-bar {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 4px 0;
+}
+
+.tg-composer-rec-bar.hidden {
+  display: none !important;
 }
 
 .tg-rec-dot {
@@ -1242,6 +1238,7 @@ html, body {
   border-radius: 50%;
   background: #ff595a;
   animation: tg-pulse 1s infinite alternate;
+  flex-shrink: 0;
 }
 
 @keyframes tg-pulse {
@@ -1249,43 +1246,85 @@ html, body {
   100% { transform: scale(1.2); opacity: 1; }
 }
 
-.tg-rec-label {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.tg-rec-time {
-  font-size: 13px;
+.tg-composer-rec-timer {
+  font-size: 15px;
+  font-weight: 700;
   color: #ff595a;
+  min-width: 44px;
+}
+
+.tg-composer-rec-hint {
+  font-size: 13.5px;
+  color: var(--tg-text-sub);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-composer-rec-cancel {
+  background: transparent;
+  border: none;
+  color: #ff595a;
+  font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 12px;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
 }
 
-.tg-voice-send-btn {
-  background: var(--tg-primary) !important;
-  color: #fff !important;
+.tg-composer-rec-cancel:hover {
+  background: rgba(255, 89, 90, 0.15);
 }
 
-/* VIDEO CIRCLE LIVE RECORD OVERLAY */
+.tg-composer-rec-cancel:active {
+  transform: scale(0.95);
+}
+
+/* VIDEO CIRCLE LIVE RECORD OVERLAY — СТРОГО В ЦЕНТРЕ ЭКРАНА (TG STYLE) */
 .tg-video-record-wrap {
-  position: absolute;
-  bottom: 70px;
-  right: 20px;
-  z-index: 100;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 999;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  animation: tg-fade-in 0.2s ease-out;
+}
+
+.tg-video-record-wrap.hidden {
+  display: none !important;
+}
+
+@keyframes tg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .tg-video-circle-preview {
-  width: 220px;
-  height: 220px;
+  width: clamp(230px, 45vw, 320px);
+  height: clamp(230px, 45vw, 320px);
   border-radius: 50%;
   border: 4px solid var(--tg-primary);
   overflow: hidden;
   position: relative;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(255, 255, 255, 0.15);
   background: #000;
+  animation: tg-circle-pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes tg-circle-pop {
+  0% { transform: scale(0.65); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .tg-video-circle-preview video {
@@ -1293,40 +1332,6 @@ html, body {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1); /* mirror */
-}
-
-.tg-record-timer {
-  position: absolute;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.tg-video-record-actions {
-  display: flex;
-  gap: 16px;
-}
-
-.tg-rec-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: none;
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  transition: transform 0.15s;
 }
 
 .tg-rec-btn:active {
@@ -1751,16 +1756,9 @@ html, body {
     height: clamp(180px, 58vw, 220px);
   }
 
-  .tg-video-record-wrap {
-    bottom: 80px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-  }
-
   .tg-video-circle-preview {
-    width: 200px;
-    height: 200px;
+    width: clamp(210px, 60vw, 260px);
+    height: clamp(210px, 60vw, 260px);
   }
 
   .tg-voice-card {
