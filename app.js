@@ -759,9 +759,7 @@ class TelegramApp {
 
     // Мобильная кнопка Назад
     this.el.btnBack.addEventListener('click', () => {
-      sessionStorage.removeItem('gm_active_chat_open');
-      sessionStorage.removeItem('gm_active_chat_id');
-      sessionStorage.removeItem('gm_active_chat_title');
+      sessionStorage.setItem('gm_active_chat_open', '0');
       if (this.el.chatView) this.el.chatView.classList.remove('active');
       if (window.history && window.history.state && window.history.state.chatId) {
         window.history.back();
@@ -772,9 +770,7 @@ class TelegramApp {
     window.addEventListener('popstate', (e) => {
       if (this.el.chatView && this.el.chatView.classList.contains('active')) {
         if (!e.state || !e.state.chatId) {
-          sessionStorage.removeItem('gm_active_chat_open');
-          sessionStorage.removeItem('gm_active_chat_id');
-          sessionStorage.removeItem('gm_active_chat_title');
+          sessionStorage.setItem('gm_active_chat_open', '0');
           this.el.chatView.classList.remove('active');
         } else if (e.state.chatId !== this.currentChatId) {
           this.openChat(e.state.chatId, e.state.title || '');
@@ -833,6 +829,7 @@ class TelegramApp {
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
       this.showMainScreen();
+      this.openChat('general', 'Общий чат');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
@@ -857,20 +854,21 @@ class TelegramApp {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
 
-    const hasOpenChat = sessionStorage.getItem('gm_active_chat_open') === '1';
-    const savedChatId = sessionStorage.getItem('gm_active_chat_id');
-    const savedChatTitle = sessionStorage.getItem('gm_active_chat_title');
+    const openState = sessionStorage.getItem('gm_active_chat_open');
+    const savedChatId = sessionStorage.getItem('gm_active_chat_id') || 'general';
+    const savedChatTitle = sessionStorage.getItem('gm_active_chat_title') || 'Общий чат';
 
-    if (savedChatId) {
-      this.currentChatId = savedChatId;
-      if (savedChatTitle && this.el.activeChatTitle) {
-        this.el.activeChatTitle.innerText = savedChatTitle;
-      }
+    this.currentChatId = savedChatId;
+    if (this.el.activeChatTitle) {
+      this.el.activeChatTitle.innerText = savedChatTitle;
     }
 
-    // Если на смартфоне чат был открыт — остаёмся в нём и не вылетаем в список чатов!
+    // Если на смартфоне зашли первый раз или чат был открыт — сразу показываем чат
     if (this.el.chatView && window.innerWidth <= 768) {
-      if (hasOpenChat) {
+      if (openState === null || openState === '1') {
+        sessionStorage.setItem('gm_active_chat_open', '1');
+        sessionStorage.setItem('gm_active_chat_id', savedChatId);
+        sessionStorage.setItem('gm_active_chat_title', savedChatTitle);
         this.el.chatView.classList.add('active');
       } else {
         this.el.chatView.classList.remove('active');
@@ -919,6 +917,13 @@ class TelegramApp {
     this.el.activeChatTitle.innerText = title;
     this.el.activeChatAvatar.innerText = isGeneral ? '🌐' : title.replace('@', '')[0].toUpperCase();
     this.el.activeChatStatus.innerText = isGeneral ? 'канал общения' : 'в сети';
+
+    if (this.isRecordingAudio || this.isRecordingVideo) {
+      this.stopRecording(false);
+    }
+    if (this.el.messageInput) {
+      this.el.messageInput.classList.remove('hidden');
+    }
 
     if (this.el.chatView) {
       this.el.chatView.classList.add('active');
