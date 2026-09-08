@@ -38,7 +38,16 @@ class StorageService {
         const tx = this.mediaDB.transaction('blobs', 'readwrite');
         tx.objectStore('blobs').put({ id, blob, ts: Date.now() });
         tx.oncomplete = () => resolve(true);
-        tx.onerror = () => resolve(false);
+        tx.onerror = () => {
+          try {
+            blob.arrayBuffer().then(buf => {
+              const tx2 = this.mediaDB.transaction('blobs', 'readwrite');
+              tx2.objectStore('blobs').put({ id, buf, type: blob.type, ts: Date.now() });
+              tx2.oncomplete = () => resolve(true);
+              tx2.onerror = () => resolve(false);
+            }).catch(() => resolve(false));
+          } catch (_) { resolve(false); }
+        };
       } catch (e) { resolve(false); }
     });
   }
@@ -50,7 +59,12 @@ class StorageService {
       try {
         const tx = this.mediaDB.transaction('blobs', 'readonly');
         const r = tx.objectStore('blobs').get(id);
-        r.onsuccess = () => resolve(r.result ? r.result.blob : null);
+        r.onsuccess = () => {
+          if (!r.result) return resolve(null);
+          if (r.result.blob) return resolve(r.result.blob);
+          if (r.result.buf) return resolve(new Blob([r.result.buf], { type: r.result.type || 'video/webm' }));
+          resolve(null);
+        };
         r.onerror = () => resolve(null);
       } catch (e) { resolve(null); }
     });
@@ -306,6 +320,12 @@ class TelegramApp {
     this.initElements();
     this.bindEvents();
     this.updateMainActionButtonState();
+
+    if (this.currentUser) {
+      this.showMainScreen();
+    } else {
+      this.showAuthScreen();
+    }
   }
 
   generateWaveformBars(seedStr, count = 30) {
@@ -353,12 +373,6 @@ class TelegramApp {
       }
       this.currentPlayingAudio = null;
       this.currentPlayingAudioBtn = null;
-    }
-
-    if (this.currentUser) {
-      this.showMainScreen();
-    } else {
-      this.showAuthScreen();
     }
   }
 
@@ -968,6 +982,22 @@ class TelegramApp {
       return;
     }
 
+    // Предзагрузка всех Blob URL для мгновенного и надежного старта видео и аудио
+    for (const m of msgs) {
+      if (m.circleVideo && m.circleVideo.mediaId && !this._mediaBlobUrlCache.has(m.circleVideo.mediaId)) {
+        const b = await this.storage.getMediaBlob(m.circleVideo.mediaId);
+        if (b) {
+          this._mediaBlobUrlCache.set(m.circleVideo.mediaId, URL.createObjectURL(b));
+        }
+      }
+      if (m.voice && m.voice.mediaId && !this._mediaBlobUrlCache.has(m.voice.mediaId)) {
+        const b = await this.storage.getMediaBlob(m.voice.mediaId);
+        if (b) {
+          this._mediaBlobUrlCache.set(m.voice.mediaId, URL.createObjectURL(b));
+        }
+      }
+    }
+
     msgs.forEach(m => {
       const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
       const wrap = document.createElement('div');
@@ -981,9 +1011,10 @@ class TelegramApp {
       if (m.circleVideo) {
         const dur = m.circleVideo.duration ? String(m.circleVideo.duration).padStart(2, '0') : '00';
         const mediaId = m.circleVideo.mediaId || '';
+        const circleSrc = this._mediaBlobUrlCache.get(mediaId) || m.circleVideo.data || '';
         specialContent = [
           '<div class="tg-circle-card" data-media-id="' + mediaId + '">',
-          '  <video playsinline webkit-playsinline muted preload="auto"></video>',
+          '  <video src="' + circleSrc + '" playsinline webkit-playsinline preload="auto"></video>',
           '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
           '  <div class="tg-circle-play-overlay">',
           '    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
@@ -995,11 +1026,12 @@ class TelegramApp {
       else if (m.voice) {
         const voiceMediaId = m.voice.mediaId || '';
         const dur = m.voice.duration || 0;
+        const voiceSrc = this._mediaBlobUrlCache.get(voiceMediaId) || m.voice.data || '';
         const seed = (m.id || '') + '_' + voiceMediaId + '_' + dur;
         const barsHtml = this.generateWaveformBars(seed, 30);
         specialContent = [
-          '<div class="tg-voice-card" data-media-id="' + voiceMediaId + '">',
-          '  <button class="tg-voice-play-btn" title="Слушать">',
+          '<div class="tg-voice-card" data-media-id="' + voiceMediaId + '" data-src="' + voiceSrc + '">',
+          '  <button type="button" class="tg-voice-play-btn" title="Слушать">',
           '    <svg class="tg-icon-play" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
           '    <svg class="tg-icon-pause hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
           '  </button>',
@@ -1084,7 +1116,7 @@ class TelegramApp {
         '</div>'
       ].join('');
 
-      // Интерактив для видеокружка — загрузка блоба из IndexedDB
+      // Интерактив для видеокружка
       const circleCard = wrap.querySelector('.tg-circle-card');
       if (circleCard) {
         const vid = circleCard.querySelector('video');
@@ -1092,32 +1124,6 @@ class TelegramApp {
         const mediaId = circleCard.getAttribute('data-media-id');
         const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
         const totalDurStr = String(totalDur).padStart(2, '0');
-
-        // Подготовка источника видео с постоянным кэшированием URL
-        const loadCircleSrc = async () => {
-          if (vid.src && (vid.src.startsWith('blob:') || vid.src.startsWith('data:'))) return vid.src;
-          if (mediaId) {
-            let url = this._mediaBlobUrlCache.get(mediaId);
-            if (!url) {
-              const blob = await this.storage.getMediaBlob(mediaId);
-              if (blob) {
-                url = URL.createObjectURL(blob);
-                this._mediaBlobUrlCache.set(mediaId, url);
-              }
-            }
-            if (url) {
-              if (vid.src !== url) vid.src = url;
-              return url;
-            }
-          } else if (m.circleVideo && m.circleVideo.data) {
-            vid.src = m.circleVideo.data;
-            return vid.src;
-          }
-          return null;
-        };
-
-        // Начинаем предзагрузку для мгновенного отображения первого кадра
-        loadCircleSrc();
 
         // Динамический таймер проигрывания кружочка
         vid.addEventListener('timeupdate', () => {
@@ -1140,13 +1146,24 @@ class TelegramApp {
         });
 
         // Запуск / пауза видеокружка (как в Telegram: увеличение при проигрывании)
-        const startCirclePlay = () => {
+        const startCirclePlay = async () => {
+          if (!vid.src || vid.src === '' || vid.src === window.location.href) {
+            let url = this._mediaBlobUrlCache.get(mediaId);
+            if (!url && mediaId) {
+              const b = await this.storage.getMediaBlob(mediaId);
+              if (b) {
+                url = URL.createObjectURL(b);
+                this._mediaBlobUrlCache.set(mediaId, url);
+              }
+            }
+            if (url) vid.src = url;
+          }
+          if (!vid.src) return;
+
           if (vid.paused) {
-            // Останавливаем все другие кружочки и аудио
             this.stopAllPlayingMedia();
             this.currentPlayingCircle = vid;
 
-            // Если воспроизведение дошло до конца — возвращаем в начало
             if (vid.ended || (vid.duration && vid.currentTime >= vid.duration)) {
               try { vid.currentTime = 0; } catch (_) {}
             }
@@ -1165,7 +1182,6 @@ class TelegramApp {
               });
             }
           } else {
-            // Если уже играл — ставим на паузу и возвращаем к компактному размеру
             vid.pause();
             circleCard.classList.remove('playing', 'expanded');
             if (this.currentPlayingCircle === vid) {
@@ -1176,12 +1192,6 @@ class TelegramApp {
 
         circleCard.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (!vid.src || vid.src === '' || vid.src === window.location.href) {
-            loadCircleSrc().then(() => {
-              if (vid.src) startCirclePlay();
-            });
-            return;
-          }
           startCirclePlay();
         });
       }
@@ -1195,77 +1205,83 @@ class TelegramApp {
         const timeEl = voiceCard.querySelector('.tg-voice-time');
         const voiceMediaId = voiceCard.getAttribute('data-media-id');
         const totalDur = (m.voice && m.voice.duration) || 0;
+        let voiceSrc = voiceCard.getAttribute('data-src') || '';
         let audio = null;
 
-        const initAudio = async () => {
-          if (audio) return audio;
-          if (voiceMediaId) {
-            let url = this._mediaBlobUrlCache.get(voiceMediaId);
-            if (!url) {
-              const blob = await this.storage.getMediaBlob(voiceMediaId);
-              if (blob) {
-                url = URL.createObjectURL(blob);
-                this._mediaBlobUrlCache.set(voiceMediaId, url);
-              }
-            }
-            if (url) {
-              audio = new Audio(url);
-            }
-          } else if (m.voice && m.voice.data) {
-            audio = new Audio(m.voice.data);
-          }
+        const setupAudio = (audioObj) => {
+          audioObj.addEventListener('timeupdate', () => {
+            const dur = audioObj.duration || totalDur || 1;
+            const cur = audioObj.currentTime || 0;
+            const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
+            if (waveformFg) waveformFg.style.width = pct + '%';
+            if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(cur)) + ' / ' + this.formatDuration(Math.floor(dur));
+          });
 
-          if (audio) {
-            audio.addEventListener('timeupdate', () => {
-              const dur = audio.duration || totalDur || 1;
-              const cur = audio.currentTime || 0;
-              const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
-              if (waveformFg) waveformFg.style.width = pct + '%';
-              if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(cur)) + ' / ' + this.formatDuration(Math.floor(dur));
-            });
-
-            audio.addEventListener('ended', () => {
-              if (waveformFg) waveformFg.style.width = '0%';
-              if (timeEl) timeEl.innerText = this.formatDuration(totalDur);
-              const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
-              const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
-              if (playIcon) playIcon.classList.remove('hidden');
-              if (pauseIcon) pauseIcon.classList.add('hidden');
-              if (this.currentPlayingAudio === audio) {
-                this.currentPlayingAudio = null;
-                this.currentPlayingAudioBtn = null;
-              }
-            });
-          }
-          return audio;
+          audioObj.addEventListener('ended', () => {
+            if (waveformFg) waveformFg.style.width = '0%';
+            if (timeEl) timeEl.innerText = this.formatDuration(totalDur);
+            const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
+            const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
+            if (playIcon) playIcon.classList.remove('hidden');
+            if (pauseIcon) pauseIcon.classList.add('hidden');
+            if (this.currentPlayingAudio === audioObj) {
+              this.currentPlayingAudio = null;
+              this.currentPlayingAudioBtn = null;
+            }
+          });
         };
 
-        // Фоновая предзагрузка аудио
-        initAudio();
+        if (voiceSrc) {
+          audio = new Audio(voiceSrc);
+          setupAudio(audio);
+        }
 
         const toggleVoicePlay = async () => {
-          const a = await initAudio();
-          if (!a) return;
+          if (!audio) {
+            if (!voiceSrc && voiceMediaId) {
+              let url = this._mediaBlobUrlCache.get(voiceMediaId);
+              if (!url) {
+                const b = await this.storage.getMediaBlob(voiceMediaId);
+                if (b) {
+                  url = URL.createObjectURL(b);
+                  this._mediaBlobUrlCache.set(voiceMediaId, url);
+                }
+              }
+              if (url) voiceSrc = url;
+            }
+            if (voiceSrc) {
+              audio = new Audio(voiceSrc);
+              setupAudio(audio);
+            }
+          }
+          if (!audio) return;
 
           const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
           const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
 
-          if (a.paused) {
-            // Останавливаем все другие кружочки и аудио
+          if (audio.paused) {
             this.stopAllPlayingMedia();
 
-            this.currentPlayingAudio = a;
+            this.currentPlayingAudio = audio;
             this.currentPlayingAudioBtn = voicePlayBtn;
 
-            a.play().then(() => {
+            if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+              try { audio.currentTime = 0; } catch (_) {}
+            }
+
+            audio.play().then(() => {
               if (playIcon) playIcon.classList.add('hidden');
               if (pauseIcon) pauseIcon.classList.remove('hidden');
-            }).catch(err => console.warn('Audio play error:', err));
+            }).catch(err => {
+              console.warn('Audio play error:', err);
+              if (playIcon) playIcon.classList.remove('hidden');
+              if (pauseIcon) pauseIcon.classList.add('hidden');
+            });
           } else {
-            a.pause();
+            audio.pause();
             if (playIcon) playIcon.classList.remove('hidden');
             if (pauseIcon) pauseIcon.classList.add('hidden');
-            if (this.currentPlayingAudio === a) {
+            if (this.currentPlayingAudio === audio) {
               this.currentPlayingAudio = null;
               this.currentPlayingAudioBtn = null;
             }
@@ -1283,15 +1299,18 @@ class TelegramApp {
           const rect = waveformEl.getBoundingClientRect();
           const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 
-          const a = await initAudio();
-          if (!a) return;
+          if (!audio && voiceSrc) {
+            audio = new Audio(voiceSrc);
+            setupAudio(audio);
+          }
+          if (!audio) return;
 
-          const dur = a.duration || totalDur || 1;
-          a.currentTime = pct * dur;
+          const dur = audio.duration || totalDur || 1;
+          try { audio.currentTime = pct * dur; } catch (_) {}
           if (waveformFg) waveformFg.style.width = (pct * 100) + '%';
-          if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(a.currentTime)) + ' / ' + this.formatDuration(Math.floor(dur));
+          if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(audio.currentTime)) + ' / ' + this.formatDuration(Math.floor(dur));
 
-          if (a.paused) {
+          if (audio.paused) {
             toggleVoicePlay();
           }
         });
@@ -1632,6 +1651,7 @@ class TelegramApp {
           const blob = new Blob(this.recordedChunks, { type: finalMime });
           const mediaId = 'voice_' + Date.now();
           await this.storage.saveMediaBlob(mediaId, blob);
+          this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
             mediaId: mediaId,
             duration: Math.max(1, this.getElapsedSeconds())
@@ -1726,6 +1746,7 @@ class TelegramApp {
           const blob = new Blob(this.recordedChunks, { type: finalType });
           const mediaId = 'circle_' + Date.now();
           await this.storage.saveMediaBlob(mediaId, blob);
+          this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
             mediaId: mediaId,
             duration: Math.max(1, this.getElapsedSeconds())
@@ -1775,6 +1796,7 @@ class TelegramApp {
         const blob = new Blob(chunks, { type: demoMime || 'video/webm' });
         const mediaId = 'circle_demo_' + Date.now();
         await this.storage.saveMediaBlob(mediaId, blob);
+        this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
         await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
           mediaId: mediaId,
           duration: 3
