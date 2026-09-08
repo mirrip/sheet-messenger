@@ -829,6 +829,7 @@ html, body {
   max-width: 740px;
   width: 100%;
   margin: 0 auto;
+  flex-shrink: 0;
 }
 
 /* SWIPE UP LOCK BADGE */
@@ -1769,14 +1770,17 @@ html, body {
     position: fixed;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
     width: 100vw;
+    height: 100%;
     height: 100dvh;
-    height: 100vh;
     z-index: 30;
     background: var(--tg-bg-chat);
     display: none;
     flex-direction: column;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
   }
 
   .tg-chat-view.active {
@@ -1838,6 +1842,10 @@ html, body {
   .tg-composer {
     padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px));
     gap: 6px;
+    flex-shrink: 0 !important;
+    width: 100%;
+    background: var(--tg-bg-chat);
+    box-sizing: border-box;
   }
 
   .tg-input-wrapper {
