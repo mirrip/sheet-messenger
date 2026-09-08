@@ -291,6 +291,8 @@ class TelegramApp {
     this._activeObjectURLs = []; // Для очистки Blob URL при ререндере
     this.isHoldingMainAction = false;
     this.holdStartTime = 0;
+    this.holdStartY = 0;
+    this.isRecordingLocked = false;
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -354,6 +356,7 @@ class TelegramApp {
       lightboxDownload: document.getElementById('lightbox-download'),
 
       btnMainAction: document.getElementById('btn-main-action'),
+      recordLock: document.getElementById('tg-record-lock'),
       iconActionMic: document.getElementById('icon-action-mic'),
       iconActionVideo: document.getElementById('icon-action-video'),
       iconActionSend: document.getElementById('icon-action-send'),
@@ -457,17 +460,33 @@ class TelegramApp {
       this.el.btnSendVideoNote.addEventListener('click', () => this.stopRecording(true));
     }
 
-    // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM (МИКРОФОН / КРУЖОЧЕК / ОТПРАВИТЬ)
+    // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM С ФИКСАЦИЕЙ ЗАПИСИ (СВАЙП ВВЕРХ)
     if (this.el.btnMainAction) {
+      const getClientY = (e) => {
+        if (e.touches && e.touches.length > 0) return e.touches[0].clientY;
+        if (e.clientY !== undefined) return e.clientY;
+        return 0;
+      };
+
       const startHold = (e) => {
+        // Если запись уже зафиксирована — клик сработает на отправку
+        if (this.isRecordingLocked) return;
+
         const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
         if (hasText || hasFiles) return;
 
         this.isHoldingMainAction = true;
         this.holdStartTime = Date.now();
+        this.holdStartY = getClientY(e);
+        this.isRecordingLocked = false;
 
-        // МГНОВЕННЫЙ СТАРТ ЗАХВАТА С ПЕРВОЙ МИЛЛИСЕКУНДЫ — начало речи не обрезается!
+        // Показываем плашку замочка
+        if (this.el.recordLock) {
+          this.el.recordLock.classList.remove('hidden', 'locked');
+        }
+
+        // МГНОВЕННЫЙ СТАРТ ЗАХВАТА С ПЕРВОЙ МИЛЛИСЕКУНДЫ
         if (this.recordMode === 'mic') {
           this.startVoiceRecording();
         } else {
@@ -475,19 +494,46 @@ class TelegramApp {
         }
       };
 
+      const checkSwipeUp = (e) => {
+        if (!this.isHoldingMainAction || this.isRecordingLocked) return;
+        const currentY = getClientY(e);
+        if (!this.holdStartY || !currentY) return;
+
+        const deltaY = this.holdStartY - currentY;
+        // Свайп вверх от 45px фиксирует запись (Lock)
+        if (deltaY > 45) {
+          this.isRecordingLocked = true;
+          this.isHoldingMainAction = false; // Палец свободен, запись не прервётся!
+
+          if (this.el.recordLock) {
+            this.el.recordLock.classList.add('locked');
+            setTimeout(() => {
+              if (this.el.recordLock) this.el.recordLock.classList.add('hidden');
+            }, 600);
+          }
+
+          // Кнопка становится кнопкой отправки (самолётик)
+          this.el.btnMainAction.className = 'tg-send-btn state-send';
+          this.el.btnMainAction.title = 'Отправить запись';
+        }
+      };
+
       const endHold = (e) => {
+        // Если запись зафиксирована свайпом вверх — палец отпущен, но запись продолжается!
+        if (this.isRecordingLocked) return;
+
         if (!this.isHoldingMainAction) return;
         const pressDuration = Date.now() - (this.holdStartTime || Date.now());
         this.isHoldingMainAction = false;
 
+        if (this.el.recordLock) this.el.recordLock.classList.add('hidden');
+
         if (pressDuration < 350) {
           // Нажатие короче 350мс — это быстрый клик для переключения режима!
-          // Сбрасываем запись без отправки и переключаем иконку
           this.stopRecording(false);
           this.toggleRecordMode();
         } else {
-          // Удержание от 350мс и более — полноценная запись!
-          // Останавливаем и сразу отправляем в чат
+          // Обычное удержание без свайпа — завершаем и отправляем
           this.stopRecording(true);
         }
       };
@@ -496,23 +542,31 @@ class TelegramApp {
       this.el.btnMainAction.addEventListener('mousedown', (e) => {
         if (e.button === 0) startHold(e);
       });
-      this.el.btnMainAction.addEventListener('mouseup', endHold);
-      this.el.btnMainAction.addEventListener('mouseleave', (e) => {
-        if (this.isHoldingMainAction) endHold(e);
-      });
+      window.addEventListener('mousemove', checkSwipeUp);
+      window.addEventListener('mouseup', endHold);
 
       // Поддержка сенсорных экранов
       this.el.btnMainAction.addEventListener('touchstart', startHold, { passive: true });
-      this.el.btnMainAction.addEventListener('touchend', endHold);
-      this.el.btnMainAction.addEventListener('touchcancel', (e) => {
-        if (this.isHoldingMainAction) {
+      window.addEventListener('touchmove', checkSwipeUp, { passive: true });
+      window.addEventListener('touchend', endHold);
+      window.addEventListener('touchcancel', (e) => {
+        if (!this.isRecordingLocked && this.isHoldingMainAction) {
           this.isHoldingMainAction = false;
+          if (this.el.recordLock) this.el.recordLock.classList.add('hidden');
           this.stopRecording(false);
         }
       });
 
-      // Клик: используется исключительно для отправки текста/файлов
+      // Клик по кнопке действия
       this.el.btnMainAction.addEventListener('click', (e) => {
+        // 1. Если запись была зафиксирована свайпом вверх — клик отправляет запись!
+        if (this.isRecordingLocked) {
+          this.isRecordingLocked = false;
+          this.stopRecording(true);
+          return;
+        }
+
+        // 2. Обычная отправка текста или файлов
         const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
 
@@ -1436,6 +1490,12 @@ class TelegramApp {
 
   stopRecording(send = true) {
     this.shouldSendRecorded = send;
+    this.isRecordingLocked = false;
+    if (this.el.recordLock) {
+      this.el.recordLock.classList.add('hidden');
+      this.el.recordLock.classList.remove('locked');
+    }
+
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       try {
         if (typeof this.mediaRecorder.requestData === 'function') {
@@ -1449,6 +1509,7 @@ class TelegramApp {
     this.el.audioRecordingPanel.classList.add('hidden');
     this.el.videoRecordingPanel.classList.add('hidden');
     clearInterval(this.recInterval);
+    this.updateMainActionButtonState();
   }
 
   cleanupStream() {
