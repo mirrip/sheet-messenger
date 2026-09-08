@@ -294,12 +294,65 @@ class TelegramApp {
     this.holdStartY = 0;
     this.isRecordingLocked = false;
 
+    // Воспроизведение кружков и голосовых (единовременно играет только 1 медиа)
+    this.currentPlayingCircle = null;
+    this.currentPlayingAudio = null;
+    this.currentPlayingAudioBtn = null;
+
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
 
     this.initElements();
     this.bindEvents();
     this.updateMainActionButtonState();
+  }
+
+  generateWaveformBars(seedStr, count = 30) {
+    let hash = 0;
+    const str = String(seedStr || 'tg_voice');
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    const heights = [];
+    for (let i = 0; i < count; i++) {
+      hash = Math.sin(hash + i * 2.3 + 1) * 10000;
+      const rand = hash - Math.floor(hash);
+      const envelope = Math.sin((i / (count - 1)) * Math.PI);
+      // Реалистичная огибающая человеческой речи: колебания от 4px до 22px
+      const h = Math.max(4, Math.min(22, Math.round(4 + rand * 14 * (0.35 + 0.65 * envelope))));
+      heights.push(h);
+    }
+    return heights.map(h => '<span class="tg-wave-bar" style="height:' + h + 'px"></span>').join('');
+  }
+
+  formatDuration(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  stopAllPlayingMedia() {
+    if (this.currentPlayingCircle) {
+      try { this.currentPlayingCircle.pause(); } catch (_) {}
+      const parent = this.currentPlayingCircle.closest('.tg-circle-card');
+      if (parent) {
+        parent.classList.remove('playing', 'expanded');
+      }
+      this.currentPlayingCircle = null;
+    }
+    if (this.currentPlayingAudio) {
+      try { this.currentPlayingAudio.pause(); } catch (_) {}
+      if (this.currentPlayingAudioBtn) {
+        const playIcon = this.currentPlayingAudioBtn.querySelector('.tg-icon-play');
+        const pauseIcon = this.currentPlayingAudioBtn.querySelector('.tg-icon-pause');
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+      }
+      this.currentPlayingAudio = null;
+      this.currentPlayingAudioBtn = null;
+    }
 
     if (this.currentUser) {
       this.showMainScreen();
@@ -859,38 +912,40 @@ class TelegramApp {
 
       const isCircle = Boolean(m.circleVideo);
 
-      // 1. ВИДЕОКРУЖОЧЕК TELEGRAM (медиа грузится из IndexedDB)
+      // 1. ВИДЕОКРУЖОЧЕК TELEGRAM (по умолчанию на паузе, увеличивается при включении)
       if (m.circleVideo) {
         const dur = m.circleVideo.duration ? String(m.circleVideo.duration).padStart(2, '0') : '00';
         const mediaId = m.circleVideo.mediaId || '';
         specialContent = [
           '<div class="tg-circle-card" data-media-id="' + mediaId + '">',
-          '  <video autoplay muted playsinline loop></video>',
+          '  <video playsinline preload="metadata"></video>',
           '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
-          '  <div class="tg-circle-play-overlay">▶</div>',
+          '  <div class="tg-circle-play-overlay">',
+          '    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+          '  </div>',
           '</div>'
         ].join('');
       }
-      // 2. ГОЛОСОВОЕ СООБЩЕНИЕ TELEGRAM (медиа грузится из IndexedDB)
+      // 2. ГОЛОСОВОЕ СООБЩЕНИЕ TELEGRAM С ВОЛНОГРАММОЙ (полосочки как в TG)
       else if (m.voice) {
         const voiceMediaId = m.voice.mediaId || '';
+        const dur = m.voice.duration || 0;
+        const seed = (m.id || '') + '_' + voiceMediaId + '_' + dur;
+        const barsHtml = this.generateWaveformBars(seed, 30);
         specialContent = [
-          '<div class="tg-voice-card">',
-          '  <button class="tg-voice-play-btn" data-media-id="' + voiceMediaId + '">▶</button>',
+          '<div class="tg-voice-card" data-media-id="' + voiceMediaId + '">',
+          '  <button class="tg-voice-play-btn" title="Слушать">',
+          '    <svg class="tg-icon-play" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+          '    <svg class="tg-icon-pause hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
+          '  </button>',
           '  <div class="tg-voice-meta">',
-          '    <div class="tg-voice-waveform">',
-          '      <span class="tg-wave-bar" style="height: 6px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 14px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 18px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 10px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 22px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 16px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 8px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 20px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 12px;"></span>',
-          '      <span class="tg-wave-bar" style="height: 18px;"></span>',
+          '    <div class="tg-voice-waveform" title="Перемотка">',
+          '      <div class="tg-waveform-bars tg-waveform-bg">' + barsHtml + '</div>',
+          '      <div class="tg-waveform-bars tg-waveform-fg" style="width: 0%;">' + barsHtml + '</div>',
           '    </div>',
-          '    <span class="tg-voice-time">00:' + String(m.voice.duration || '00').padStart(2, '0') + '</span>',
+          '    <div class="tg-voice-time-row">',
+          '      <span class="tg-voice-time">' + this.formatDuration(dur) + '</span>',
+          '    </div>',
           '  </div>',
           '</div>'
         ].join('');
@@ -968,7 +1023,10 @@ class TelegramApp {
       const circleCard = wrap.querySelector('.tg-circle-card');
       if (circleCard) {
         const vid = circleCard.querySelector('video');
+        const timeBadge = circleCard.querySelector('.tg-circle-time-badge');
         const mediaId = circleCard.getAttribute('data-media-id');
+        const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
+        const totalDurStr = String(totalDur).padStart(2, '0');
 
         // Асинхронная загрузка видео из IndexedDB -> Blob URL
         if (mediaId) {
@@ -984,51 +1042,152 @@ class TelegramApp {
           vid.src = m.circleVideo.data;
         }
 
-        circleCard.addEventListener('click', () => {
-          if (vid.muted) {
+        // При загрузке метаданных ставим на первый кадр (пауза по умолчанию)
+        vid.addEventListener('loadedmetadata', () => {
+          try { vid.currentTime = 0.05; } catch (_) {}
+        });
+
+        // Динамический таймер проигрывания кружочка
+        vid.addEventListener('timeupdate', () => {
+          if (!vid.paused && timeBadge) {
+            const cur = Math.floor(vid.currentTime);
+            const curStr = String(cur).padStart(2, '0');
+            timeBadge.innerText = '00:' + curStr + ' / 00:' + totalDurStr;
+          }
+        });
+
+        // По окончании видео: возврат в исходное состояние (пауза и компактный размер)
+        vid.addEventListener('ended', () => {
+          circleCard.classList.remove('playing', 'expanded');
+          vid.currentTime = 0;
+          if (timeBadge) timeBadge.innerText = '00:' + totalDurStr + ' • ' + m.time;
+          if (this.currentPlayingCircle === vid) {
+            this.currentPlayingCircle = null;
+          }
+        });
+
+        // Клик по кружочку: снятие с паузы + плавное увеличение (как в Telegram)
+        circleCard.addEventListener('click', (e) => {
+          e.stopPropagation();
+
+          if (vid.paused) {
+            // Останавливаем все другие кружочки и аудио
+            this.stopAllPlayingMedia();
+
+            this.currentPlayingCircle = vid;
             vid.muted = false;
-            vid.play().catch(() => {});
-            circleCard.classList.add('playing');
-          } else if (vid.paused) {
-            vid.play().catch(() => {});
-            circleCard.classList.add('playing');
+            circleCard.classList.add('playing', 'expanded');
+            vid.play().catch(err => console.warn('Play circle error:', err));
           } else {
+            // Если уже играл — ставим на паузу и возвращаем к компактному размеру
             vid.pause();
-            circleCard.classList.remove('playing');
+            circleCard.classList.remove('playing', 'expanded');
+            if (this.currentPlayingCircle === vid) {
+              this.currentPlayingCircle = null;
+            }
           }
         });
       }
 
-      // Интерактив для голосового — загрузка блоба из IndexedDB
-      const voicePlayBtn = wrap.querySelector('.tg-voice-play-btn');
-      if (voicePlayBtn) {
-        const voiceMediaId = voicePlayBtn.getAttribute('data-media-id');
+      // Интерактив для голосового сообщения с живой волнограммой (Telegram Waveform)
+      const voiceCard = wrap.querySelector('.tg-voice-card');
+      if (voiceCard) {
+        const voicePlayBtn = voiceCard.querySelector('.tg-voice-play-btn');
+        const waveformEl = voiceCard.querySelector('.tg-voice-waveform');
+        const waveformFg = voiceCard.querySelector('.tg-waveform-fg');
+        const timeEl = voiceCard.querySelector('.tg-voice-time');
+        const voiceMediaId = voiceCard.getAttribute('data-media-id');
+        const totalDur = (m.voice && m.voice.duration) || 0;
         let audio = null;
 
-        // Ленивая загрузка аудио при первом клике
-        voicePlayBtn.addEventListener('click', async () => {
-          if (!audio) {
-            if (voiceMediaId) {
-              const blob = await this.storage.getMediaBlob(voiceMediaId);
-              if (blob) {
-                const url = URL.createObjectURL(blob);
-                this._activeObjectURLs.push(url);
-                audio = new Audio(url);
+        const initAudio = async () => {
+          if (audio) return audio;
+          if (voiceMediaId) {
+            const blob = await this.storage.getMediaBlob(voiceMediaId);
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              this._activeObjectURLs.push(url);
+              audio = new Audio(url);
+            }
+          } else if (m.voice && m.voice.data) {
+            audio = new Audio(m.voice.data);
+          }
+
+          if (audio) {
+            audio.addEventListener('timeupdate', () => {
+              const dur = audio.duration || totalDur || 1;
+              const cur = audio.currentTime || 0;
+              const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
+              if (waveformFg) waveformFg.style.width = pct + '%';
+              if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(cur)) + ' / ' + this.formatDuration(Math.floor(dur));
+            });
+
+            audio.addEventListener('ended', () => {
+              if (waveformFg) waveformFg.style.width = '0%';
+              if (timeEl) timeEl.innerText = this.formatDuration(totalDur);
+              const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
+              const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
+              if (playIcon) playIcon.classList.remove('hidden');
+              if (pauseIcon) pauseIcon.classList.add('hidden');
+              if (this.currentPlayingAudio === audio) {
+                this.currentPlayingAudio = null;
+                this.currentPlayingAudioBtn = null;
               }
-            } else if (m.voice && m.voice.data) {
-              // Обратная совместимость: старые base64
-              audio = new Audio(m.voice.data);
+            });
+          }
+          return audio;
+        };
+
+        const toggleVoicePlay = async () => {
+          const a = await initAudio();
+          if (!a) return;
+
+          const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
+          const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
+
+          if (a.paused) {
+            // Останавливаем все другие кружочки и аудио
+            this.stopAllPlayingMedia();
+
+            this.currentPlayingAudio = a;
+            this.currentPlayingAudioBtn = voicePlayBtn;
+
+            a.play().then(() => {
+              if (playIcon) playIcon.classList.add('hidden');
+              if (pauseIcon) pauseIcon.classList.remove('hidden');
+            }).catch(err => console.warn('Audio play error:', err));
+          } else {
+            a.pause();
+            if (playIcon) playIcon.classList.remove('hidden');
+            if (pauseIcon) pauseIcon.classList.add('hidden');
+            if (this.currentPlayingAudio === a) {
+              this.currentPlayingAudio = null;
+              this.currentPlayingAudioBtn = null;
             }
           }
-          if (!audio) return;
+        };
 
-          if (audio.paused) {
-            audio.play();
-            voicePlayBtn.innerText = '❚❚';
-            audio.onended = () => { voicePlayBtn.innerText = '▶'; };
-          } else {
-            audio.pause();
-            voicePlayBtn.innerText = '▶';
+        voicePlayBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleVoicePlay();
+        });
+
+        // Клик по волнограмме для мгновенной перемотки (seek)
+        waveformEl.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const rect = waveformEl.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+          const a = await initAudio();
+          if (!a) return;
+
+          const dur = a.duration || totalDur || 1;
+          a.currentTime = pct * dur;
+          if (waveformFg) waveformFg.style.width = (pct * 100) + '%';
+          if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(a.currentTime)) + ' / ' + this.formatDuration(Math.floor(dur));
+
+          if (a.paused) {
+            toggleVoicePlay();
           }
         });
       }
@@ -1314,6 +1473,7 @@ class TelegramApp {
   }
 
   async startVoiceRecording() {
+    this.stopAllPlayingMedia();
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -1365,6 +1525,7 @@ class TelegramApp {
   }
 
   async startVideoCircleRecording() {
+    this.stopAllPlayingMedia();
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 320, max: 480 }, height: { ideal: 320, max: 480 }, facingMode: 'user' },
