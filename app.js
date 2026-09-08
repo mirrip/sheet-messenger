@@ -361,16 +361,13 @@ class TelegramApp {
       iconActionVideo: document.getElementById('icon-action-video'),
       iconActionSend: document.getElementById('icon-action-send'),
 
-      audioRecordingPanel: document.getElementById('audio-recording-panel'),
-      audioRecordTimer: document.getElementById('audio-record-timer'),
-      btnCancelVoice: document.getElementById('btn-cancel-voice'),
-      btnSendVoice: document.getElementById('btn-send-voice'),
+      composerRecordingBar: document.getElementById('composer-recording-bar'),
+      composerRecTimer: document.getElementById('composer-rec-timer'),
+      composerRecHint: document.getElementById('composer-rec-hint'),
+      btnCancelRecording: document.getElementById('btn-cancel-recording'),
 
       videoRecordingPanel: document.getElementById('video-recording-panel'),
       videoStreamPreview: document.getElementById('video-stream-preview'),
-      recordTimer: document.getElementById('record-timer'),
-      btnCancelVideoNote: document.getElementById('btn-cancel-video-note'),
-      btnSendVideoNote: document.getElementById('btn-send-video-note'),
 
       profilePanel: document.getElementById('profile-panel'),
       btnCloseProfile: document.getElementById('btn-close-profile'),
@@ -446,22 +443,18 @@ class TelegramApp {
       this.el.btnEditProfile.addEventListener('click', () => this.editProfile());
     }
 
-    // Запись голоса / кружочка: кнопки управления на оверлее
-    if (this.el.btnCancelVoice) {
-      this.el.btnCancelVoice.addEventListener('click', () => this.stopRecording(false));
-    }
-    if (this.el.btnSendVoice) {
-      this.el.btnSendVoice.addEventListener('click', () => this.stopRecording(true));
-    }
-    if (this.el.btnCancelVideoNote) {
-      this.el.btnCancelVideoNote.addEventListener('click', () => this.stopRecording(false));
-    }
-    if (this.el.btnSendVideoNote) {
-      this.el.btnSendVideoNote.addEventListener('click', () => this.stopRecording(true));
+    // Отмена записи из строки сообщения
+    if (this.el.btnCancelRecording) {
+      this.el.btnCancelRecording.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.stopRecording(false);
+      });
     }
 
     // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM С ФИКСАЦИЕЙ ЗАПИСИ (СВАЙП ВВЕРХ)
     if (this.el.btnMainAction) {
+      let lockAppearanceTimer = null;
+
       const getClientY = (e) => {
         if (e.touches && e.touches.length > 0) return e.touches[0].clientY;
         if (e.clientY !== undefined) return e.clientY;
@@ -481,10 +474,13 @@ class TelegramApp {
         this.holdStartY = getClientY(e);
         this.isRecordingLocked = false;
 
-        // Показываем плашку замочка
-        if (this.el.recordLock) {
-          this.el.recordLock.classList.remove('hidden', 'locked');
-        }
+        // Замочек появляется ТОЛЬКО если пользователь держит кнопку от 250 мс (не мелькает при обычном клике!)
+        if (lockAppearanceTimer) clearTimeout(lockAppearanceTimer);
+        lockAppearanceTimer = setTimeout(() => {
+          if (this.isHoldingMainAction && !this.isRecordingLocked && this.el.recordLock) {
+            this.el.recordLock.classList.remove('hidden', 'locked');
+          }
+        }, 250);
 
         // МГНОВЕННЫЙ СТАРТ ЗАХВАТА С ПЕРВОЙ МИЛЛИСЕКУНДЫ
         if (this.recordMode === 'mic') {
@@ -504,6 +500,7 @@ class TelegramApp {
         if (deltaY > 45) {
           this.isRecordingLocked = true;
           this.isHoldingMainAction = false; // Палец свободен, запись не прервётся!
+          if (lockAppearanceTimer) clearTimeout(lockAppearanceTimer);
 
           if (this.el.recordLock) {
             this.el.recordLock.classList.add('locked');
@@ -519,6 +516,11 @@ class TelegramApp {
       };
 
       const endHold = (e) => {
+        if (lockAppearanceTimer) {
+          clearTimeout(lockAppearanceTimer);
+          lockAppearanceTimer = null;
+        }
+
         // Если запись зафиксирована свайпом вверх — палец отпущен, но запись продолжается!
         if (this.isRecordingLocked) return;
 
@@ -1338,8 +1340,12 @@ class TelegramApp {
 
       // timeslice 100мс — поток отдаётся непрерывно, первые слова пишутся моментально
       this.mediaRecorder.start(100);
-      this.el.audioRecordingPanel.classList.remove('hidden');
-      this.startTimer(this.el.audioRecordTimer);
+
+      // Встраиваем таймер в строку сообщения (переписка свободна!)
+      if (this.el.messageInput) this.el.messageInput.classList.add('hidden');
+      if (this.el.composerRecordingBar) this.el.composerRecordingBar.classList.remove('hidden');
+      if (this.el.composerRecHint) this.el.composerRecHint.innerText = 'Запись аудио...';
+      this.startTimer(this.el.composerRecTimer);
     } catch (err) {
       console.warn('Microphone error:', err);
       this.cleanupStream();
@@ -1403,8 +1409,13 @@ class TelegramApp {
       };
 
       this.mediaRecorder.start(100);
-      this.el.videoRecordingPanel.classList.remove('hidden');
-      this.startTimer(this.el.recordTimer);
+
+      // Встраиваем таймер в строку сообщения, а кружок центрируем по экрану!
+      if (this.el.messageInput) this.el.messageInput.classList.add('hidden');
+      if (this.el.composerRecordingBar) this.el.composerRecordingBar.classList.remove('hidden');
+      if (this.el.composerRecHint) this.el.composerRecHint.innerText = 'Запись кружочка...';
+      if (this.el.videoRecordingPanel) this.el.videoRecordingPanel.classList.remove('hidden');
+      this.startTimer(this.el.composerRecTimer);
     } catch (err) {
       console.warn('Camera error or blocked:', err);
       // Если веб-камера заблокирована или отсутствует — отправляем демо-кружок
@@ -1506,8 +1517,11 @@ class TelegramApp {
     } else {
       this.cleanupStream();
     }
-    this.el.audioRecordingPanel.classList.add('hidden');
-    this.el.videoRecordingPanel.classList.add('hidden');
+
+    // Возвращаем поле ввода текста и скрываем панель записи
+    if (this.el.messageInput) this.el.messageInput.classList.remove('hidden');
+    if (this.el.composerRecordingBar) this.el.composerRecordingBar.classList.add('hidden');
+    if (this.el.videoRecordingPanel) this.el.videoRecordingPanel.classList.add('hidden');
     clearInterval(this.recInterval);
     this.updateMainActionButtonState();
   }
@@ -1524,13 +1538,13 @@ class TelegramApp {
 
   startTimer(timerEl) {
     this.recStartTime = Date.now();
-    timerEl.innerText = '00:00';
+    if (timerEl) timerEl.innerText = '00:00';
     clearInterval(this.recInterval);
     this.recInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - this.recStartTime) / 1000);
       const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
       const s = String(elapsed % 60).padStart(2, '0');
-      timerEl.innerText = m + ':' + s;
+      if (timerEl) timerEl.innerText = m + ':' + s;
 
       // Максимальная длительность кружка — 59 секунд (авто-отправка)
       if (elapsed >= 59) {
