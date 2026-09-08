@@ -49,6 +49,10 @@ html, body {
   color: var(--tg-text-main);
   overflow: hidden;
   user-select: none;
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 #app {
@@ -56,6 +60,7 @@ html, body {
   height: 100vh;
   display: flex;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .hidden {
