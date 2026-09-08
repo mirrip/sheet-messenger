@@ -1094,15 +1094,20 @@ html, body {
 /* ===================================================
    TELEGRAM VIDEO CIRCLE (КРУЖОЧКИ)
    =================================================== */
+.tg-bubble-wrap .tg-msg-bubble.is-circle,
+.tg-bubble-wrap.in .tg-msg-bubble.is-circle,
+.tg-bubble-wrap.out .tg-msg-bubble.is-circle,
 .tg-msg-bubble.is-circle {
   background: transparent !important;
   box-shadow: none !important;
   padding: 0 !important;
   border-radius: 50% !important;
-  min-width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  border: none !important;
 }
 
-.tg-msg-bubble.is-circle .tg-sender-heading {
+.tg-bubble-wrap .tg-msg-bubble.is-circle .tg-sender-heading {
   margin-bottom: 4px;
   padding-left: 8px;
 }
