@@ -287,6 +287,8 @@ class TelegramApp {
     this.mediaStream = null;
     this.pendingFiles = []; // Вложения перед отправкой
     this._activeObjectURLs = []; // Для очистки Blob URL при ререндере
+    this.isHoldingMainAction = false;
+    this.holdStartTime = 0;
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -455,43 +457,35 @@ class TelegramApp {
 
     // ЕДИНАЯ ГЛАВНАЯ КНОПКА TELEGRAM (МИКРОФОН / КРУЖОЧЕК / ОТПРАВИТЬ)
     if (this.el.btnMainAction) {
-      let isLongPress = false;
-      let pressTimer = null;
-      let isRecordingActive = false;
-      const HOLD_DELAY = 450; // Зажатие от 0.45 сек для старта записи
-
       const startHold = (e) => {
         const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
         if (hasText || hasFiles) return;
 
-        isLongPress = false;
-        isRecordingActive = false;
-        if (pressTimer) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
-        }
+        this.isHoldingMainAction = true;
+        this.holdStartTime = Date.now();
 
-        pressTimer = setTimeout(() => {
-          isLongPress = true;
-          isRecordingActive = true;
-          if (this.recordMode === 'video') {
-            this.startVideoCircleRecording();
-          } else {
-            this.startVoiceRecording();
-          }
-        }, HOLD_DELAY);
+        // МГНОВЕННЫЙ СТАРТ ЗАХВАТА С ПЕРВОЙ МИЛЛИСЕКУНДЫ — начало речи не обрезается!
+        if (this.recordMode === 'mic') {
+          this.startVoiceRecording();
+        } else {
+          this.startVideoCircleRecording();
+        }
       };
 
       const endHold = (e) => {
-        if (pressTimer) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
-        }
+        if (!this.isHoldingMainAction) return;
+        const pressDuration = Date.now() - (this.holdStartTime || Date.now());
+        this.isHoldingMainAction = false;
 
-        // Если шла запись по удержанию — останавливаем и отправляем
-        if (isRecordingActive) {
-          isRecordingActive = false;
+        if (pressDuration < 350) {
+          // Нажатие короче 350мс — это быстрый клик для переключения режима!
+          // Сбрасываем запись без отправки и переключаем иконку
+          this.stopRecording(false);
+          this.toggleRecordMode();
+        } else {
+          // Удержание от 350мс и более — полноценная запись!
+          // Останавливаем и сразу отправляем в чат
           this.stopRecording(true);
         }
       };
@@ -501,30 +495,27 @@ class TelegramApp {
         if (e.button === 0) startHold(e);
       });
       this.el.btnMainAction.addEventListener('mouseup', endHold);
-      this.el.btnMainAction.addEventListener('mouseleave', endHold);
+      this.el.btnMainAction.addEventListener('mouseleave', (e) => {
+        if (this.isHoldingMainAction) endHold(e);
+      });
 
       // Поддержка сенсорных экранов
       this.el.btnMainAction.addEventListener('touchstart', startHold, { passive: true });
       this.el.btnMainAction.addEventListener('touchend', endHold);
-      this.el.btnMainAction.addEventListener('touchcancel', endHold);
-
-      // Клик (короткий тап / клик)
-      this.el.btnMainAction.addEventListener('click', (e) => {
-        if (isLongPress) {
-          isLongPress = false;
-          return;
+      this.el.btnMainAction.addEventListener('touchcancel', (e) => {
+        if (this.isHoldingMainAction) {
+          this.isHoldingMainAction = false;
+          this.stopRecording(false);
         }
+      });
 
+      // Клик: используется исключительно для отправки текста/файлов
+      this.el.btnMainAction.addEventListener('click', (e) => {
         const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
 
         if (hasText || hasFiles) {
-          // Если есть текст или файл — отправляем сообщение
           this.sendMessage();
-        } else {
-          // КОРОТКИЙ КЛИК: ТОЛЬКО ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (микрофон <-> камера)
-          // Запись никогда не запускается по короткому клику!
-          this.toggleRecordMode();
         }
       });
     }
@@ -1249,12 +1240,25 @@ class TelegramApp {
 
   async startVoiceRecording() {
     try {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      // Если к моменту открытия микрофона пользователь уже отпустил кнопку (короткий клик)
+      if (!this.isHoldingMainAction) {
+        this.cleanupStream();
+        return;
+      }
+
       this.recordedChunks = [];
       this.mediaRecorder = new MediaRecorder(this.mediaStream);
 
       this.mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) this.recordedChunks.push(e.data);
+        if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
       };
 
       this.mediaRecorder.onstop = async () => {
@@ -1264,18 +1268,19 @@ class TelegramApp {
           await this.storage.saveMediaBlob(mediaId, blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
             mediaId: mediaId,
-            duration: this.getElapsedSeconds()
+            duration: Math.max(1, this.getElapsedSeconds())
           });
           await this.refreshData();
         }
         this.cleanupStream();
       };
 
-      this.mediaRecorder.start();
+      // timeslice 100мс — поток отдаётся непрерывно, первые слова пишутся моментально
+      this.mediaRecorder.start(100);
       this.el.audioRecordingPanel.classList.remove('hidden');
       this.startTimer(this.el.audioRecordTimer);
     } catch (err) {
-      alert('Не удалось получить доступ к микрофону: ' + err.message);
+      console.warn('Microphone error:', err);
       this.cleanupStream();
     }
   }
@@ -1286,6 +1291,13 @@ class TelegramApp {
         video: { width: { ideal: 320, max: 480 }, height: { ideal: 320, max: 480 }, facingMode: 'user' },
         audio: true
       });
+
+      // Если к моменту открытия камеры пользователь уже отпустил кнопку (короткий клик)
+      if (!this.isHoldingMainAction) {
+        this.cleanupStream();
+        return;
+      }
+
       this.el.videoStreamPreview.srcObject = this.mediaStream;
       this.recordedChunks = [];
 
@@ -1335,11 +1347,13 @@ class TelegramApp {
     } catch (err) {
       console.warn('Camera error or blocked:', err);
       // Если веб-камера заблокирована или отсутствует — отправляем демо-кружок
-      const confirmDemo = confirm(
-        'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный видеокружок?'
-      );
-      if (confirmDemo) {
-        await this.sendDemoVideoCircle();
+      if (this.isHoldingMainAction) {
+        const confirmDemo = confirm(
+          'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный видеокружок?'
+        );
+        if (confirmDemo) {
+          await this.sendDemoVideoCircle();
+        }
       }
       this.cleanupStream();
     }
@@ -1416,6 +1430,11 @@ class TelegramApp {
   stopRecording(send = true) {
     this.shouldSendRecorded = send;
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        if (typeof this.mediaRecorder.requestData === 'function') {
+          this.mediaRecorder.requestData();
+        }
+      } catch (e) {}
       this.mediaRecorder.stop();
     } else {
       this.cleanupStream();
