@@ -816,6 +816,7 @@ html, body {
 
 .tg-composer {
   position: relative;
+  z-index: 1005; /* Выше оверлея записи (990) — строка ввода и кнопки не размываются! */
   padding: 8px 16px 12px;
   display: flex;
   align-items: flex-end;
@@ -830,7 +831,7 @@ html, body {
   position: absolute;
   bottom: 66px;
   right: 18px;
-  z-index: 105;
+  z-index: 1010; /* Выше строки ввода и оверлея */
   background: rgba(23, 33, 43, 0.95);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1090,7 +1091,10 @@ html, body {
   align-items: center;
   gap: 12px;
   min-width: 220px;
+  max-width: 320px;
   padding: 4px 2px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tg-voice-play-btn {
@@ -1106,41 +1110,108 @@ html, body {
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.1s, background 0.15s;
+  box-shadow: 0 2px 8px rgba(51, 144, 236, 0.4);
+  padding: 0;
+}
+
+.tg-bubble-wrap.out .tg-voice-play-btn {
+  background: #ffffff;
+  color: var(--tg-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .tg-voice-play-btn:hover {
-  background: var(--tg-primary-hover);
-  transform: scale(1.05);
+  transform: scale(1.06);
+}
+
+.tg-voice-play-btn:active {
+  transform: scale(0.95);
+}
+
+.tg-voice-play-btn svg {
+  pointer-events: none;
+}
+
+.tg-voice-play-btn .tg-icon-play {
+  margin-left: 2px;
 }
 
 .tg-voice-meta {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  min-width: 0;
 }
 
+/* Telegram Waveform Container с двумя слоями: bg (серый) и fg (активный прогресс) */
 .tg-voice-waveform {
+  position: relative;
+  height: 24px;
   display: flex;
   align-items: center;
-  gap: 2.5px;
-  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+  padding: 2px 0;
+}
+
+.tg-waveform-bars {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+}
+
+/* Непроигранная часть (background) */
+.tg-waveform-bg .tg-wave-bar {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.tg-bubble-wrap.in .tg-waveform-bg .tg-wave-bar {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Проигранная часть (foreground) с шириной width: X% */
+.tg-waveform-fg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: width 0.05s linear;
+}
+
+.tg-waveform-fg .tg-wave-bar {
+  background: #ffffff;
+}
+
+.tg-bubble-wrap.in .tg-waveform-fg .tg-wave-bar {
+  background: var(--tg-primary);
 }
 
 .tg-wave-bar {
   width: 2.5px;
-  background: rgba(255, 255, 255, 0.45);
   border-radius: 2px;
-  transition: height 0.15s, background 0.15s;
+  flex-shrink: 0;
 }
 
-.tg-wave-bar.played {
-  background: #ffffff;
+.tg-voice-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .tg-voice-time {
   font-size: 11.5px;
+  font-weight: 500;
   color: var(--tg-text-meta-out);
+  letter-spacing: 0.2px;
+}
+
+.tg-bubble-wrap.in .tg-voice-time {
+  color: var(--tg-text-sub);
 }
 
 /* ===================================================
@@ -1165,17 +1236,32 @@ html, body {
 }
 
 .tg-circle-card {
-  width: 240px;
-  height: 240px;
+  width: 210px;
+  height: 210px;
   border-radius: 50%;
   overflow: hidden;
   position: relative;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   margin: 4px 0;
   cursor: pointer;
   background: #000;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.12);
   display: block;
+  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tg-circle-card:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Увеличенный кружочек при воспроизведении (как в Telegram) */
+.tg-circle-card.expanded {
+  width: clamp(290px, 38vw, 380px);
+  height: clamp(290px, 38vw, 380px);
+  border-color: var(--tg-primary);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.75), 0 0 0 3px rgba(51, 144, 236, 0.4);
 }
 
 .tg-circle-card video {
@@ -1184,20 +1270,25 @@ html, body {
   object-fit: cover;
   border-radius: 50%;
   display: block;
+  pointer-events: none;
 }
 
 .tg-circle-time-badge {
   position: absolute;
-  bottom: 8px;
-  right: 50%;
-  transform: translateX(50%);
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.65);
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: #fff;
-  z-index: 2;
+  z-index: 4;
   pointer-events: none;
+  white-space: nowrap;
 }
 
 .tg-circle-play-overlay {
@@ -1205,22 +1296,28 @@ html, body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 50px;
-  height: 50px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 18px;
   pointer-events: none;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.2s;
   z-index: 3;
+}
+
+.tg-circle-play-overlay svg {
+  margin-left: 3px;
 }
 
 .tg-circle-card.playing .tg-circle-play-overlay {
   opacity: 0;
+  transform: translate(-50%, -50%) scale(0.8);
 }
 
 /* ВСТРОЕННАЯ СТРОКА ЗАПИСИ (ВНУТРИ СТРОКИ СООБЩЕНИЯ) */
@@ -1296,14 +1393,16 @@ html, body {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  z-index: 999;
+  z-index: 990; /* Ниже строки ввода (1005), поэтому строка ввода и кнопка отправки не размываются! */
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   pointer-events: none;
   animation: tg-fade-in 0.2s ease-out;
+  padding-bottom: 60px; /* Приподнимаем центр кружка над строкой ввода */
 }
 
 .tg-video-record-wrap.hidden {
@@ -1316,13 +1415,13 @@ html, body {
 }
 
 .tg-video-circle-preview {
-  width: clamp(230px, 45vw, 320px);
-  height: clamp(230px, 45vw, 320px);
+  width: clamp(280px, 45vw, 400px);
+  height: clamp(280px, 45vw, 400px);
   border-radius: 50%;
   border: 4px solid var(--tg-primary);
   overflow: hidden;
   position: relative;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(255, 255, 255, 0.15);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), 0 0 0 3px rgba(255, 255, 255, 0.2);
   background: #000;
   animation: tg-circle-pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -1757,17 +1856,23 @@ html, body {
   }
 
   .tg-circle-card {
-    width: clamp(180px, 58vw, 220px);
-    height: clamp(180px, 58vw, 220px);
+    width: clamp(170px, 52vw, 200px);
+    height: clamp(170px, 52vw, 200px);
+  }
+
+  .tg-circle-card.expanded {
+    width: clamp(260px, 82vw, 330px);
+    height: clamp(260px, 82vw, 330px);
   }
 
   .tg-video-circle-preview {
-    width: clamp(210px, 60vw, 260px);
-    height: clamp(210px, 60vw, 260px);
+    width: clamp(260px, 78vw, 340px);
+    height: clamp(260px, 78vw, 340px);
   }
 
   .tg-voice-card {
-    min-width: 180px;
+    min-width: 190px;
+    max-width: 270px;
     gap: 8px;
   }
 
