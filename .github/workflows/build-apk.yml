@@ -37,11 +37,15 @@ jobs:
           npx cap init "Telegram Messenger" "com.sheetmessenger.app" --web-dir web
           npx cap add android
 
-      - name: Configure Android Permissions & Hardware Access
+      - name: Configure Android Permissions, Hardware Access & Gradle Dependencies
         run: |
-          # Ensure CAMERA, RECORD_AUDIO, MODIFY_AUDIO_SETTINGS, INTERNET, WRITE/READ permissions are present in AndroidManifest.xml
+          # 1. AndroidManifest.xml permissions
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.front" android:required="false" />\n    <uses-feature android:name="android.hardware.microphone" android:required="false" />' "$MANIFEST_PATH"
+
+          # 2. Fix Kotlin stdlib duplicate class conflict in root build.gradle
+          ROOT_GRADLE="android/build.gradle"
+          sed -i 's/allprojects {/allprojects {\n    configurations.all {\n        resolutionStrategy {\n            force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"\n            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"\n            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"\n        }\n    }/g' "$ROOT_GRADLE"
 
       - name: Sync Web Assets to Android
         run: |
@@ -51,7 +55,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
