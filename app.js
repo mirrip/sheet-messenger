@@ -457,32 +457,49 @@ class TelegramApp {
     if (this.el.btnMainAction) {
       let isLongPress = false;
       let pressTimer = null;
+      let isRecordingActive = false;
+      const HOLD_DELAY = 450; // Зажатие от 0.45 сек для старта записи
 
-      const startHold = () => {
+      const startHold = (e) => {
         const hasText = Boolean(this.el.messageInput && this.el.messageInput.value && this.el.messageInput.value.trim().length > 0);
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
         if (hasText || hasFiles) return;
 
         isLongPress = false;
+        isRecordingActive = false;
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+
         pressTimer = setTimeout(() => {
           isLongPress = true;
+          isRecordingActive = true;
           if (this.recordMode === 'video') {
             this.startVideoCircleRecording();
           } else {
             this.startVoiceRecording();
           }
-        }, 350);
+        }, HOLD_DELAY);
       };
 
-      const endHold = () => {
+      const endHold = (e) => {
         if (pressTimer) {
           clearTimeout(pressTimer);
           pressTimer = null;
         }
+
+        // Если шла запись по удержанию — останавливаем и отправляем
+        if (isRecordingActive) {
+          isRecordingActive = false;
+          this.stopRecording(true);
+        }
       };
 
       // Поддержка мыши
-      this.el.btnMainAction.addEventListener('mousedown', startHold);
+      this.el.btnMainAction.addEventListener('mousedown', (e) => {
+        if (e.button === 0) startHold(e);
+      });
       this.el.btnMainAction.addEventListener('mouseup', endHold);
       this.el.btnMainAction.addEventListener('mouseleave', endHold);
 
@@ -504,15 +521,9 @@ class TelegramApp {
         if (hasText || hasFiles) {
           // Если есть текст или файл — отправляем сообщение
           this.sendMessage();
-        } else if (this.recordMode === 'video') {
-          // Если режим камеры активен — клик сразу начинает запись кружочка (если еще не идет)
-          if (!this.mediaStream) {
-            this.startVideoCircleRecording();
-          } else {
-            this.stopRecording(true);
-          }
         } else {
-          // Если в режиме микрофона — клик переключает на кружочек
+          // КОРОТКИЙ КЛИК: ТОЛЬКО ПЕРЕКЛЮЧЕНИЕ РЕЖИМА (микрофон <-> камера)
+          // Запись никогда не запускается по короткому клику!
           this.toggleRecordMode();
         }
       });
