@@ -31,6 +31,7 @@ class StorageService {
   }
 
   async saveMediaBlob(id, blob) {
+    if (!this.mediaDB) await this.initMediaDB();
     if (!this.mediaDB) return false;
     return new Promise((resolve) => {
       try {
@@ -43,6 +44,7 @@ class StorageService {
   }
 
   async getMediaBlob(id) {
+    if (!this.mediaDB) await this.initMediaDB();
     if (!this.mediaDB || !id) return null;
     return new Promise((resolve) => {
       try {
