@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.4.0">
+  <link rel="stylesheet" href="styles.css?v=3.5.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -171,27 +171,11 @@
           <div class="tg-messages-body" id="messages-feed"></div>
         </div>
 
-        <!-- VIDEO NOTE RECORDING PREVIEW MODAL / OVERLAY -->
+        <!-- VIDEO NOTE RECORDING PREVIEW (CENTER SCREEN MODAL) -->
         <div id="video-recording-panel" class="tg-video-record-wrap hidden">
           <div class="tg-video-circle-preview">
             <video id="video-stream-preview" autoplay playsinline muted></video>
-            <div class="tg-record-timer" id="record-timer">00:00</div>
           </div>
-          <div class="tg-video-record-actions">
-            <button id="btn-cancel-video-note" class="tg-rec-btn cancel" title="Отмена">✕</button>
-            <button id="btn-send-video-note" class="tg-rec-btn send" title="Отправить видеокружок">✓</button>
-          </div>
-        </div>
-
-        <!-- AUDIO RECORDING BANNER -->
-        <div id="audio-recording-panel" class="tg-audio-record-wrap hidden">
-          <div class="tg-rec-indicator">
-            <span class="tg-rec-dot"></span>
-            <span class="tg-rec-label">Запись голосового...</span>
-            <span id="audio-record-timer" class="tg-rec-time">00:00</span>
-          </div>
-          <button id="btn-cancel-voice" class="tg-icon-btn" title="Отмена">✕</button>
-          <button id="btn-send-voice" class="tg-icon-btn tg-voice-send-btn" title="Отправить">✓</button>
         </div>
 
         <!-- PENDING ATTACHMENTS PREVIEW -->
@@ -209,6 +193,14 @@
 
           <div class="tg-input-wrapper">
             <textarea id="message-input" class="tg-msg-textarea" placeholder="Написать сообщение..." rows="1"></textarea>
+
+            <!-- TELEGRAM RECORDING BAR (INSIDE MESSAGE INPUT) -->
+            <div id="composer-recording-bar" class="tg-composer-rec-bar hidden">
+              <div class="tg-rec-dot"></div>
+              <span id="composer-rec-timer" class="tg-composer-rec-timer">00:00</span>
+              <span id="composer-rec-hint" class="tg-composer-rec-hint">Запись...</span>
+              <button type="button" id="btn-cancel-recording" class="tg-composer-rec-cancel" title="Отменить запись">✕ Отмена</button>
+            </div>
           </div>
 
           <!-- SWIPE UP LOCK INDICATOR -->
@@ -304,7 +296,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=3.4.0"></script>
-  <script src="app.js?v=3.4.0"></script>
+  <script src="config.js?v=3.5.0"></script>
+  <script src="app.js?v=3.5.0"></script>
 </body>
 </html>
