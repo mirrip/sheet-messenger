@@ -298,6 +298,7 @@ class TelegramApp {
     this.currentPlayingCircle = null;
     this.currentPlayingAudio = null;
     this.currentPlayingAudioBtn = null;
+    this._mediaBlobUrlCache = new Map(); // mediaId -> blobUrl (стабильный кэш)
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -519,6 +520,14 @@ class TelegramApp {
         const hasFiles = Boolean(this.pendingFiles && this.pendingFiles.length > 0);
         if (hasText || hasFiles) return; // если есть текст или файлы — обычная отправка, не запись
 
+        // Блокируем нативные жесты браузера (жест «назад» с края экрана, скролл страницы)
+        if (e.cancelable) e.preventDefault();
+        try {
+          if (e.pointerId !== undefined && this.el.btnMainAction.setPointerCapture) {
+            this.el.btnMainAction.setPointerCapture(e.pointerId);
+          }
+        } catch (_) {}
+
         isPointerDown = true;
         isHoldRecording = false;
         startY = e.clientY;
@@ -562,6 +571,12 @@ class TelegramApp {
           this.isRecordingLocked = true;
           isPointerDown = false; // Палец свободен, отпускание не остановит запись!
 
+          try {
+            if (e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
+              this.el.btnMainAction.releasePointerCapture(e.pointerId);
+            }
+          } catch (_) {}
+
           if (this.el.recordLock) {
             this.el.recordLock.classList.add('locked');
             setTimeout(() => {
@@ -576,6 +591,12 @@ class TelegramApp {
       };
 
       const onPointerUp = (e) => {
+        try {
+          if (e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
+            this.el.btnMainAction.releasePointerCapture(e.pointerId);
+          }
+        } catch (_) {}
+
         if (holdTimer) {
           clearTimeout(holdTimer);
           holdTimer = null;
@@ -601,7 +622,13 @@ class TelegramApp {
         }
       };
 
-      const onPointerCancel = () => {
+      const onPointerCancel = (e) => {
+        try {
+          if (e && e.pointerId !== undefined && this.el.btnMainAction.releasePointerCapture) {
+            this.el.btnMainAction.releasePointerCapture(e.pointerId);
+          }
+        } catch (_) {}
+
         if (holdTimer) {
           clearTimeout(holdTimer);
           holdTimer = null;
@@ -718,7 +745,27 @@ class TelegramApp {
 
     // Мобильная кнопка Назад
     this.el.btnBack.addEventListener('click', () => {
+      sessionStorage.removeItem('gm_active_chat_open');
+      sessionStorage.removeItem('gm_active_chat_id');
+      sessionStorage.removeItem('gm_active_chat_title');
       if (this.el.chatView) this.el.chatView.classList.remove('active');
+      if (window.history && window.history.state && window.history.state.chatId) {
+        window.history.back();
+      }
+    });
+
+    // Обработка кнопки «Назад» на смартфонах Android/iOS
+    window.addEventListener('popstate', (e) => {
+      if (this.el.chatView && this.el.chatView.classList.contains('active')) {
+        if (!e.state || !e.state.chatId) {
+          sessionStorage.removeItem('gm_active_chat_open');
+          sessionStorage.removeItem('gm_active_chat_id');
+          sessionStorage.removeItem('gm_active_chat_title');
+          this.el.chatView.classList.remove('active');
+        } else if (e.state.chatId !== this.currentChatId) {
+          this.openChat(e.state.chatId, e.state.title || '');
+        }
+      }
     });
 
     // Лайтбокс для картинок
@@ -796,9 +843,24 @@ class TelegramApp {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
 
-    // На мобилках изначально остаёмся в списке чатов (как в Telegram Mobile)
+    const hasOpenChat = sessionStorage.getItem('gm_active_chat_open') === '1';
+    const savedChatId = sessionStorage.getItem('gm_active_chat_id');
+    const savedChatTitle = sessionStorage.getItem('gm_active_chat_title');
+
+    if (savedChatId) {
+      this.currentChatId = savedChatId;
+      if (savedChatTitle && this.el.activeChatTitle) {
+        this.el.activeChatTitle.innerText = savedChatTitle;
+      }
+    }
+
+    // Если на смартфоне чат был открыт — остаёмся в нём и не вылетаем в список чатов!
     if (this.el.chatView && window.innerWidth <= 768) {
-      this.el.chatView.classList.remove('active');
+      if (hasOpenChat) {
+        this.el.chatView.classList.add('active');
+      } else {
+        this.el.chatView.classList.remove('active');
+      }
     }
 
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
@@ -829,6 +891,15 @@ class TelegramApp {
   openChat(chatId, title) {
     this.currentChatId = chatId;
     this.currentChatTitle = title;
+    sessionStorage.setItem('gm_active_chat_open', '1');
+    sessionStorage.setItem('gm_active_chat_id', chatId);
+    sessionStorage.setItem('gm_active_chat_title', title);
+
+    if (window.history && window.history.pushState) {
+      if (!window.history.state || window.history.state.chatId !== chatId) {
+        window.history.pushState({ chatId, title }, '', '#chat=' + encodeURIComponent(chatId));
+      }
+    }
 
     const isGeneral = chatId === 'general';
     this.el.activeChatTitle.innerText = title;
@@ -889,12 +960,6 @@ class TelegramApp {
   }
 
   async renderMessages() {
-    // Очищаем старые Object URL от предыдущего рендера (предотвращает утечки памяти)
-    if (this._activeObjectURLs && this._activeObjectURLs.length > 0) {
-      this._activeObjectURLs.forEach(u => URL.revokeObjectURL(u));
-    }
-    this._activeObjectURLs = [];
-
     const msgs = await this.storage.getMessages(this.currentChatId);
     this.el.messagesFeed.innerHTML = '';
 
@@ -918,7 +983,7 @@ class TelegramApp {
         const mediaId = m.circleVideo.mediaId || '';
         specialContent = [
           '<div class="tg-circle-card" data-media-id="' + mediaId + '">',
-          '  <video playsinline preload="metadata"></video>',
+          '  <video playsinline webkit-playsinline muted preload="auto"></video>',
           '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
           '  <div class="tg-circle-play-overlay">',
           '    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
@@ -1028,28 +1093,35 @@ class TelegramApp {
         const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
         const totalDurStr = String(totalDur).padStart(2, '0');
 
-        // Асинхронная загрузка видео из IndexedDB -> Blob URL
-        if (mediaId) {
-          this.storage.getMediaBlob(mediaId).then(blob => {
-            if (blob) {
-              const url = URL.createObjectURL(blob);
-              this._activeObjectURLs.push(url);
-              vid.src = url;
+        // Подготовка источника видео с постоянным кэшированием URL
+        const loadCircleSrc = async () => {
+          if (vid.src && (vid.src.startsWith('blob:') || vid.src.startsWith('data:'))) return vid.src;
+          if (mediaId) {
+            let url = this._mediaBlobUrlCache.get(mediaId);
+            if (!url) {
+              const blob = await this.storage.getMediaBlob(mediaId);
+              if (blob) {
+                url = URL.createObjectURL(blob);
+                this._mediaBlobUrlCache.set(mediaId, url);
+              }
             }
-          });
-        } else if (m.circleVideo && m.circleVideo.data) {
-          // Обратная совместимость: старые сообщения с base64
-          vid.src = m.circleVideo.data;
-        }
+            if (url) {
+              if (vid.src !== url) vid.src = url;
+              return url;
+            }
+          } else if (m.circleVideo && m.circleVideo.data) {
+            vid.src = m.circleVideo.data;
+            return vid.src;
+          }
+          return null;
+        };
 
-        // При загрузке метаданных ставим на первый кадр (пауза по умолчанию)
-        vid.addEventListener('loadedmetadata', () => {
-          try { vid.currentTime = 0.05; } catch (_) {}
-        });
+        // Начинаем предзагрузку для мгновенного отображения первого кадра
+        loadCircleSrc();
 
         // Динамический таймер проигрывания кружочка
         vid.addEventListener('timeupdate', () => {
-          if (!vid.paused && timeBadge) {
+          if (!vid.paused && timeBadge && !isNaN(vid.currentTime)) {
             const cur = Math.floor(vid.currentTime);
             const curStr = String(cur).padStart(2, '0');
             timeBadge.innerText = '00:' + curStr + ' / 00:' + totalDurStr;
@@ -1058,26 +1130,40 @@ class TelegramApp {
 
         // По окончании видео: возврат в исходное состояние (пауза и компактный размер)
         vid.addEventListener('ended', () => {
+          vid.pause();
           circleCard.classList.remove('playing', 'expanded');
-          vid.currentTime = 0;
+          try { vid.currentTime = 0; } catch (_) {}
           if (timeBadge) timeBadge.innerText = '00:' + totalDurStr + ' • ' + m.time;
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
         });
 
-        // Клик по кружочку: снятие с паузы + плавное увеличение (как в Telegram)
-        circleCard.addEventListener('click', (e) => {
-          e.stopPropagation();
-
+        // Запуск / пауза видеокружка (как в Telegram: увеличение при проигрывании)
+        const startCirclePlay = () => {
           if (vid.paused) {
             // Останавливаем все другие кружочки и аудио
             this.stopAllPlayingMedia();
-
             this.currentPlayingCircle = vid;
-            vid.muted = false;
+
+            // Если воспроизведение дошло до конца — возвращаем в начало
+            if (vid.ended || (vid.duration && vid.currentTime >= vid.duration)) {
+              try { vid.currentTime = 0; } catch (_) {}
+            }
+
             circleCard.classList.add('playing', 'expanded');
-            vid.play().catch(err => console.warn('Play circle error:', err));
+            vid.muted = false;
+
+            const playPromise = vid.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(err => {
+                console.warn('Play unmuted blocked on mobile, retrying muted:', err);
+                vid.muted = true;
+                vid.play().then(() => {
+                  vid.muted = false;
+                }).catch(e2 => console.error('Play circle fallback error:', e2));
+              });
+            }
           } else {
             // Если уже играл — ставим на паузу и возвращаем к компактному размеру
             vid.pause();
@@ -1086,6 +1172,17 @@ class TelegramApp {
               this.currentPlayingCircle = null;
             }
           }
+        };
+
+        circleCard.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!vid.src || vid.src === '' || vid.src === window.location.href) {
+            loadCircleSrc().then(() => {
+              if (vid.src) startCirclePlay();
+            });
+            return;
+          }
+          startCirclePlay();
         });
       }
 
@@ -1103,10 +1200,15 @@ class TelegramApp {
         const initAudio = async () => {
           if (audio) return audio;
           if (voiceMediaId) {
-            const blob = await this.storage.getMediaBlob(voiceMediaId);
-            if (blob) {
-              const url = URL.createObjectURL(blob);
-              this._activeObjectURLs.push(url);
+            let url = this._mediaBlobUrlCache.get(voiceMediaId);
+            if (!url) {
+              const blob = await this.storage.getMediaBlob(voiceMediaId);
+              if (blob) {
+                url = URL.createObjectURL(blob);
+                this._mediaBlobUrlCache.set(voiceMediaId, url);
+              }
+            }
+            if (url) {
               audio = new Audio(url);
             }
           } else if (m.voice && m.voice.data) {
@@ -1137,6 +1239,9 @@ class TelegramApp {
           }
           return audio;
         };
+
+        // Фоновая предзагрузка аудио
+        initAudio();
 
         const toggleVoicePlay = async () => {
           const a = await initAudio();
@@ -1475,13 +1580,19 @@ class TelegramApp {
   async startVoiceRecording() {
     this.stopAllPlayingMedia();
     try {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      } catch (e1) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      this.mediaStream = stream;
 
       // Если к моменту открытия микрофона пользователь уже отменил кнопку (и не зафиксировал запись)
       if (!this.isHoldingMainAction && !this.isRecordingLocked) {
@@ -1490,7 +1601,26 @@ class TelegramApp {
       }
 
       this.recordedChunks = [];
-      this.mediaRecorder = new MediaRecorder(this.mediaStream);
+
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const supportedVoiceTypes = isSafari ? [
+        'audio/mp4',
+        'audio/aac',
+        'audio/webm;codecs=opus',
+        'audio/webm'
+      ] : [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus'
+      ];
+      let selectedAudioMime = '';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        selectedAudioMime = supportedVoiceTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
+      }
+      const recOptions = selectedAudioMime ? { mimeType: selectedAudioMime } : {};
+
+      this.mediaRecorder = new MediaRecorder(this.mediaStream, recOptions);
 
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
@@ -1498,7 +1628,8 @@ class TelegramApp {
 
       this.mediaRecorder.onstop = async () => {
         if (this.shouldSendRecorded && this.recordedChunks.length > 0) {
-          const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+          const finalMime = selectedAudioMime || (this.recordedChunks[0] && this.recordedChunks[0].type) || 'audio/webm';
+          const blob = new Blob(this.recordedChunks, { type: finalMime });
           const mediaId = 'voice_' + Date.now();
           await this.storage.saveMediaBlob(mediaId, blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
@@ -1521,16 +1652,33 @@ class TelegramApp {
     } catch (err) {
       console.warn('Microphone error:', err);
       this.cleanupStream();
+      this.stopRecording(false);
     }
   }
 
   async startVideoCircleRecording() {
     this.stopAllPlayingMedia();
     try {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 320, max: 480 }, height: { ideal: 320, max: 480 }, facingMode: 'user' },
-        audio: true
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 360 }, height: { ideal: 360 }, facingMode: 'user' },
+          audio: true
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: true
+          });
+        } catch (e2) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+          });
+        }
+      }
+      this.mediaStream = stream;
 
       // Если к моменту открытия камеры пользователь уже отменил кнопку (и не зафиксировал запись)
       if (!this.isHoldingMainAction && !this.isRecordingLocked) {
@@ -1541,8 +1689,14 @@ class TelegramApp {
       this.el.videoStreamPreview.srcObject = this.mediaStream;
       this.recordedChunks = [];
 
-      // Кросс-браузерный выбор MIME-типа
-      const supportedTypes = [
+      // Кросс-браузерный выбор MIME-типа (Safari предпочитает mp4, Chrome/Firefox - webm)
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const supportedTypes = isSafari ? [
+        'video/mp4;codecs=avc1,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ] : [
         'video/webm;codecs=vp8,opus',
         'video/webm;codecs=vp9,opus',
         'video/webm',
@@ -1554,9 +1708,9 @@ class TelegramApp {
         selectedMime = supportedTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
       }
 
-      // Битрейт 320 kbps: кружочек получается сверхлегким (всего 150-250 КБ) и моментально сохраняется
+      // Битрейт 350 kbps: кружочек получается сверхлегким (всего 150-250 КБ) и моментально сохраняется
       const recorderOptions = {
-        videoBitsPerSecond: 320000
+        videoBitsPerSecond: 350000
       };
       if (selectedMime) recorderOptions.mimeType = selectedMime;
 
@@ -1591,16 +1745,9 @@ class TelegramApp {
       this.startTimer(this.el.composerRecTimer);
     } catch (err) {
       console.warn('Camera error or blocked:', err);
-      // Если веб-камера заблокирована или отсутствует — отправляем демо-кружок
-      if (this.isHoldingMainAction) {
-        const confirmDemo = confirm(
-          'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный видеокружок?'
-        );
-        if (confirmDemo) {
-          await this.sendDemoVideoCircle();
-        }
-      }
+      // Никогда не вызываем блокирующий confirm на смартфонах!
       this.cleanupStream();
+      this.stopRecording(false);
     }
   }
 
