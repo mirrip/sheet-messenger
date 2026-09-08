@@ -136,7 +136,7 @@ class StorageService {
   }
 
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
-    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    let all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -155,7 +155,32 @@ class StorageService {
     };
 
     all.push(newMsg);
-    localStorage.setItem('gm_messages', JSON.stringify(all));
+
+    // Безопасное сохранение в localStorage с защитой от квоты QuotaExceededError
+    try {
+      localStorage.setItem('gm_messages', JSON.stringify(all));
+    } catch (quotaErr) {
+      console.warn('LocalStorage quota reached, pruning old heavy media items...', quotaErr);
+      // Если квота превышена, удаляем тяжелые медиа из старых сообщений (старше 5 последних)
+      while (all.length > 5) {
+        // Ищем старое сообщение с тяжелым файлом/видео/аудио
+        const heavyIdx = all.findIndex((m, idx) => idx < all.length - 5 && (m.circleVideo || m.file || m.voice || m.files));
+        if (heavyIdx !== -1) {
+          if (all[heavyIdx].circleVideo) all[heavyIdx].circleVideo.data = '';
+          if (all[heavyIdx].file) all[heavyIdx].file.data = '';
+          if (all[heavyIdx].voice) all[heavyIdx].voice.data = '';
+          if (all[heavyIdx].files) all[heavyIdx].files = null;
+        } else {
+          all.shift(); // Удаляем самое старое сообщение
+        }
+        try {
+          localStorage.setItem('gm_messages', JSON.stringify(all));
+          break;
+        } catch (e) {
+          // Продолжаем очищать
+        }
+      }
+    }
 
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(new CustomEvent('tg_new_message', { detail: newMsg }));
@@ -450,8 +475,15 @@ class TelegramApp {
         if (hasText || hasFiles) {
           // Если есть текст или файл — отправляем сообщение
           this.sendMessage();
+        } else if (this.recordMode === 'video') {
+          // Если режим камеры активен — клик сразу начинает запись кружочка (если еще не идет)
+          if (!this.mediaStream) {
+            this.startVideoCircleRecording();
+          } else {
+            this.stopRecording(true);
+          }
         } else {
-          // Если строка пустая — короткий клик переключает режим (микрофон <-> видеокружок)
+          // Если в режиме микрофона — клик переключает на кружочек
           this.toggleRecordMode();
         }
       });
@@ -1168,7 +1200,7 @@ class TelegramApp {
   async startVideoCircleRecording() {
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 480 }, height: { ideal: 480 }, facingMode: 'user' },
+        video: { width: { ideal: 320, max: 480 }, height: { ideal: 320, max: 480 }, facingMode: 'user' },
         audio: true
       });
       this.el.videoStreamPreview.srcObject = this.mediaStream;
@@ -1187,7 +1219,12 @@ class TelegramApp {
         selectedMime = supportedTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
       }
 
-      const recorderOptions = selectedMime ? { mimeType: selectedMime } : {};
+      // Битрейт 320 kbps: кружочек получается сверхлегким (всего 150-250 КБ) и моментально сохраняется
+      const recorderOptions = {
+        videoBitsPerSecond: 320000
+      };
+      if (selectedMime) recorderOptions.mimeType = selectedMime;
+
       this.mediaRecorder = new MediaRecorder(this.mediaStream, recorderOptions);
 
       this.mediaRecorder.ondataavailable = (e) => {
@@ -1201,7 +1238,7 @@ class TelegramApp {
           const base64 = await this.blobToBase64(blob);
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
             data: base64,
-            duration: this.getElapsedSeconds()
+            duration: Math.max(1, this.getElapsedSeconds())
           });
           await this.refreshData();
         }
@@ -1212,8 +1249,73 @@ class TelegramApp {
       this.el.videoRecordingPanel.classList.remove('hidden');
       this.startTimer(this.el.recordTimer);
     } catch (err) {
-      alert('Не удалось запустить камеру для видеокружка: ' + err.message);
+      console.warn('Camera error or blocked:', err);
+      // Если веб-камера заблокирована или отсутствует — предлагаем мгновенный демо-кружок
+      const confirmDemo = confirm(
+        'Камера недоступна (' + (err.message || 'нет доступа') + ').\nОтправить демонстрационный анимированный видеокружок в чат?'
+      );
+      if (confirmDemo) {
+        await this.sendDemoVideoCircle();
+      }
       this.cleanupStream();
+    }
+  }
+
+  async sendDemoVideoCircle() {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 240;
+      canvas.height = 240;
+      const ctx = canvas.getContext('2d');
+      const stream = canvas.captureStream(25);
+      const rec = new MediaRecorder(stream, { videoBitsPerSecond: 250000 });
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+      rec.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const base64 = await this.blobToBase64(blob);
+        await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
+          data: base64,
+          duration: 3
+        });
+        await this.refreshData();
+      };
+
+      rec.start();
+      let frame = 0;
+      const animInterval = setInterval(() => {
+        frame++;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 240, 240);
+
+        // Пульсирующий круг
+        const rad = 60 + Math.sin(frame * 0.2) * 20;
+        const grad = ctx.createRadialGradient(120, 120, 10, 120, 120, rad);
+        grad.addColorStop(0, '#38bdf8');
+        grad.addColorStop(1, '#0284c7');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(120, 120, rad, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Иконка камеры
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('📹', 120, 115);
+
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText('@' + this.currentUser.username, 120, 155);
+
+        if (frame >= 75) { // 3 секунды при 25 fps
+          clearInterval(animInterval);
+          if (rec.state !== 'inactive') rec.stop();
+        }
+      }, 40);
+    } catch (demoErr) {
+      console.error('Failed to generate demo video note:', demoErr);
     }
   }
 
