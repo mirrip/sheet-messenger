@@ -675,6 +675,11 @@ class TelegramApp {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
 
+    // На мобилках изначально остаёмся в списке чатов (как в Telegram Mobile)
+    if (this.el.chatView && window.innerWidth <= 768) {
+      this.el.chatView.classList.remove('active');
+    }
+
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
     this.renderAvatars();
 
@@ -1465,6 +1470,11 @@ class TelegramApp {
       const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
       const s = String(elapsed % 60).padStart(2, '0');
       timerEl.innerText = m + ':' + s;
+
+      // Максимальная длительность кружка — 59 секунд (авто-отправка)
+      if (elapsed >= 59) {
+        this.stopRecording(true);
+      }
     }, 1000);
   }
 
