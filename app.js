@@ -1228,23 +1228,54 @@ class TelegramApp {
         const posterId = circleCard.getAttribute('data-poster-id');
         const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
         const initialPosterUrl = this._mediaBlobUrlCache.get(posterId) || (m.circleVideo && m.circleVideo.poster) || '';
+        let progressFrameId = null;
 
         if (initialPosterUrl) this.applyCirclePoster(vid, circleCard, initialPosterUrl);
         else this.ensureCirclePoster(vid, circleCard, posterId);
 
-        // Кольцо прогресса синхронизировано с реальной длительностью видео.
-        vid.addEventListener('timeupdate', () => {
+        const updateCircleProgress = () => {
           const duration = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : totalDur;
           const progress = duration > 0 ? Math.min(100, Math.max(0, (vid.currentTime / duration) * 100)) : 0;
           if (progressValue) progressValue.style.strokeDashoffset = String(100 - progress);
+        };
+
+        const stopProgressLoop = () => {
+          if (progressFrameId !== null) {
+            cancelAnimationFrame(progressFrameId);
+            progressFrameId = null;
+          }
+        };
+
+        const runProgressLoop = () => {
+          stopProgressLoop();
+          const tick = () => {
+            updateCircleProgress();
+            if (!vid.paused && !vid.ended) progressFrameId = requestAnimationFrame(tick);
+            else progressFrameId = null;
+          };
+          progressFrameId = requestAnimationFrame(tick);
+        };
+
+        // timeupdate служит запасным обновлением, а requestAnimationFrame даёт
+        // плавное движение кольца без рывков, строго по позиции видео.
+        vid.addEventListener('timeupdate', updateCircleProgress);
+        vid.addEventListener('playing', () => {
+          circleCard.classList.add('playing', 'expanded', 'progress-visible');
+          circleCard.classList.remove('completed');
+          runProgressLoop();
+        });
+        vid.addEventListener('pause', () => {
+          stopProgressLoop();
+          updateCircleProgress();
+          if (!vid.ended) circleCard.classList.remove('playing', 'expanded');
         });
 
-        // По окончании видео: возврат в исходное состояние (пауза и компактный размер)
+        // После завершения кольцо остаётся полностью заполненным до повторного запуска.
         vid.addEventListener('ended', () => {
-          vid.pause();
+          stopProgressLoop();
           circleCard.classList.remove('playing', 'expanded');
-          try { vid.currentTime = 0; } catch (_) {}
-          if (progressValue) progressValue.style.strokeDashoffset = '100';
+          circleCard.classList.add('progress-visible', 'completed');
+          if (progressValue) progressValue.style.strokeDashoffset = '0';
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
@@ -1271,9 +1302,11 @@ class TelegramApp {
 
             if (vid.ended || (vid.duration && vid.currentTime >= vid.duration)) {
               try { vid.currentTime = 0; } catch (_) {}
+              if (progressValue) progressValue.style.strokeDashoffset = '100';
+              circleCard.classList.remove('completed');
             }
 
-            circleCard.classList.add('playing', 'expanded');
+            circleCard.classList.add('playing', 'expanded', 'progress-visible');
             vid.muted = false;
 
             const playPromise = vid.play();
@@ -1285,6 +1318,7 @@ class TelegramApp {
                   vid.muted = false;
                 }).catch(e2 => {
                   circleCard.classList.remove('playing', 'expanded');
+                  if (!vid.currentTime) circleCard.classList.remove('progress-visible');
                   if (this.currentPlayingCircle === vid) this.currentPlayingCircle = null;
                   console.error('Play circle fallback error:', e2);
                 });
@@ -1293,6 +1327,8 @@ class TelegramApp {
           } else {
             vid.pause();
             circleCard.classList.remove('playing', 'expanded');
+            circleCard.classList.add('progress-visible');
+            updateCircleProgress();
             if (this.currentPlayingCircle === vid) {
               this.currentPlayingCircle = null;
             }
