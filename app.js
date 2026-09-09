@@ -4428,29 +4428,46 @@ class TelegramApp {
     this.renderProfileFeed();
   }
 
-  async handleAvatarUpload(file) {
-    if (!file || !this.currentUser) return;
+  async handleAvatarUpload(fileOrEvent) {
+    let file = fileOrEvent;
+    if (fileOrEvent && fileOrEvent.target && fileOrEvent.target.files) {
+      file = fileOrEvent.target.files[0];
+    }
+    if (!file) return;
+    if (!this.currentUser) {
+      this.showToast('Вы не авторизованы');
+      return;
+    }
     try {
-      const base64 = await this.readAndCompressImage(file, 720, 720, 0.88);
+      const base64 = await this.readAndCompressImage(file, 480, 480, 0.82);
       const avatars = await this.storage.addProfilePhoto(this.currentUser.username, base64);
       this.currentUser.avatar = avatars[0];
       this.currentUser.avatars = avatars;
       this.feedAvatarIndex = 0;
       this.modalAvatarIndex = 0;
+      this.pendingEditAvatar = avatars[0];
+      if (this.el.editAvatarPreview) {
+        this.el.editAvatarPreview.innerHTML = '<img src="' + avatars[0] + '" alt="Avatar">';
+      }
       this.renderAvatars();
       this.renderProfileFeed();
       if (this.activeProfileUser && this.activeProfileUser.username.toLowerCase() === this.currentUser.username.toLowerCase()) {
         this.openUserProfile(this.currentUser.username, true);
       }
+      if (this.el.avatarFileInput) this.el.avatarFileInput.value = '';
       this.showToast('Новое фото профиля успешно добавлено ✨');
     } catch (e) {
       console.warn('Avatar upload error:', e);
+      if (this.el.avatarFileInput) this.el.avatarFileInput.value = '';
       this.showToast('Ошибка при загрузке фото');
     }
   }
 
-  readAndCompressImage(file, maxWidth = 720, maxHeight = 720, quality = 0.88) {
+  readAndCompressImage(file, maxWidth = 480, maxHeight = 480, quality = 0.82) {
     return new Promise((resolve, reject) => {
+      if (!file || !(file instanceof Blob || file instanceof File)) {
+        return reject(new Error('Некорректный файл изображения'));
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
@@ -4467,16 +4484,16 @@ class TelegramApp {
             }
           }
           const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
+          canvas.width = Math.max(1, w);
+          canvas.height = Math.max(1, h);
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/jpeg', quality));
         };
-        img.onerror = reject;
+        img.onerror = () => reject(new Error('Не удалось декодировать изображение'));
         img.src = e.target.result;
       };
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
       reader.readAsDataURL(file);
     });
   }
