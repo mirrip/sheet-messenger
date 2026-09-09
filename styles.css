@@ -900,6 +900,8 @@ html, body {
 
 .tg-input-wrapper {
   flex: 1;
+  min-width: 0;
+  position: relative;
   background: var(--tg-input-bg);
   border-radius: 20px;
   display: flex;
@@ -964,6 +966,7 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  z-index: 2;
 }
 
 .tg-send-btn svg {
@@ -1241,60 +1244,180 @@ html, body {
   padding-left: 8px;
 }
 
+.tg-circle-message {
+  display: inline-flex;
+  flex-direction: column;
+  width: fit-content;
+  max-width: 100%;
+}
+
 .tg-circle-card {
   width: 210px;
   height: 210px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  margin: 4px 0;
+  margin: 6px 5px 0;
   cursor: pointer;
-  background: #000;
-  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  border: none;
   display: block;
-  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.tg-circle-card:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+.tg-circle-media {
+  position: absolute;
+  inset: 3px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #111c28;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.25s, box-shadow 0.3s;
+}
+
+.tg-circle-card:hover .tg-circle-media {
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
 /* Увеличенный кружочек при воспроизведении (как в Telegram) */
 .tg-circle-card.expanded {
   width: clamp(290px, 38vw, 380px);
   height: clamp(290px, 38vw, 380px);
-  border-color: var(--tg-primary);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.75), 0 0 0 3px rgba(51, 144, 236, 0.4);
+}
+
+.tg-circle-card.expanded .tg-circle-media {
+  border-color: rgba(51, 144, 236, 0.55);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.75);
 }
 
 .tg-circle-card video {
+  position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
   display: block;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
 
-.tg-circle-time-badge {
+.tg-circle-card.poster-ready video,
+.tg-circle-card.playing video {
+  opacity: 1;
+}
+
+.tg-circle-poster-fallback {
   position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: 3px 10px;
-  border-radius: 12px;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(85, 169, 255, 0.7), transparent 34%),
+    linear-gradient(145deg, #2476b9, #172b43 58%, #101923);
+  transition: opacity 0.2s ease;
+}
+
+.tg-circle-poster-fallback::after {
+  content: '';
+  position: absolute;
+  inset: 14%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+}
+
+.tg-circle-poster-fallback svg {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
+}
+
+.tg-circle-card.poster-ready .tg-circle-poster-fallback,
+.tg-circle-card.playing .tg-circle-poster-fallback {
+  opacity: 0;
+}
+
+.tg-circle-duration {
+  flex-shrink: 0;
   font-size: 11.5px;
-  font-weight: 500;
-  color: #fff;
-  z-index: 4;
+  font-weight: 600;
+  color: var(--tg-text-sub);
   pointer-events: none;
   white-space: nowrap;
+}
+
+.tg-circle-meta {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  padding: 4px 10px 0;
+  font-size: 11.5px;
+  line-height: 1.2;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.tg-circle-sent-time {
+  flex-shrink: 0;
+  color: var(--tg-text-sub);
+  white-space: nowrap;
+}
+
+.tg-circle-sent-time .tg-checks {
+  color: var(--tg-primary);
+}
+
+.tg-circle-card.playing + .tg-circle-meta {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+.tg-circle-progress {
+  position: absolute;
+  z-index: 6;
+  inset: -5px;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  overflow: visible;
+  pointer-events: none;
+  transform: rotate(-90deg);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.tg-circle-progress circle {
+  fill: none;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.tg-circle-progress-track {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.tg-circle-progress-value {
+  stroke: var(--tg-primary);
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 0.08s linear;
+  filter: drop-shadow(0 0 3px rgba(51, 144, 236, 0.8));
+}
+
+.tg-circle-card.playing .tg-circle-progress {
+  opacity: 1;
 }
 
 .tg-circle-play-overlay {
@@ -1328,12 +1451,20 @@ html, body {
 
 /* ВСТРОЕННАЯ СТРОКА ЗАПИСИ (ВНУТРИ СТРОКИ СООБЩЕНИЯ) */
 .tg-composer-rec-bar {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   height: 100%;
-  padding: 4px 0;
+  padding: 4px 12px;
+  box-sizing: border-box;
+  border-radius: inherit;
+  background: var(--tg-input-bg);
+  overflow: hidden;
 }
 
 .tg-composer-rec-bar.hidden {
@@ -1359,12 +1490,14 @@ html, body {
   font-weight: 700;
   color: #ff595a;
   min-width: 44px;
+  flex-shrink: 0;
 }
 
 .tg-composer-rec-hint {
   font-size: 13.5px;
   color: var(--tg-text-sub);
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1840,7 +1973,7 @@ html, body {
   }
 
   .tg-composer {
-    padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: 6px calc(58px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) 8px;
     gap: 6px;
     flex-shrink: 0 !important;
     width: 100%;
@@ -1848,9 +1981,28 @@ html, body {
     box-sizing: border-box;
   }
 
+  /* Кнопка не участвует в расчёте ширины строки и не может быть
+     вытолкнута панелью записи за правую границу экрана. */
+  .tg-composer > .tg-send-btn {
+    position: absolute;
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    margin: 0;
+  }
+
   .tg-input-wrapper {
     padding: 4px 8px 4px 12px;
     min-height: 40px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .tg-composer-rec-bar {
+    gap: 6px;
+  }
+
+  .tg-composer-rec-cancel {
+    padding-inline: 6px;
   }
 
   .tg-msg-textarea {
