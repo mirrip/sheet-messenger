@@ -271,8 +271,20 @@ class StorageService {
   }
 
   async getUserProfile(username) {
+    if (!username) return null;
+    const clean = String(username).replace(/^@/, '').toLowerCase().trim();
+    if (clean === 'general' || clean === 'общий чат' || clean === 'общий') {
+      return {
+        id: 'usr_general',
+        username: 'general',
+        name: 'Общий чат',
+        bio: 'Официальный публичный канал сообщений',
+        avatar: null,
+        avatars: []
+      };
+    }
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    let user = users.find(u => (u.username && u.username.toLowerCase() === clean) || (u.name && u.name.toLowerCase() === clean));
     if (user) {
       const avatars = Array.isArray(user.avatars) && user.avatars.length > 0
         ? user.avatars
@@ -287,9 +299,9 @@ class StorageService {
       };
     }
     return {
-      id: 'usr_' + username,
-      username: username,
-      name: '@' + username,
+      id: 'usr_' + clean,
+      username: clean,
+      name: '@' + clean,
       bio: '',
       avatar: null,
       avatars: []
@@ -328,19 +340,37 @@ class StorageService {
 
   async getUserSharedMedia(currentUsername, targetUsername) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
-    const u1 = (currentUsername || '').toLowerCase();
-    const u2 = (targetUsername || '').toLowerCase();
+    const u1 = (currentUsername || '').toLowerCase().trim();
+    let u2 = (targetUsername || '').toLowerCase().replace(/^@/, '').trim();
+    if (u2 === 'общий чат' || u2 === 'общий') u2 = 'general';
+
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const matchedUser = users.find(u => (u.name && u.name.toLowerCase() === u2) || (u.username && u.username.toLowerCase() === u2));
+    if (matchedUser && matchedUser.username) {
+      u2 = matchedUser.username.toLowerCase();
+    }
+
     const sorted = [u1, u2].sort();
     const dmChatId = 'dm:' + sorted[0] + ':' + sorted[1];
 
     const chatMsgs = all.filter(m => {
-      if (m.chatId === dmChatId) return true;
-      if (u2 === 'general' && m.chatId === 'general') return true;
+      const chatId = (m.chatId || '').toLowerCase();
       const sender = (m.sender || '').toLowerCase();
+
+      // 1. Личный диалог
+      if (chatId === dmChatId) return true;
+      // 2. Общий чат
+      if (u2 === 'general' && chatId === 'general') return true;
+      // 3. Сообщения, адресованные в диалог с u2
+      if (chatId.includes(u2) && (chatId.includes(u1) || chatId === 'general')) return true;
+      // 4. Отправитель - собеседник
       if (sender === u2) {
-        if (m.chatId === 'general' || m.chatId.includes(u1)) return true;
+        if (chatId === 'general' || chatId.includes(u1) || chatId === dmChatId) return true;
       }
-      if (sender === u1 && (m.chatId === dmChatId || (m.text && m.text.toLowerCase().includes('@' + u2)))) return true;
+      // 5. Отправитель - текущий пользователь в диалоге с u2 или упоминанием
+      if (sender === u1) {
+        if (chatId === dmChatId || (m.text && m.text.toLowerCase().includes('@' + u2))) return true;
+      }
       return false;
     });
 
@@ -350,34 +380,38 @@ class StorageService {
 
     chatMsgs.forEach(m => {
       // Фото и видео
-      if (m.files && Array.isArray(m.files)) {
+      if (m.files && Array.isArray(m.files) && m.files.length > 0) {
         m.files.forEach(f => {
+          if (!f) return;
           const type = (f.type || '').toLowerCase();
-          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
-          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
+          const name = f.name || '';
+          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico)$/i.test(name);
+          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(name);
           if (isPhoto || isVideo) {
-            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo });
+            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
           } else {
-            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender });
+            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId });
           }
         });
       } else if (m.file) {
-        const type = (m.file.type || '').toLowerCase();
-        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
-        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
+        const f = m.file;
+        const type = (f.type || '').toLowerCase();
+        const name = f.name || '';
+        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico)$/i.test(name);
+        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(name);
         if (isPhoto || isVideo) {
-          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo });
+          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
         } else {
-          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender });
+          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId });
         }
       }
 
       // Голосовые и кружочки
       if (m.voice) {
-        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender });
+        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId });
       }
       if (m.circleVideo) {
-        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender });
+        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId });
       }
     });
 
@@ -1348,14 +1382,14 @@ class TelegramApp {
     }
     if (this.el.btnOpenChatProfile) {
       this.el.btnOpenChatProfile.addEventListener('click', () => {
-        const u = this.currentChatTitle.replace('@', '');
-        this.openUserProfile(u, u.toLowerCase() === this.currentUser.username.toLowerCase());
+        const peer = this.getPeerUsernameFromChatId(this.currentChatId);
+        this.openUserProfile(peer, peer.toLowerCase() === this.currentUser.username.toLowerCase());
       });
     }
     if (this.el.btnChatInfoPanel) {
       this.el.btnChatInfoPanel.addEventListener('click', () => {
-        const u = this.currentChatTitle.replace('@', '');
-        this.openUserProfile(u, u.toLowerCase() === this.currentUser.username.toLowerCase());
+        const peer = this.getPeerUsernameFromChatId(this.currentChatId);
+        this.openUserProfile(peer, peer.toLowerCase() === this.currentUser.username.toLowerCase());
       });
     }
     if (this.el.btnHeaderEditProfile) {
@@ -3450,9 +3484,14 @@ class TelegramApp {
   }
 
   async openUserProfile(username, isOwn = false) {
-    username = (username || '').replace(/^@/, '').toLowerCase();
-    isOwn = Boolean(this.currentUser && username === this.currentUser.username.toLowerCase());
+    username = (username || '').replace(/^@/, '').toLowerCase().trim();
+    if (username === 'общий чат' || username === 'общий') username = 'general';
+
     this.activeProfileUser = await this.storage.getUserProfile(username);
+    if (this.activeProfileUser && this.activeProfileUser.username) {
+      username = this.activeProfileUser.username.toLowerCase();
+    }
+    isOwn = Boolean(this.currentUser && username === this.currentUser.username.toLowerCase());
     const isMuted = this.isChatMuted(this.currentChatId);
 
     // Заголовок: для своего "Мой профиль", для собеседника "Информация"
@@ -3503,11 +3542,28 @@ class TelegramApp {
     // Звук / Уведомления
     this.updateMuteUI(isMuted);
 
+    // Сбрасываем вкладки на "Медиа"
+    if (this.el.profileTabs) {
+      this.el.profileTabs.forEach((tab, tIdx) => {
+        tab.classList.toggle('active', tIdx === 0);
+      });
+      ['media', 'files', 'voice'].forEach((type, tIdx) => {
+        const pane = document.getElementById('pane-profile-' + type);
+        if (pane) pane.classList.toggle('hidden', tIdx !== 0);
+      });
+    }
+
     // Вкладки медиа, файлов, голосовых: ЖИВАЯ ЛЕНТА
     await this.renderProfileMediaTabs(username, isOwn);
 
     if (this.el.profileModalOverlay) this.el.profileModalOverlay.classList.remove('hidden');
-    if (this.el.profilePanel) this.el.profilePanel.classList.remove('hidden');
+    if (this.el.profilePanel) {
+      this.el.profilePanel.classList.remove('hidden');
+      const scrollEl = this.el.profilePanel.querySelector('.tg-profile-body');
+      if (scrollEl) scrollEl.scrollTop = 0;
+    }
+    const tabContent = document.querySelector('.tg-profile-tab-content');
+    if (tabContent) tabContent.scrollTop = 0;
   }
 
   updateModalAvatarUI() {
