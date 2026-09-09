@@ -70,6 +70,19 @@ class StorageService {
     });
   }
 
+  async deleteMediaBlob(id) {
+    if (!this.mediaDB) await this.initMediaDB();
+    if (!this.mediaDB || !id) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.mediaDB.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').delete(id);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) { resolve(false); }
+    });
+  }
+
   initLocalStorage() {
     if (typeof localStorage === 'undefined') return;
     if (!localStorage.getItem('gm_users')) {
@@ -610,6 +623,7 @@ class TelegramApp {
       lightboxBackdrop: document.getElementById('lightbox-backdrop'),
       lightboxClose: document.getElementById('lightbox-close'),
       lightboxImg: document.getElementById('lightbox-img'),
+      lightboxVideo: document.getElementById('lightbox-video'),
       lightboxFilename: document.getElementById('lightbox-filename'),
       lightboxDownload: document.getElementById('lightbox-download'),
 
@@ -966,9 +980,12 @@ class TelegramApp {
       }
     });
 
-    // Лайтбокс для картинок
+    // Полноэкранный просмотр фото и видео
     this.el.lightboxClose.addEventListener('click', () => this.closeLightbox());
     this.el.lightboxBackdrop.addEventListener('click', () => this.closeLightbox());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.el.lightboxModal.classList.contains('hidden')) this.closeLightbox();
+    });
 
     // Слушатели событий
     window.addEventListener('tg_new_message', (e) => {
@@ -1198,6 +1215,13 @@ class TelegramApp {
           this._mediaBlobUrlCache.set(m.voice.mediaId, URL.createObjectURL(b));
         }
       }
+      const attachments = m.files && m.files.length ? m.files : (m.file ? [m.file] : []);
+      for (const file of attachments) {
+        if (file.mediaId && !this._mediaBlobUrlCache.has(file.mediaId)) {
+          const blob = await this.storage.getMediaBlob(file.mediaId);
+          if (blob) this._mediaBlobUrlCache.set(file.mediaId, URL.createObjectURL(blob));
+        }
+      }
     }
 
     msgs.forEach(m => {
@@ -1263,44 +1287,11 @@ class TelegramApp {
           '</div>'
         ].join('');
       }
-      // 3. ФОТОГРАФИИ (ОДИНОЧНЫЕ И СЕТКА ГАЛЕРЕИ) ИЛИ ФАЙЛЫ
+      // 3. ФОТО, ВИДЕО И ПРОИЗВОЛЬНЫЕ ДОКУМЕНТЫ
       else if (m.files && m.files.length > 0) {
-        const photoFiles = m.files.filter(f => f.type && f.type.startsWith('image/'));
-        const otherFiles = m.files.filter(f => !f.type || !f.type.startsWith('image/'));
-
-        let gridHtml = '';
-        if (photoFiles.length > 0) {
-          const gridClass = photoFiles.length === 1 ? 'grid-1' : (photoFiles.length === 2 ? 'grid-2' : (photoFiles.length === 3 ? 'grid-3' : 'grid-more'));
-          gridHtml = '<div class="tg-photo-grid ' + gridClass + '">' +
-            photoFiles.map(f => '<img class="tg-media-photo" src="' + f.data + '" alt="Photo" data-name="' + this.escape(f.name) + '">').join('') +
-            '</div>';
-        }
-
-        const filesHtml = otherFiles.map(f => [
-          '<div class="tg-file-card">',
-          '  <div class="tg-file-icon">📄</div>',
-          '  <div class="tg-file-meta">',
-          '    <div class="tg-file-name">' + this.escape(f.name) + '</div>',
-          '    <div class="tg-file-size">' + this.formatSize(f.size) + '</div>',
-          '  </div>',
-          '</div>'
-        ].join('')).join('');
-
-        specialContent = gridHtml + filesHtml;
+        specialContent = this.buildAttachmentsHtml(m.files);
       } else if (m.file) {
-        if (m.file.type && m.file.type.startsWith('image/')) {
-          specialContent = '<div class="tg-photo-grid grid-1"><img class="tg-media-photo" src="' + m.file.data + '" alt="Photo" data-name="' + this.escape(m.file.name) + '"></div>';
-        } else {
-          specialContent = [
-            '<div class="tg-file-card">',
-            '  <div class="tg-file-icon">📄</div>',
-            '  <div class="tg-file-meta">',
-            '    <div class="tg-file-name">' + this.escape(m.file.name) + '</div>',
-            '    <div class="tg-file-size">' + this.formatSize(m.file.size) + '</div>',
-            '  </div>',
-            '</div>'
-          ].join('');
-        }
+        specialContent = this.buildAttachmentsHtml([m.file]);
       }
 
       // Блок реакций
@@ -1633,11 +1624,18 @@ class TelegramApp {
         });
       }
 
-      // Лайтбокс для картинок галереи
-      wrap.querySelectorAll('.tg-media-photo').forEach(imgEl => {
-        imgEl.addEventListener('click', () => {
-          this.openLightbox(imgEl.src, imgEl.getAttribute('data-name') || 'photo.png');
+      // Полноэкранный просмотр фото и видео
+      wrap.querySelectorAll('.tg-media-open').forEach(mediaEl => {
+        mediaEl.addEventListener('click', () => {
+          this.openLightbox(
+            mediaEl.getAttribute('data-src') || '',
+            mediaEl.getAttribute('data-name') || 'media',
+            mediaEl.getAttribute('data-media-kind') || 'image'
+          );
         });
+      });
+      wrap.querySelectorAll('.tg-attachment-download').forEach(downloadEl => {
+        downloadEl.addEventListener('click', (e) => e.stopPropagation());
       });
 
       // Клик по реакции на сообщении
@@ -1715,27 +1713,28 @@ class TelegramApp {
   async handleFileUpload(e) {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-
-    const filePromises = files.map(file => {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          resolve({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            data: reader.result
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    });
-
-    const fileObjects = await Promise.all(filePromises);
     if (!this.pendingFiles) this.pendingFiles = [];
-    this.pendingFiles.push(...fileObjects);
+    let failed = 0;
+    for (const file of files) {
+      const mediaId = this.createAttachmentId();
+      const saved = await this.storage.saveMediaBlob(mediaId, file);
+      if (!saved) {
+        failed += 1;
+        continue;
+      }
+      this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(file));
+      this.pendingFiles.push({
+        mediaId,
+        name: file.name || 'document',
+        type: file.type || '',
+        size: file.size || 0
+      });
+    }
     this.renderPendingAttachments();
     this.el.fileInput.value = '';
+    if (failed) {
+      window.alert('Не удалось прикрепить ' + failed + ' файл(а). Проверьте свободное место на устройстве и повторите попытку.');
+    }
   }
 
   async handleAvatarUpload(e) {
@@ -1754,20 +1753,23 @@ class TelegramApp {
     this.el.avatarFileInput.value = '';
   }
 
-  uploadBlob(blob, filename) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileData = {
-        name: filename,
-        type: blob.type,
-        size: blob.size,
-        data: reader.result
-      };
-      if (!this.pendingFiles) this.pendingFiles = [];
-      this.pendingFiles.push(fileData);
-      this.renderPendingAttachments();
-    };
-    reader.readAsDataURL(blob);
+  async uploadBlob(blob, filename) {
+    if (!blob) return;
+    const mediaId = this.createAttachmentId();
+    const saved = await this.storage.saveMediaBlob(mediaId, blob);
+    if (!saved) {
+      window.alert('Не удалось прикрепить файл. Проверьте свободное место на устройстве.');
+      return;
+    }
+    this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
+    if (!this.pendingFiles) this.pendingFiles = [];
+    this.pendingFiles.push({
+      mediaId,
+      name: filename || 'document',
+      type: blob.type || '',
+      size: blob.size || 0
+    });
+    this.renderPendingAttachments();
   }
 
   showReactionsPopup(x, y, msgId) {
@@ -1831,24 +1833,120 @@ class TelegramApp {
     });
   }
 
-  openLightbox(src, name) {
-    this.el.lightboxImg.src = src;
+  createAttachmentId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return 'file_' + window.crypto.randomUUID();
+    }
+    return 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
+  }
+
+  getFileExtension(name) {
+    const clean = String(name || '').split(/[?#]/)[0];
+    const lastDot = clean.lastIndexOf('.');
+    if (lastDot <= 0 || lastDot === clean.length - 1) return '';
+    return clean.slice(lastDot + 1).toLowerCase();
+  }
+
+  getAttachmentKind(file) {
+    const type = String((file && file.type) || '').toLowerCase();
+    const ext = this.getFileExtension(file && file.name);
+    if (type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'svg', 'heic', 'heif'].includes(ext)) return 'image';
+    if (type.startsWith('video/') || ['mp4', 'webm', 'mov', 'm4v', 'ogv', 'avi', 'mkv', '3gp'].includes(ext)) return 'video';
+    return 'document';
+  }
+
+  getFileTypeLabel(file) {
+    const ext = this.getFileExtension(file && file.name);
+    if (ext) return ext.toUpperCase();
+    const type = String((file && file.type) || '');
+    if (type && type.includes('/')) return type.split('/').pop().toUpperCase();
+    return 'FILE';
+  }
+
+  getAttachmentSrc(file) {
+    return this._mediaBlobUrlCache.get(file.mediaId) || file.data || '';
+  }
+
+  buildAttachmentsHtml(files) {
+    const normalized = (files || []).filter(Boolean);
+    const mediaFiles = normalized.filter(file => this.getAttachmentKind(file) !== 'document');
+    const documentFiles = normalized.filter(file => this.getAttachmentKind(file) === 'document');
+    let mediaHtml = '';
+
+    if (mediaFiles.length) {
+      const gridClass = mediaFiles.length === 1 ? 'grid-1' : (mediaFiles.length === 2 ? 'grid-2' : (mediaFiles.length === 3 ? 'grid-3' : 'grid-more'));
+      mediaHtml = '<div class="tg-photo-grid ' + gridClass + '">' + mediaFiles.map(file => {
+        const kind = this.getAttachmentKind(file);
+        const src = this.getAttachmentSrc(file);
+        const safeSrc = this.escapeAttr(src);
+        const safeName = this.escapeAttr(file.name || (kind === 'video' ? 'video.mp4' : 'photo.png'));
+        const content = kind === 'video'
+          ? '<video class="tg-media-photo tg-media-video" src="' + safeSrc + '" muted playsinline preload="metadata"></video><span class="tg-media-play" aria-hidden="true">▶</span>'
+          : '<img class="tg-media-photo" src="' + safeSrc + '" alt="' + safeName + '">';
+        return [
+          '<div class="tg-media-tile tg-media-' + kind + '-tile tg-media-open" role="button" tabindex="0" data-src="' + safeSrc + '" data-name="' + safeName + '" data-media-kind="' + kind + '">',
+          content,
+          '  <a class="tg-attachment-download tg-media-download" href="' + safeSrc + '" download="' + safeName + '" title="Скачать" aria-label="Скачать ' + safeName + '">',
+          '    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+          '  </a>',
+          '</div>'
+        ].join('');
+      }).join('') + '</div>';
+    }
+
+    const documentsHtml = documentFiles.map(file => {
+      const src = this.getAttachmentSrc(file);
+      const safeSrc = this.escapeAttr(src);
+      const safeName = this.escapeAttr(file.name || 'document');
+      const typeLabel = this.getFileTypeLabel(file);
+      return [
+        '<div class="tg-file-card">',
+        '  <div class="tg-file-icon"><span>' + this.escape(typeLabel.slice(0, 5)) + '</span></div>',
+        '  <div class="tg-file-meta">',
+        '    <div class="tg-file-name" title="' + safeName + '">' + this.escape(file.name || 'document') + '</div>',
+        '    <div class="tg-file-size">' + this.escape(typeLabel) + (file.size ? ' · ' + this.formatSize(file.size) : '') + '</div>',
+        '  </div>',
+        '  <a class="tg-attachment-download tg-file-download" href="' + safeSrc + '" download="' + safeName + '" title="Скачать" aria-label="Скачать ' + safeName + '">',
+        '    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+        '  </a>',
+        '</div>'
+      ].join('');
+    }).join('');
+
+    return mediaHtml + documentsHtml;
+  }
+
+  openLightbox(src, name, kind = 'image') {
+    if (!src) return;
+    const isVideo = kind === 'video';
+    this.el.lightboxImg.classList.toggle('hidden', isVideo);
+    this.el.lightboxVideo.classList.toggle('hidden', !isVideo);
+    this.el.lightboxImg.src = isVideo ? '' : src;
+    this.el.lightboxVideo.src = isVideo ? src : '';
     this.el.lightboxFilename.innerText = name;
     this.el.lightboxDownload.href = src;
     this.el.lightboxDownload.setAttribute('download', name);
     this.el.lightboxModal.classList.remove('hidden');
+    document.body.classList.add('tg-media-viewer-open');
+    if (isVideo) this.el.lightboxVideo.play().catch(() => {});
   }
 
   closeLightbox() {
     this.el.lightboxModal.classList.add('hidden');
+    this.el.lightboxVideo.pause();
+    this.el.lightboxVideo.removeAttribute('src');
+    this.el.lightboxVideo.load();
     this.el.lightboxImg.src = '';
+    document.body.classList.remove('tg-media-viewer-open');
   }
 
   formatSize(bytes) {
+    if (bytes === 0) return '0 B';
     if (!bytes) return '';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
   }
 
   updateMainActionButtonState() {
@@ -1884,22 +1982,28 @@ class TelegramApp {
 
     this.el.composerAttachments.classList.remove('hidden');
     this.el.composerAttachments.innerHTML = this.pendingFiles.map((f, idx) => {
-      const isImg = f.type && f.type.startsWith('image/');
-      const icon = isImg ? '🖼️' : '📄';
+      const kind = this.getAttachmentKind(f);
+      const icon = kind === 'image' ? '🖼️' : (kind === 'video' ? '🎬' : '📄');
       return [
         '<div class="tg-attach-pill">',
         '  <span>' + icon + '</span>',
-        '  <span class="tg-attach-pill-name" title="' + this.escape(f.name) + '">' + this.escape(f.name) + '</span>',
+        '  <span class="tg-attach-pill-name" title="' + this.escapeAttr(f.name) + '">' + this.escape(f.name) + '</span>',
         '  <button type="button" class="tg-attach-pill-remove" data-idx="' + idx + '" title="Удалить">✕</button>',
         '</div>'
       ].join('');
     }).join('');
 
     this.el.composerAttachments.querySelectorAll('.tg-attach-pill-remove').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
-        this.pendingFiles.splice(idx, 1);
+        const removed = this.pendingFiles.splice(idx, 1)[0];
+        if (removed && removed.mediaId) {
+          const cachedUrl = this._mediaBlobUrlCache.get(removed.mediaId);
+          if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+          this._mediaBlobUrlCache.delete(removed.mediaId);
+          await this.storage.deleteMediaBlob(removed.mediaId);
+        }
         this.renderPendingAttachments();
       });
     });
@@ -2324,6 +2428,10 @@ class TelegramApp {
     const div = document.createElement('div');
     div.innerText = str;
     return div.innerHTML;
+  }
+
+  escapeAttr(str) {
+    return this.escape(String(str || '')).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 }
 
