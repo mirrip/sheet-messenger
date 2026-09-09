@@ -2137,11 +2137,18 @@ body.tg-media-viewer-open {
 }
 
 .tg-profile-body {
-  padding: 0 0 32px;
+  padding: 0 0 36px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 /* HERO AREA */
@@ -2334,13 +2341,18 @@ body.tg-media-viewer-open {
   background: var(--tg-bg-sidebar);
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .tg-profile-tabs-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   background: #17212b;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
 }
 
 .tg-profile-tab {
@@ -2391,10 +2403,16 @@ body.tg-media-viewer-open {
 .tg-profile-tab-content {
   padding: 12px;
   min-height: 120px;
+  overflow: visible;
+  max-height: none;
+  height: auto;
 }
 
 .tg-profile-pane {
   display: block;
+  overflow: visible;
+  max-height: none;
+  height: auto;
 }
 
 .tg-profile-pane.hidden {
@@ -3849,10 +3867,9 @@ body.tg-media-viewer-open {
 .tg-profile-tab-content {
   padding: 12px;
   min-height: 120px;
-  max-height: 380px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  overflow: visible;
+  max-height: none;
+  height: auto;
 }
 
 .tg-profile-files-list,
