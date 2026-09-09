@@ -3,6 +3,7 @@
    =================================================== */
 
 :root {
+  color-scheme: dark;
   --tg-primary: #3390ec;
   --tg-primary-hover: #2b7ec9;
   --tg-primary-active: #236cae;
@@ -32,6 +33,16 @@
   
   --tg-input-bg: #242f3d;
   --tg-input-focus: #17212b;
+
+  /* Compatibility aliases used by the newer sidebar sections. */
+  --tg-sidebar: var(--tg-bg-sidebar);
+  --tg-border: rgba(255, 255, 255, 0.075);
+  --tg-text: var(--tg-text-main);
+  --tg-hover: rgba(255, 255, 255, 0.055);
+  --tg-danger: #ff595a;
+  --tg-ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+  --tg-shadow-soft: 0 10px 32px rgba(0, 0, 0, 0.2);
+  --tg-shadow-float: 0 18px 54px rgba(0, 0, 0, 0.42);
 }
 
 * {
@@ -2426,6 +2437,997 @@ body.tg-media-viewer-open {
   gap: 4px;
 }
 
+/* Final cascade guard: newer sidebar modules are declared late in this file. */
+.tg-nav-rail {
+  width: 72px;
+  padding: 10px 8px;
+  background: linear-gradient(180deg, #1c2937 0%, var(--tg-bg-sidebar) 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.tg-rail-top,
+.tg-rail-bottom { gap: 7px; }
+
+.tg-rail-btn {
+  width: 56px;
+  min-height: 54px;
+  height: auto;
+  border-radius: 14px;
+  gap: 4px;
+  transition: color 160ms var(--tg-ease), background 160ms var(--tg-ease), transform 160ms var(--tg-ease);
+}
+
+.tg-rail-btn:hover { transform: translateY(-1px); }
+.tg-rail-btn.active {
+  background: rgba(51, 144, 236, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(51, 144, 236, 0.14);
+}
+
+.tg-rail-label { font-weight: 600; }
+
+.tg-mobile-nav {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tg-sidebar-view { background: var(--tg-bg-sidebar); }
+
+.tg-view-header {
+  min-height: 66px;
+  padding: 11px 16px;
+  background: rgba(23, 33, 43, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.tg-view-title {
+  color: var(--tg-text-main);
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.tg-view-subtitle { display: block; margin-top: 2px; }
+.tg-view-search-wrap { padding: 10px 12px; }
+
+.tg-view-search-wrap .tg-search-input {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+  background: var(--tg-input-bg);
+}
+
+.tg-contacts-scroll-list { padding: 6px 7px 14px; }
+
+.tg-contact-item {
+  min-height: 64px;
+  padding: 9px 10px;
+  gap: 11px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: background 140ms var(--tg-ease), border-color 140ms var(--tg-ease), transform 140ms var(--tg-ease);
+}
+
+.tg-contact-item:hover {
+  background: var(--tg-hover);
+  border-color: rgba(255, 255, 255, 0.04);
+  transform: translateX(2px);
+}
+
+.tg-contact-name { color: var(--tg-text-main); font-weight: 650; }
+.tg-contact-sub {
+  margin-top: 2px;
+  color: var(--tg-text-sub);
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-contact-actions { gap: 5px; }
+
+.tg-contact-btn-chat,
+.tg-contact-btn-del,
+.tg-contact-action-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--tg-text-sub);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  filter: grayscale(0.35);
+  transition: color 150ms var(--tg-ease), background 150ms var(--tg-ease), transform 150ms var(--tg-ease), filter 150ms var(--tg-ease);
+}
+
+.tg-contact-btn-chat:hover,
+.tg-contact-action-btn:hover {
+  color: var(--tg-primary);
+  background: rgba(51, 144, 236, 0.14);
+  filter: none;
+  transform: scale(1.06);
+}
+
+.tg-contact-btn-del:hover {
+  color: var(--tg-danger);
+  background: rgba(255, 89, 90, 0.12);
+  filter: none;
+  transform: scale(1.06);
+}
+
+.tg-profile-scroll-feed,
+.tg-settings-scroll-wrap { padding: 18px 16px 24px; }
+.tg-profile-scroll-feed { gap: 18px; }
+
+.tg-feed-avatar {
+  width: 92px;
+  height: 92px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12), 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+.tg-feed-photo-btn {
+  min-height: 30px;
+  padding: 5px 11px;
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+.tg-feed-form { gap: 13px; }
+.tg-feed-form .tg-field-input {
+  background: rgba(14, 22, 33, 0.58);
+  border-color: rgba(255, 255, 255, 0.055);
+}
+
+.tg-stat-card {
+  border-radius: 13px;
+  padding: 12px 4px;
+  border-color: rgba(255, 255, 255, 0.065);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.tg-feed-tabs-bar { gap: 3px; }
+.tg-feed-tab { border-radius: 9px 9px 0 0; }
+.tg-feed-tab:hover { background: rgba(255, 255, 255, 0.035); }
+
+.tg-settings-scroll-wrap { gap: 24px; }
+.tg-settings-group { gap: 9px; }
+
+.tg-settings-item {
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border-color: rgba(255, 255, 255, 0.065);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: background 150ms var(--tg-ease), border-color 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+}
+
+.tg-settings-item:hover {
+  background: var(--tg-hover);
+  border-color: rgba(51, 144, 236, 0.18);
+  transform: translateY(-1px);
+}
+
+.tg-settings-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: rgba(51, 144, 236, 0.09);
+}
+
+.tg-myfile-row,
+.tg-feed-file-row,
+.tg-profile-file-item,
+.tg-feed-voice-card { border-radius: 13px; }
+
+@media (max-width: 768px) {
+  .tg-nav-rail { display: none !important; }
+  .tg-sidebar { width: 100vw; box-shadow: none; }
+  .tg-view-header { min-height: 62px; padding: 10px 16px; }
+  .tg-contact-item { min-height: 66px; }
+  .tg-contact-btn-chat,
+  .tg-contact-btn-del,
+  .tg-contact-action-btn { width: 38px; height: 38px; }
+  .tg-profile-scroll-feed,
+  .tg-settings-scroll-wrap { padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+  .tg-mobile-nav {
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(33, 45, 59, 0.96);
+    backdrop-filter: blur(18px) saturate(1.12);
+    box-shadow: 0 -8px 26px rgba(0, 0, 0, 0.15);
+  }
+  .tg-mob-nav-btn { gap: 3px; transition: color 150ms var(--tg-ease), transform 150ms var(--tg-ease); }
+  .tg-mob-nav-btn:active { transform: scale(0.94); }
+  .tg-mob-nav-btn.active svg { filter: drop-shadow(0 2px 6px rgba(51, 144, 236, 0.35)); }
+}
+
+@media (max-width: 420px) {
+  .tg-contact-actions { gap: 3px; }
+  .tg-contact-btn-chat,
+  .tg-contact-btn-del { width: 34px; height: 34px; font-size: 14px; }
+}
+
+/* ===================================================
+   DESIGN POLISH v3.27 — TELEGRAM-LIKE RHYTHM & DETAIL
+   Preserves the existing palette and application layout.
+   =================================================== */
+
+button,
+input,
+textarea,
+a {
+  font: inherit;
+}
+
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--tg-primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(51, 144, 236, 0.38);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 145, 164, 0.38) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(127, 145, 164, 0.34);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 145, 164, 0.56);
+}
+
+/* Main navigation and sidebar */
+.tg-nav-rail {
+  width: 72px;
+  padding: 10px 8px;
+  background: linear-gradient(180deg, #1c2937 0%, var(--tg-bg-sidebar) 100%);
+  border-right-color: rgba(255, 255, 255, 0.055);
+}
+
+.tg-rail-top,
+.tg-rail-bottom {
+  gap: 7px;
+}
+
+.tg-rail-btn {
+  width: 56px;
+  min-height: 54px;
+  height: auto;
+  border-radius: 14px;
+  gap: 4px;
+  transition: color 160ms var(--tg-ease), background 160ms var(--tg-ease), transform 160ms var(--tg-ease);
+}
+
+.tg-rail-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.tg-rail-btn.active {
+  background: rgba(51, 144, 236, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(51, 144, 236, 0.14);
+}
+
+.tg-rail-btn.active svg {
+  filter: drop-shadow(0 2px 6px rgba(51, 144, 236, 0.26));
+}
+
+.tg-rail-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.tg-sidebar {
+  width: clamp(330px, 27vw, 390px);
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.08);
+}
+
+.tg-sidebar-top {
+  height: 64px;
+  padding: 10px 12px;
+}
+
+.tg-search-wrapper,
+.tg-view-search-wrap .tg-search-input,
+.tg-myfiles-search-bar {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.tg-search-wrapper {
+  height: 42px;
+  border-radius: 12px;
+  transition: border-color 160ms var(--tg-ease), background 160ms var(--tg-ease), box-shadow 160ms var(--tg-ease);
+}
+
+.tg-search-wrapper:focus-within {
+  border-color: rgba(51, 144, 236, 0.54);
+  box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.12);
+}
+
+.tg-folders-bar {
+  height: 44px;
+  padding: 0 8px;
+}
+
+.tg-folder-tab {
+  border-radius: 10px 10px 0 0;
+  font-size: 13px;
+  transition: color 150ms var(--tg-ease), background 150ms var(--tg-ease);
+}
+
+.tg-folder-tab:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.tg-folder-tab.active::after {
+  left: 18%;
+  width: 64%;
+  height: 3px;
+  box-shadow: 0 -2px 10px rgba(51, 144, 236, 0.42);
+}
+
+.tg-chat-list,
+.tg-search-results {
+  padding: 5px 0 10px;
+}
+
+.tg-chat-item,
+.tg-search-item {
+  min-height: 66px;
+  padding: 8px 10px;
+  margin: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: background 140ms var(--tg-ease), border-color 140ms var(--tg-ease), transform 140ms var(--tg-ease);
+}
+
+.tg-chat-item:hover,
+.tg-search-item:hover {
+  border-color: rgba(255, 255, 255, 0.035);
+  transform: translateX(2px);
+}
+
+.tg-chat-item.active {
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 5px 18px rgba(4, 13, 22, 0.16);
+}
+
+.tg-avatar {
+  width: 52px;
+  height: 52px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.tg-chat-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.tg-chat-snippet {
+  line-height: 1.35;
+}
+
+/* Chat header, feed and composer */
+.tg-chat-header {
+  height: 64px;
+  padding: 0 18px;
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.tg-header-info {
+  min-width: 0;
+  padding: 5px 9px 5px 5px;
+  margin-left: -5px;
+  border-radius: 12px;
+  transition: background 150ms var(--tg-ease);
+}
+
+.tg-header-info:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.tg-header-avatar {
+  width: 42px;
+  height: 42px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13), 0 3px 12px rgba(0, 0, 0, 0.22);
+}
+
+.tg-chat-title {
+  font-weight: 680;
+  letter-spacing: -0.012em;
+}
+
+.tg-icon-btn {
+  transition: color 150ms var(--tg-ease), background 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+}
+
+.tg-icon-btn:hover {
+  transform: scale(1.04);
+}
+
+.tg-icon-btn:active {
+  transform: scale(0.92);
+}
+
+.tg-message-search,
+.tg-media-player {
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.tg-media-player {
+  border-bottom-color: rgba(51, 144, 236, 0.2);
+  box-shadow: 0 7px 24px rgba(0, 0, 0, 0.2);
+}
+
+.tg-messages-scroll {
+  padding: 22px clamp(14px, 3vw, 34px) 14px;
+}
+
+.tg-messages-body {
+  max-width: 760px;
+  gap: 5px;
+}
+
+.tg-bubble-row {
+  gap: 9px;
+}
+
+.tg-msg-bubble {
+  border-radius: 14px;
+  padding: 7px 11px 7px 12px;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: box-shadow 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+}
+
+.tg-bubble-wrap.in .tg-msg-bubble {
+  border-bottom-left-radius: 5px;
+}
+
+.tg-bubble-wrap.out .tg-msg-bubble {
+  border-bottom-right-radius: 5px;
+}
+
+.tg-msg-content {
+  line-height: 1.42;
+  letter-spacing: 0.002em;
+}
+
+.tg-sender-heading {
+  font-weight: 680;
+}
+
+.tg-msg-avatar {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+.tg-msg-reactions {
+  gap: 4px;
+}
+
+.tg-reaction-badge {
+  min-height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.12);
+}
+
+.tg-photo-grid {
+  gap: 3px;
+}
+
+.tg-media-tile,
+.tg-file-card {
+  border-radius: 11px;
+}
+
+.tg-media-tile {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.tg-media-download,
+.tg-file-download {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: transform 150ms var(--tg-ease), background 150ms var(--tg-ease), opacity 150ms var(--tg-ease);
+}
+
+.tg-media-download:hover,
+.tg-file-download:hover {
+  transform: scale(1.06);
+}
+
+.tg-file-card {
+  min-height: 58px;
+  padding: 8px 10px;
+}
+
+.tg-file-name {
+  font-weight: 650;
+}
+
+.tg-composer {
+  max-width: 780px;
+  padding: 9px 18px 14px;
+  gap: 9px;
+}
+
+.tg-input-wrapper {
+  min-height: 46px;
+  border-radius: 23px;
+  border-color: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 160ms var(--tg-ease), box-shadow 160ms var(--tg-ease);
+}
+
+.tg-input-wrapper:focus-within {
+  border-color: rgba(51, 144, 236, 0.42);
+  box-shadow: 0 7px 24px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(51, 144, 236, 0.075);
+}
+
+.tg-clip-btn,
+.tg-send-btn {
+  width: 46px;
+  height: 46px;
+}
+
+.tg-send-btn {
+  box-shadow: 0 5px 18px rgba(51, 144, 236, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Section headers and content views */
+.tg-view-header {
+  min-height: 66px;
+  padding: 11px 16px;
+  background: rgba(23, 33, 43, 0.2);
+}
+
+.tg-view-title {
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.tg-view-subtitle {
+  display: block;
+  margin-top: 2px;
+}
+
+.tg-view-search-wrap {
+  padding: 10px 12px;
+}
+
+.tg-view-search-wrap .tg-search-input {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--tg-input-bg);
+}
+
+.tg-contacts-scroll-list {
+  padding: 6px 7px 14px;
+}
+
+.tg-contact-item {
+  min-height: 64px;
+  padding: 9px 10px;
+  gap: 11px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: background 140ms var(--tg-ease), border-color 140ms var(--tg-ease), transform 140ms var(--tg-ease);
+}
+
+.tg-contact-item:hover {
+  border-color: rgba(255, 255, 255, 0.04);
+  transform: translateX(2px);
+}
+
+.tg-contact-sub {
+  margin-top: 2px;
+  color: var(--tg-text-sub);
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-contact-actions {
+  gap: 5px;
+}
+
+.tg-contact-btn-chat,
+.tg-contact-btn-del,
+.tg-contact-action-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--tg-text-sub);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  filter: grayscale(0.35);
+  transition: color 150ms var(--tg-ease), background 150ms var(--tg-ease), transform 150ms var(--tg-ease), filter 150ms var(--tg-ease);
+}
+
+.tg-contact-btn-chat:hover,
+.tg-contact-action-btn:hover {
+  color: var(--tg-primary);
+  background: rgba(51, 144, 236, 0.14);
+  filter: none;
+  transform: scale(1.06);
+}
+
+.tg-contact-btn-del:hover {
+  color: var(--tg-danger);
+  background: rgba(255, 89, 90, 0.12);
+  filter: none;
+  transform: scale(1.06);
+}
+
+.tg-profile-scroll-feed,
+.tg-settings-scroll-wrap {
+  padding: 18px 16px 24px;
+}
+
+.tg-profile-scroll-feed {
+  gap: 18px;
+}
+
+.tg-feed-avatar {
+  width: 92px;
+  height: 92px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12), 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+.tg-feed-photo-btn {
+  min-height: 30px;
+  padding: 5px 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.tg-feed-form {
+  gap: 13px;
+}
+
+.tg-feed-form .tg-field-input {
+  background: rgba(14, 22, 33, 0.58);
+  border-color: rgba(255, 255, 255, 0.055);
+}
+
+.tg-stat-card {
+  border-radius: 13px;
+  padding: 12px 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.tg-feed-tabs-bar,
+.tg-profile-tabs-header {
+  gap: 3px;
+}
+
+.tg-feed-tab,
+.tg-profile-tab {
+  border-radius: 9px 9px 0 0;
+}
+
+.tg-feed-tab:hover,
+.tg-profile-tab:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.tg-settings-scroll-wrap {
+  gap: 24px;
+}
+
+.tg-settings-group {
+  gap: 9px;
+}
+
+.tg-settings-item {
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: background 150ms var(--tg-ease), border-color 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+}
+
+.tg-settings-item:hover {
+  border-color: rgba(51, 144, 236, 0.18);
+  transform: translateY(-1px);
+}
+
+.tg-settings-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: rgba(51, 144, 236, 0.09);
+}
+
+.tg-btn-clear-cache {
+  min-height: 32px;
+}
+
+/* Modal surfaces, profile panel and reactions */
+.tg-modal-overlay,
+.tg-profile-modal-overlay {
+  backdrop-filter: blur(10px);
+}
+
+.tg-modal-card,
+.tg-profile-panel {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: var(--tg-shadow-float);
+}
+
+.tg-modal-card {
+  border-radius: 18px;
+}
+
+.tg-modal-header,
+.tg-profile-header {
+  min-height: 60px;
+  padding-inline: 16px;
+}
+
+.tg-profile-panel {
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.tg-profile-avatar-large {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.13), 0 12px 34px rgba(0, 0, 0, 0.3);
+}
+
+.tg-profile-act-btn {
+  border-radius: 13px;
+  transition: transform 150ms var(--tg-ease), background 150ms var(--tg-ease);
+}
+
+.tg-profile-act-btn:hover {
+  transform: translateY(-2px);
+}
+
+.tg-profile-card,
+.tg-profile-tabs-wrap {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.tg-myfile-row,
+.tg-feed-file-row,
+.tg-profile-file-item,
+.tg-feed-voice-card {
+  border-radius: 13px;
+  transition: background 150ms var(--tg-ease), border-color 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+}
+
+.tg-myfile-row:hover,
+.tg-feed-file-row:hover,
+.tg-profile-file-item:hover,
+.tg-feed-voice-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(51, 144, 236, 0.16);
+}
+
+.tg-reactions-popup {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--tg-shadow-float);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.tg-react-emoji {
+  transition: transform 140ms var(--tg-ease), background 140ms var(--tg-ease);
+}
+
+.tg-toast {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: var(--tg-shadow-soft);
+  backdrop-filter: blur(16px);
+}
+
+.tg-lightbox-bar {
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+/* Mobile: keep Telegram density while improving touch targets. */
+@media (max-width: 768px) {
+  .tg-sidebar {
+    width: 100vw;
+    box-shadow: none;
+  }
+
+  .tg-sidebar-top {
+    height: 60px;
+    padding: 9px 12px;
+  }
+
+  .tg-folders-bar {
+    height: 42px;
+  }
+
+  .tg-chat-item,
+  .tg-search-item {
+    min-height: 66px;
+    margin-inline: 7px;
+  }
+
+  .tg-chat-header {
+    height: 58px;
+    padding: 4px 8px;
+  }
+
+  .tg-header-info {
+    padding: 3px 5px;
+    margin-left: 0;
+  }
+
+  .tg-header-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tg-messages-scroll {
+    padding: 12px 8px 8px;
+  }
+
+  .tg-msg-bubble {
+    max-width: min(88vw, 470px);
+    border-radius: 13px;
+    padding: 7px 10px;
+  }
+
+  .tg-composer {
+    min-height: 60px;
+    padding-top: 7px;
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    backdrop-filter: blur(14px);
+  }
+
+  .tg-input-wrapper {
+    min-height: 44px;
+    border-radius: 22px;
+  }
+
+  .tg-clip-btn,
+  .tg-send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tg-composer > .tg-send-btn {
+    right: calc(7px + env(safe-area-inset-right, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tg-view-header {
+    min-height: 62px;
+    padding: 10px 16px;
+  }
+
+  .tg-contact-item {
+    min-height: 66px;
+  }
+
+  .tg-contact-btn-chat,
+  .tg-contact-btn-del,
+  .tg-contact-action-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .tg-profile-scroll-feed,
+  .tg-settings-scroll-wrap {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tg-mobile-nav {
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(33, 45, 59, 0.96);
+    backdrop-filter: blur(18px) saturate(1.12);
+    border-top-color: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 -8px 26px rgba(0, 0, 0, 0.15);
+  }
+
+  .tg-mob-nav-btn {
+    min-width: 0;
+    gap: 3px;
+    transition: color 150ms var(--tg-ease), transform 150ms var(--tg-ease);
+  }
+
+  .tg-mob-nav-btn:active {
+    transform: scale(0.94);
+  }
+
+  .tg-mob-nav-btn.active svg {
+    filter: drop-shadow(0 2px 6px rgba(51, 144, 236, 0.35));
+  }
+
+  .tg-modal-card-large {
+    width: calc(100% - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 20px;
+  }
+
+  .tg-profile-panel {
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .tg-contact-actions {
+    gap: 3px;
+  }
+
+  .tg-contact-btn-chat,
+  .tg-contact-btn-del {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  .tg-header-actions {
+    gap: 0;
+  }
+
+  .tg-header-actions .tg-icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .tg-profile-media-thumb {
   aspect-ratio: 1 / 1;
   border-radius: 6px;
@@ -3884,4 +4886,62 @@ body.tg-media-viewer-open {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
+}
+
+/* Final cascade placement for late-declared sidebar modules. */
+.tg-nav-rail { width: 72px; padding: 10px 8px; background: linear-gradient(180deg, #1c2937 0%, var(--tg-bg-sidebar) 100%); border-right: 1px solid rgba(255,255,255,.055); }
+.tg-rail-top, .tg-rail-bottom { gap: 7px; }
+.tg-rail-btn { width: 56px; min-height: 54px; height: auto; border-radius: 14px; gap: 4px; transition: color 160ms var(--tg-ease), background 160ms var(--tg-ease), transform 160ms var(--tg-ease); }
+.tg-rail-btn:hover { transform: translateY(-1px); }
+.tg-rail-btn.active { background: rgba(51,144,236,.16); box-shadow: inset 0 0 0 1px rgba(51,144,236,.14); }
+.tg-rail-label { font-weight: 600; }
+.tg-mobile-nav { border-top: 1px solid rgba(255,255,255,.07); }
+.tg-sidebar-view { background: var(--tg-bg-sidebar); }
+.tg-view-header { min-height: 66px; padding: 11px 16px; background: rgba(23,33,43,.2); border-bottom: 1px solid rgba(255,255,255,.065); }
+.tg-view-title { color: var(--tg-text-main); font-size: 18px; font-weight: 720; letter-spacing: -.02em; }
+.tg-view-subtitle { display: block; margin-top: 2px; }
+.tg-view-search-wrap { padding: 10px 12px; }
+.tg-view-search-wrap .tg-search-input { height: 40px; padding: 0 14px; border: 1px solid rgba(255,255,255,.055); border-radius: 12px; background: var(--tg-input-bg); }
+.tg-contacts-scroll-list { padding: 6px 7px 14px; }
+.tg-contact-item { min-height: 64px; padding: 9px 10px; gap: 11px; border: 1px solid transparent; border-radius: 13px; transition: background 140ms var(--tg-ease), border-color 140ms var(--tg-ease), transform 140ms var(--tg-ease); }
+.tg-contact-item:hover { background: var(--tg-hover); border-color: rgba(255,255,255,.04); transform: translateX(2px); }
+.tg-contact-name { color: var(--tg-text-main); font-weight: 650; }
+.tg-contact-sub { margin-top: 2px; color: var(--tg-text-sub); font-size: 12.5px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tg-contact-actions { gap: 5px; }
+.tg-contact-btn-chat, .tg-contact-btn-del, .tg-contact-action-btn { width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; display: inline-grid; place-items: center; background: rgba(255,255,255,.045); color: var(--tg-text-sub); cursor: pointer; font-size: 15px; line-height: 1; filter: grayscale(.35); transition: color 150ms var(--tg-ease), background 150ms var(--tg-ease), transform 150ms var(--tg-ease), filter 150ms var(--tg-ease); }
+.tg-contact-btn-chat:hover, .tg-contact-action-btn:hover { color: var(--tg-primary); background: rgba(51,144,236,.14); filter: none; transform: scale(1.06); }
+.tg-contact-btn-del:hover { color: var(--tg-danger); background: rgba(255,89,90,.12); filter: none; transform: scale(1.06); }
+.tg-profile-scroll-feed, .tg-settings-scroll-wrap { padding: 18px 16px 24px; }
+.tg-profile-scroll-feed { gap: 18px; }
+.tg-feed-avatar { width: 92px; height: 92px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.12), 0 10px 30px rgba(0,0,0,.28); }
+.tg-feed-photo-btn { min-height: 30px; padding: 5px 11px; background: rgba(255,255,255,.025); border-color: rgba(255,255,255,.075); }
+.tg-feed-form { gap: 13px; }
+.tg-feed-form .tg-field-input { background: rgba(14,22,33,.58); border-color: rgba(255,255,255,.055); }
+.tg-stat-card { border-radius: 13px; padding: 12px 4px; border-color: rgba(255,255,255,.065); box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
+.tg-feed-tabs-bar { gap: 3px; }
+.tg-feed-tab { border-radius: 9px 9px 0 0; }
+.tg-feed-tab:hover { background: rgba(255,255,255,.035); }
+.tg-settings-scroll-wrap { gap: 24px; }
+.tg-settings-group { gap: 9px; }
+.tg-settings-item { min-height: 64px; padding: 12px 14px; border-radius: 14px; border-color: rgba(255,255,255,.065); box-shadow: inset 0 1px 0 rgba(255,255,255,.025); transition: background 150ms var(--tg-ease), border-color 150ms var(--tg-ease), transform 150ms var(--tg-ease); }
+.tg-settings-item:hover { background: var(--tg-hover); border-color: rgba(51,144,236,.18); transform: translateY(-1px); }
+.tg-settings-item-icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: rgba(51,144,236,.09); }
+.tg-myfile-row, .tg-feed-file-row, .tg-profile-file-item, .tg-feed-voice-card { border-radius: 13px; }
+
+@media (max-width: 768px) {
+  .tg-nav-rail { display: none !important; }
+  .tg-sidebar { width: 100vw; box-shadow: none; }
+  .tg-view-header { min-height: 62px; padding: 10px 16px; }
+  .tg-contact-item { min-height: 66px; }
+  .tg-contact-btn-chat, .tg-contact-btn-del, .tg-contact-action-btn { width: 38px; height: 38px; }
+  .tg-profile-scroll-feed, .tg-settings-scroll-wrap { padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+  .tg-mobile-nav { height: calc(60px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: rgba(33,45,59,.96); backdrop-filter: blur(18px) saturate(1.12); box-shadow: 0 -8px 26px rgba(0,0,0,.15); }
+  .tg-mob-nav-btn { gap: 3px; transition: color 150ms var(--tg-ease), transform 150ms var(--tg-ease); }
+  .tg-mob-nav-btn:active { transform: scale(.94); }
+  .tg-mob-nav-btn.active svg { filter: drop-shadow(0 2px 6px rgba(51,144,236,.35)); }
+}
+
+@media (max-width: 420px) {
+  .tg-contact-actions { gap: 3px; }
+  .tg-contact-btn-chat, .tg-contact-btn-del { width: 34px; height: 34px; font-size: 14px; }
 }

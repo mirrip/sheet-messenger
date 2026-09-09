@@ -1389,7 +1389,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('⚡ Telegram Web v3.13.0\nПолноценный мессенджер с кружочками, аудио и профилями');
+        this.showToast('⚡ Sheet Messenger v3.27.0\nЧаты, кружочки, голосовые, файлы и профили');
       });
     }
 
@@ -1975,6 +1975,15 @@ class TelegramApp {
   getDmChatId(u1, u2) {
     const sorted = [u1.toLowerCase(), u2.toLowerCase()].sort();
     return 'dm:' + sorted[0] + ':' + sorted[1];
+  }
+
+  getPeerUsernameFromChatId(chatId) {
+    const normalizedChatId = String(chatId || '').trim().toLowerCase();
+    if (!normalizedChatId.startsWith('dm:')) return 'general';
+
+    const participants = normalizedChatId.split(':').slice(1).filter(Boolean);
+    const currentUsername = String(this.currentUser && this.currentUser.username || '').toLowerCase();
+    return participants.find(username => username !== currentUsername) || currentUsername || 'general';
   }
 
   openDirectChat(targetUsername) {
