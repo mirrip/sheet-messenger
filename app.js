@@ -2952,21 +2952,34 @@ class TelegramApp {
     document.body.classList.add('tg-media-viewer-open');
   }
 
-  lightboxShowCurrent() {
+  async lightboxShowCurrent() {
     if (!this.lightboxPlaylist || !this.lightboxPlaylist.length) return;
     const item = this.lightboxPlaylist[this.lightboxIndex];
     if (!item) return;
 
+    let src = item.src;
+    if (!src && item.mediaId) {
+      src = this._mediaBlobUrlCache.get(item.mediaId);
+      if (!src) {
+        const blob = await this.storage.getMediaBlob(item.mediaId);
+        if (blob) {
+          src = URL.createObjectURL(blob);
+          this._mediaBlobUrlCache.set(item.mediaId, src);
+        }
+      }
+      item.src = src;
+    }
+
     const isVideo = item.kind === 'video';
     if (this.el.lightboxImg) {
       this.el.lightboxImg.classList.toggle('hidden', isVideo);
-      this.el.lightboxImg.src = isVideo ? '' : item.src;
+      this.el.lightboxImg.src = isVideo ? '' : (src || '');
     }
     if (this.el.lightboxVideo) {
       this.el.lightboxVideo.classList.toggle('hidden', !isVideo);
       this.el.lightboxVideo.pause();
-      this.el.lightboxVideo.src = isVideo ? item.src : '';
-      if (isVideo) {
+      this.el.lightboxVideo.src = isVideo ? (src || '') : '';
+      if (isVideo && src) {
         this.el.lightboxVideo.load();
         this.el.lightboxVideo.play().catch(() => {});
       }
@@ -2975,7 +2988,7 @@ class TelegramApp {
       this.el.lightboxFilename.innerText = item.name || (isVideo ? 'Видео' : 'Фото');
     }
     if (this.el.lightboxDownload) {
-      this.el.lightboxDownload.href = item.src;
+      this.el.lightboxDownload.href = src || '';
       this.el.lightboxDownload.setAttribute('download', item.name || (isVideo ? 'video.mp4' : 'photo.png'));
     }
 
@@ -4648,7 +4661,7 @@ class TelegramApp {
     if (filter === 'all' || filter === 'media') {
       data.media.forEach(m => allItems.push({ ...m, itemType: 'media' }));
     }
-    if (filter === 'all' || filter === 'files') {
+    if (filter === 'all' || filter === 'files' || filter === 'docs') {
       data.files.forEach(f => allItems.push({ ...f, itemType: 'file' }));
     }
     if (filter === 'all' || filter === 'voice') {
@@ -4658,7 +4671,7 @@ class TelegramApp {
     if (q) {
       allItems = allItems.filter(item => {
         const name = (item.file ? item.file.name : (item.type === 'circle' ? 'Видеокружок' : 'Голосовое')) || '';
-        return name.toLowerCase().includes(q) || (item.chatId || '').toLowerCase().includes(q);
+        return name.toLowerCase().includes(q) || (item.chatId || '').toLowerCase().includes(q) || (item.sender || '').toLowerCase().includes(q);
       });
     }
 
@@ -4667,6 +4680,33 @@ class TelegramApp {
       this.el.myfilesList.innerHTML = '<div style="padding:28px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">Файлы не найдены</div>';
       return;
     }
+
+    // Составляем единый упорядоченный плейлист для фото, видео и кружочков из текущего отображаемого списка
+    const mediaItems = [];
+    allItems.forEach(it => {
+      if (it.itemType === 'media') {
+        mediaItems.push(it);
+      } else if (it.itemType === 'voice' && it.type === 'circle') {
+        mediaItems.push(it);
+      }
+    });
+
+    const mediaPlaylist = mediaItems.map((item, idx) => {
+      const isCircle = item.type === 'circle';
+      const file = item.file;
+      const isVideo = item.isVideo || isCircle;
+      let url = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : null;
+      if (!url && item.circleVideo) {
+        url = item.circleVideo.dataUrl || (item.circleVideo.mediaId ? this._mediaBlobUrlCache.get(item.circleVideo.mediaId) : item.circleVideo.url) || item.circleVideo.data;
+      }
+      return {
+        src: url || '',
+        mediaId: file ? file.mediaId : (item.circleVideo ? item.circleVideo.mediaId : null),
+        name: (file && file.name) || (isCircle ? ('Видеокружок от @' + (item.sender || 'пользователя')) : (isVideo ? 'Видео' : 'Фотография')),
+        type: isVideo ? 'video' : 'image',
+        kind: isVideo ? 'video' : 'image'
+      };
+    });
 
     allItems.forEach(item => {
       if (item.itemType === 'file') {
@@ -4681,24 +4721,29 @@ class TelegramApp {
         const row = document.createElement('div');
         row.className = 'tg-myfile-row';
         const title = item.file ? (item.file.name || (item.isVideo ? 'Видео' : 'Фото')) : 'Медиа';
-        const sub = (item.time || '') + ' · диалог: ' + (item.chatId || 'общий');
+        const sub = (item.time || '') + ' · диалог: ' + (item.chatId === 'general' ? 'общий чат' : (item.chatId || 'личный'));
         row.innerHTML = [
           '<div style="font-size:22px;margin-right:12px;">' + (item.isVideo ? '🎬' : '📷') + '</div>',
           '<div style="flex:1;min-width:0;">',
           '  <div style="font-size:14px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(title) + '</div>',
           '  <div style="font-size:12px;color:var(--tg-text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(sub) + '</div>',
           '</div>',
-          (url ? '<button type="button" class="tg-file-dl-btn" style="padding:4px 8px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Открыть</button>' : '')
+          '<button type="button" class="tg-file-dl-btn" style="padding:4px 10px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Открыть</button>'
         ].join('');
 
-        row.addEventListener('click', () => {
-          if (url) {
+        const triggerOpen = (e) => {
+          e.stopPropagation();
+          const pIdx = mediaItems.indexOf(item);
+          if (mediaPlaylist.length > 0 && pIdx !== -1) {
+            this.openLightboxPlaylist(mediaPlaylist, pIdx);
+          } else if (url) {
             this.openLightbox(url, title, item.isVideo ? 'video' : 'image');
-          } else if (item.chatId) {
-            this.closeMyFilesModal();
-            this.openChat(item.chatId, item.chatId === 'general' ? 'Общий чат' : 'Диалог');
           }
-        });
+        };
+
+        const dlBtn = row.querySelector('.tg-file-dl-btn');
+        if (dlBtn) dlBtn.addEventListener('click', triggerOpen);
+        row.addEventListener('click', triggerOpen);
         this.el.myfilesList.appendChild(row);
       }
     });
