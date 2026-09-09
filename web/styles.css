@@ -3600,10 +3600,12 @@ body.tg-media-viewer-open {
 .tg-myfiles-scroll-list {
   flex: 1;
   overflow-y: auto;
-  max-height: 420px;
+  max-height: 480px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .tg-myfile-row {
@@ -3611,9 +3613,16 @@ body.tg-media-viewer-open {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.035);
   border: 1px solid var(--tg-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tg-myfile-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(51, 144, 236, 0.35);
 }
 
 .tg-myfile-info {
@@ -3709,4 +3718,153 @@ body.tg-media-viewer-open {
   background: rgba(245, 166, 35, 0.35) !important;
 }
 
+/* ===================================================
+   REAL FILE CARDS & PLAYABLE VOICE IN PROFILES
+   =================================================== */
+.tg-doc-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 10.5px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  user-select: none;
+}
 
+.tg-feed-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tg-feed-file-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(51, 144, 236, 0.35);
+}
+
+.tg-feed-file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tg-feed-file-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tg-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-feed-file-meta {
+  font-size: 11.5px;
+  color: var(--tg-text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-file-dl-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(51, 144, 236, 0.15);
+  border: 1px solid rgba(51, 144, 236, 0.3);
+  color: var(--tg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.tg-file-dl-btn:hover {
+  background: var(--tg-primary);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+.tg-feed-voice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tg-feed-voice-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(51, 144, 236, 0.35);
+}
+
+.tg-feed-voice-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tg-feed-voice-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tg-text-main);
+}
+
+.tg-feed-voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--tg-text-sub);
+}
+
+.tg-voice-time-label {
+  font-weight: 600;
+  color: var(--tg-primary);
+}
+
+.tg-profile-tab-content {
+  padding: 12px;
+  min-height: 120px;
+  max-height: 380px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.tg-profile-files-list,
+.tg-profile-voice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tg-feed-media-grid,
+.tg-profile-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
