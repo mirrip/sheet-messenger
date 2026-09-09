@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.19.0">
+  <link rel="stylesheet" href="styles.css?v=3.17.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -68,410 +68,103 @@
 
     <!-- MAIN CHAT APP SCREEN -->
     <div id="main-screen" class="tg-main-wrap hidden">
-      <!-- DESKTOP SLIM ICON RAIL & EXPANDABLE DRAWER -->
-      <nav class="tg-nav-rail" id="nav-rail">
-        <div class="tg-nav-rail-top">
-          <button type="button" class="tg-rail-btn tg-rail-toggle" id="btn-rail-toggle" title="Разделы меню">
+      <!-- LEFT SIDEBAR -->
+      <aside class="tg-sidebar" id="sidebar">
+        <!-- TOP BAR (BURGER + SEARCH) -->
+        <header class="tg-sidebar-top">
+          <button id="btn-sidebar-menu" class="tg-icon-btn" title="Меню">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
             </svg>
-            <span class="tg-rail-label">Меню</span>
           </button>
 
-          <button type="button" class="tg-rail-btn tg-rail-nav active" data-view="chats" id="rail-nav-chats" title="Чаты">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
-            </svg>
-            <span class="tg-rail-label">Чаты</span>
-          </button>
+          <div class="tg-search-wrapper">
+            <div class="tg-search-icon">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+              </svg>
+            </div>
+            <input type="text" id="chat-search" class="tg-search-input" placeholder="Поиск" autocomplete="off">
+            <button id="btn-search-clear" class="tg-search-clear hidden" title="Очистить">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+              </svg>
+            </button>
+          </div>
+        </header>
 
-          <button type="button" class="tg-rail-btn tg-rail-nav" data-view="contacts" id="rail-nav-contacts" title="Контакты">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-            </svg>
-            <span class="tg-rail-label">Контакты</span>
-          </button>
-
-          <button type="button" class="tg-rail-btn tg-rail-nav" data-view="profile" id="rail-nav-profile" title="Мой профиль">
-            <div class="tg-rail-avatar" id="rail-user-avatar">?</div>
-            <span class="tg-rail-label" id="rail-user-name">Профиль</span>
-          </button>
-
-          <button type="button" class="tg-rail-btn tg-rail-nav" data-view="settings" id="rail-nav-settings" title="Настройки">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-            </svg>
-            <span class="tg-rail-label">Настройки</span>
-          </button>
-        </div>
-
-        <div class="tg-nav-rail-bottom">
-          <button type="button" class="tg-rail-btn" id="rail-btn-nightmode" title="Тема">
+        <!-- SIDEBAR POPUP MENU -->
+        <div id="tg-menu-dropdown" class="tg-menu-dropdown hidden">
+          <div class="tg-menu-header" id="btn-open-my-profile">
+            <div class="tg-menu-avatar" id="current-user-avatar">?</div>
+            <div class="tg-menu-info">
+              <div class="tg-menu-name" id="current-user-name">Пользователь</div>
+              <div class="tg-menu-phone" id="current-user-handle">@user</div>
+            </div>
+          </div>
+          <div class="tg-menu-divider"></div>
+          <div class="tg-menu-item" id="btn-menu-profile">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M12.3 2a10 10 0 0 0-.19 20 10 10 0 0 0 8.04-4.04.75.75 0 0 0-.67-1.18 8 8 0 1 1-8.36-15.45.75.75 0 0 0 .68-.9A.75.75 0 0 0 12.3 2z"/>
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
             </svg>
-            <span class="tg-rail-label">Ночной режим</span>
-          </button>
-
-          <button type="button" class="tg-rail-btn danger" id="rail-btn-logout" title="Выйти">
+            <span>Мой профиль</span>
+          </div>
+          <div class="tg-menu-item tg-menu-item-toggle" id="btn-menu-nightmode">
+            <div class="tg-menu-item-left">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M12.3 2a10 10 0 0 0-.19 20 10 10 0 0 0 8.04-4.04.75.75 0 0 0-.67-1.18 8 8 0 1 1-8.36-15.45.75.75 0 0 0 .68-.9A.75.75 0 0 0 12.3 2z"/>
+              </svg>
+              <span>Ночной режим</span>
+            </div>
+            <label class="tg-switch" onclick="event.stopPropagation()">
+              <input type="checkbox" id="toggle-night-mode" checked>
+              <span class="tg-slider"></span>
+            </label>
+          </div>
+          <div class="tg-menu-item" id="btn-menu-notifications">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <span>Уведомления</span>
+          </div>
+          <div class="tg-menu-item" id="btn-menu-about">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+            </svg>
+            <span>О Telegram Web</span>
+          </div>
+          <div class="tg-menu-divider"></div>
+          <div class="tg-menu-item danger" id="btn-menu-logout">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
             </svg>
-            <span class="tg-rail-label">Выйти</span>
-          </button>
-        </div>
-      </nav>
-
-      <!-- LEFT SIDEBAR WITH MULTIPLE VIEWS (CHATS, CONTACTS, PROFILE, SETTINGS) -->
-      <aside class="tg-sidebar" id="sidebar">
-        <!-- VIEW 1: CHATS -->
-        <div class="tg-sidebar-view tg-view-chats active" id="sidebar-view-chats">
-          <!-- TOP BAR (SEARCH + MENU BUTTON) -->
-          <header class="tg-sidebar-top">
-            <button id="btn-sidebar-menu" class="tg-icon-btn tg-desktop-hide" title="Меню">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-              </svg>
-            </button>
-
-            <div class="tg-search-wrapper">
-              <div class="tg-search-icon">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-                </svg>
-              </div>
-              <input type="text" id="chat-search" class="tg-search-input" placeholder="Поиск сообщений и людей" autocomplete="off">
-              <button id="btn-search-clear" class="tg-search-clear hidden" title="Очистить">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <!-- SEARCH FILTER PILLS (TELEGRAM STYLE) -->
-          <div class="tg-search-filters hidden" id="search-filters">
-            <button type="button" class="tg-filter-chip active" data-filter="all">Все</button>
-            <button type="button" class="tg-filter-chip" data-filter="chats">Чаты</button>
-            <button type="button" class="tg-filter-chip" data-filter="media">Медиа</button>
-            <button type="button" class="tg-filter-chip" data-filter="files">Файлы</button>
-          </div>
-
-          <!-- FOLDERS BAR -->
-          <div class="tg-folders-bar" id="folders-bar">
-            <div class="tg-folder-tab active" data-folder="all">Все чаты</div>
-            <div class="tg-folder-tab" data-folder="dm">Личные</div>
-            <div class="tg-folder-tab" data-folder="channels">Каналы</div>
-          </div>
-
-          <!-- SEARCH RESULTS -->
-          <div class="tg-search-results hidden" id="search-results-section">
-            <div class="tg-section-caption" id="search-results-caption">Результаты поиска</div>
-            <div class="tg-search-list" id="search-results-list"></div>
-          </div>
-
-          <!-- CHAT LIST -->
-          <div class="tg-chat-list" id="chat-list"></div>
-        </div>
-
-        <!-- VIEW 2: CONTACTS -->
-        <div class="tg-sidebar-view tg-view-contacts hidden" id="sidebar-view-contacts">
-          <header class="tg-view-header">
-            <div class="tg-view-title-wrap">
-              <h2 class="tg-view-title">Контакты</h2>
-              <span class="tg-view-counter" id="contacts-count-label">0 контактов</span>
-            </div>
-            <div class="tg-view-header-actions">
-              <button type="button" class="tg-icon-btn" id="btn-sort-contacts" title="Сортировка (А-Я / По дате)">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/>
-                </svg>
-              </button>
-              <button type="button" class="tg-icon-btn tg-primary-icon-btn" id="btn-add-contact-open" title="Добавить контакт">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <div class="tg-contacts-search-bar">
-            <div class="tg-search-wrapper">
-              <div class="tg-search-icon">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-                </svg>
-              </div>
-              <input type="text" id="contacts-search" class="tg-search-input" placeholder="Поиск контактов...">
-            </div>
-          </div>
-
-          <div class="tg-contacts-scroll-wrap" id="contacts-list"></div>
-        </div>
-
-        <!-- VIEW 3: PROFILE FEED (SCROLLABLE & IMMEDIATELY EDITABLE) -->
-        <div class="tg-sidebar-view tg-view-profile hidden" id="sidebar-view-profile">
-          <header class="tg-view-header">
-            <h2 class="tg-view-title">Мой профиль</h2>
-            <div class="tg-profile-feed-status" id="feed-save-status">⚡ Сохранено</div>
-          </header>
-
-          <div class="tg-profile-scroll-feed" id="profile-feed-scroll">
-            <!-- HERO / AVATAR WITH LIVE CONTROLS -->
-            <div class="tg-feed-hero">
-              <div class="tg-feed-avatar-wrap">
-                <div class="tg-feed-avatar" id="feed-user-avatar">?</div>
-                <button type="button" class="tg-avatar-edit-btn" id="btn-feed-change-photo" title="Изменить фото">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                    <path d="M12 12c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v4c0 1.66 1.34 3 3 3zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                    <circle cx="18" cy="18" r="4" fill="#3390ec"/>
-                    <path d="M18 15v6m-3-3h6" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
-                  </svg>
-                </button>
-              </div>
-              <div class="tg-feed-avatar-actions">
-                <button type="button" class="tg-small-btn" id="btn-feed-upload-photo">Выбрать новое фото</button>
-                <button type="button" class="tg-small-btn danger" id="btn-feed-delete-photo">Удалить</button>
-              </div>
-              <h3 class="tg-feed-name" id="feed-hero-name">Имя пользователя</h3>
-              <span class="tg-feed-status-badge">🟢 в сети</span>
-            </div>
-
-            <!-- LIVE EDIT FORM SECTION -->
-            <form id="feed-profile-form" class="tg-feed-form">
-              <div class="tg-feed-section-title">Основная информация</div>
-
-              <div class="tg-field-group">
-                <input type="text" id="feed-profile-displayname" class="tg-field-input" placeholder=" " required maxlength="64">
-                <label for="feed-profile-displayname" class="tg-field-label">Имя (отображаемое)</label>
-              </div>
-
-              <div class="tg-field-group">
-                <input type="text" id="feed-profile-username" class="tg-field-input" placeholder=" " readonly>
-                <label for="feed-profile-username" class="tg-field-label">Имя пользователя (@username)</label>
-              </div>
-
-              <div class="tg-field-group">
-                <textarea id="feed-profile-bio" class="tg-field-input tg-textarea-input" placeholder=" " rows="3" maxlength="140"></textarea>
-                <label for="feed-profile-bio" class="tg-field-label">О себе (Bio, до 140 символов)</label>
-                <div class="tg-char-counter" id="feed-bio-counter">0 / 140</div>
-              </div>
-
-              <button type="submit" id="btn-feed-save-profile" class="tg-primary-btn full-width">
-                <span>Сохранить изменения</span>
-              </button>
-            </form>
-
-            <!-- STATS CARDS -->
-            <div class="tg-feed-stats-grid">
-              <div class="tg-stat-card">
-                <div class="tg-stat-number" id="stat-chats-count">0</div>
-                <div class="tg-stat-label">Чатов</div>
-              </div>
-              <div class="tg-stat-card">
-                <div class="tg-stat-number" id="stat-media-count">0</div>
-                <div class="tg-stat-label">Медиафайлов</div>
-              </div>
-              <div class="tg-stat-card">
-                <div class="tg-stat-number" id="stat-contacts-count">0</div>
-                <div class="tg-stat-label">Контактов</div>
-              </div>
-            </div>
-
-            <!-- SHARED / PERSONAL MEDIA FEED -->
-            <div class="tg-feed-media-section">
-              <div class="tg-feed-section-title">Материалы и история файлов</div>
-
-              <div class="tg-profile-tabs-header">
-                <button type="button" class="tg-profile-tab active" data-tab="media" id="feed-tab-media">
-                  <span>Медиа</span>
-                  <span class="tg-profile-tab-badge" id="feed-badge-media">0</span>
-                </button>
-                <button type="button" class="tg-profile-tab" data-tab="files" id="feed-tab-files">
-                  <span>Файлы</span>
-                  <span class="tg-profile-tab-badge" id="feed-badge-files">0</span>
-                </button>
-                <button type="button" class="tg-profile-tab" data-tab="voice" id="feed-tab-voice">
-                  <span>Голосовые</span>
-                  <span class="tg-profile-tab-badge" id="feed-badge-voice">0</span>
-                </button>
-              </div>
-
-              <div class="tg-feed-tab-content">
-                <div class="tg-profile-pane active" id="feed-pane-media">
-                  <div class="tg-profile-media-grid" id="feed-media-grid"></div>
-                  <div class="tg-profile-empty hidden" id="feed-empty-media">Нет фотографий и видео</div>
-                </div>
-                <div class="tg-profile-pane hidden" id="feed-pane-files">
-                  <div class="tg-profile-files-list" id="feed-files-list"></div>
-                  <div class="tg-profile-empty hidden" id="feed-empty-files">Нет файлов</div>
-                </div>
-                <div class="tg-profile-pane hidden" id="feed-pane-voice">
-                  <div class="tg-profile-voice-list" id="feed-voice-list"></div>
-                  <div class="tg-profile-empty hidden" id="feed-empty-voice">Нет голосовых и кружочков</div>
-                </div>
-              </div>
-            </div>
+            <span>Выйти</span>
           </div>
         </div>
 
-        <!-- VIEW 4: SETTINGS -->
-        <div class="tg-sidebar-view tg-view-settings hidden" id="sidebar-view-settings">
-          <header class="tg-view-header">
-            <h2 class="tg-view-title">Настройки</h2>
-          </header>
-
-          <div class="tg-settings-scroll-wrap">
-            <!-- GROUP: ТЕМЫ И ОФОРМЛЕНИЕ -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-group-title">🎨 Оформление и темы</div>
-
-              <div class="tg-settings-item">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">🌙</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Ночной режим</div>
-                    <div class="tg-settings-sub">Тёмная тема Telegram</div>
-                  </div>
-                </div>
-                <label class="tg-switch">
-                  <input type="checkbox" id="settings-toggle-night" checked>
-                  <span class="tg-slider"></span>
-                </label>
-              </div>
-
-              <div class="tg-settings-item-column">
-                <div class="tg-settings-label-sub">Цветовой акцент интерфейса</div>
-                <div class="tg-theme-palette" id="theme-palette">
-                  <button type="button" class="tg-palette-chip active" data-color="blue" style="background:#3390ec;" title="Classic Blue"></button>
-                  <button type="button" class="tg-palette-chip" data-color="emerald" style="background:#10b981;" title="Emerald"></button>
-                  <button type="button" class="tg-palette-chip" data-color="purple" style="background:#8b5cf6;" title="Purple"></button>
-                  <button type="button" class="tg-palette-chip" data-color="sunset" style="background:#f59e0b;" title="Sunset"></button>
-                  <button type="button" class="tg-palette-chip" data-color="crimson" style="background:#ef4444;" title="Crimson"></button>
-                </div>
-              </div>
-            </div>
-
-            <!-- GROUP: МОИ ФАЙЛЫ -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-group-title">📁 Хранилище «Мои файлы»</div>
-
-              <div class="tg-settings-item clickable" id="btn-settings-open-myfiles">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">📂</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Все сохраненные файлы</div>
-                    <div class="tg-settings-sub" id="settings-files-summary">Фото, видео, документы и аудио</div>
-                  </div>
-                </div>
-                <div class="tg-settings-arrow">›</div>
-              </div>
-            </div>
-
-            <!-- GROUP: КОНФИДЕНЦИАЛЬНОСТЬ И БЕЗОПАСНОСТЬ -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-group-title">🔒 Конфиденциальность</div>
-
-              <div class="tg-settings-item clickable" id="btn-settings-blacklist">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">🚫</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Чёрный список</div>
-                    <div class="tg-settings-sub" id="settings-blacklist-count">0 пользователей</div>
-                  </div>
-                </div>
-                <div class="tg-settings-arrow">›</div>
-              </div>
-
-              <div class="tg-settings-item">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">👁️</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Время захода и статус</div>
-                    <div class="tg-settings-sub">Видно всем собеседникам</div>
-                  </div>
-                </div>
-                <label class="tg-switch">
-                  <input type="checkbox" id="settings-toggle-lastseen" checked>
-                  <span class="tg-slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <!-- GROUP: УВЕДОМЛЕНИЯ -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-group-title">🔔 Уведомления и звуки</div>
-
-              <div class="tg-settings-item">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">🔊</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Звуки сообщений</div>
-                    <div class="tg-settings-sub">Воспроизводить звук при входящих</div>
-                  </div>
-                </div>
-                <label class="tg-switch">
-                  <input type="checkbox" id="settings-toggle-sounds" checked>
-                  <span class="tg-slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <!-- GROUP: ПАМЯТЬ И ДАННЫЕ -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-group-title">💾 Память и кэш</div>
-
-              <div class="tg-settings-item">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">💽</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name">Локальная база IndexedDB</div>
-                    <div class="tg-settings-sub" id="settings-storage-usage">Кэш медиа и вложений</div>
-                  </div>
-                </div>
-                <button type="button" class="tg-small-btn" id="btn-settings-clear-cache">Очистить</button>
-              </div>
-            </div>
-
-            <!-- LOGOUT -->
-            <div class="tg-settings-group">
-              <div class="tg-settings-item clickable danger" id="btn-settings-logout">
-                <div class="tg-settings-item-left">
-                  <div class="tg-settings-icon">🚪</div>
-                  <div class="tg-settings-text">
-                    <div class="tg-settings-name" style="color:#ff595a;">Выйти из аккаунта</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <!-- SEARCH FILTER PILLS (TELEGRAM STYLE) -->
+        <div class="tg-search-filters hidden" id="search-filters">
+          <button type="button" class="tg-filter-chip active" data-filter="all">Все</button>
+          <button type="button" class="tg-filter-chip" data-filter="chats">Чаты</button>
+          <button type="button" class="tg-filter-chip" data-filter="media">Медиа</button>
+          <button type="button" class="tg-filter-chip" data-filter="files">Файлы</button>
         </div>
 
-        <!-- MOBILE BOTTOM NAVIGATION (TELEGRAM STYLE) -->
-        <nav class="tg-mobile-nav" id="mobile-nav">
-          <button type="button" class="tg-mobile-nav-btn active" data-view="chats" id="mob-nav-chats">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
-            </svg>
-            <span>Чаты</span>
-          </button>
-          <button type="button" class="tg-mobile-nav-btn" data-view="contacts" id="mob-nav-contacts">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-            </svg>
-            <span>Контакты</span>
-          </button>
-          <button type="button" class="tg-mobile-nav-btn" data-view="profile" id="mob-nav-profile">
-            <div class="tg-mobile-nav-avatar" id="mob-user-avatar">?</div>
-            <span>Профиль</span>
-          </button>
-          <button type="button" class="tg-mobile-nav-btn" data-view="settings" id="mob-nav-settings">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-            </svg>
-            <span>Настройки</span>
-          </button>
-        </nav>
+        <!-- FOLDERS BAR -->
+        <div class="tg-folders-bar" id="folders-bar">
+          <div class="tg-folder-tab active" data-folder="all">Все чаты</div>
+          <div class="tg-folder-tab" data-folder="dm">Личные</div>
+          <div class="tg-folder-tab" data-folder="channels">Каналы</div>
+        </div>
+
+        <!-- SEARCH RESULTS -->
+        <div class="tg-search-results hidden" id="search-results-section">
+          <div class="tg-section-caption" id="search-results-caption">Результаты поиска</div>
+          <div class="tg-search-list" id="search-results-list"></div>
+        </div>
+
+        <!-- CHAT LIST -->
+        <div class="tg-chat-list" id="chat-list"></div>
       </aside>
 
       <!-- RIGHT CHAT VIEW -->
@@ -806,80 +499,6 @@
       </div>
     </div>
 
-    <!-- MODAL: ADD CONTACT DIALOG (TELEGRAM STYLE) -->
-    <div id="modal-add-contact" class="tg-modal-overlay hidden">
-      <div class="tg-modal-card">
-        <div class="tg-modal-header">
-          <h3>Добавить контакт</h3>
-          <button type="button" id="btn-close-add-contact-modal" class="tg-icon-btn" title="Закрыть">✕</button>
-        </div>
-
-        <form id="form-add-contact" class="tg-auth-form" style="padding: 20px 24px 24px;">
-          <div class="tg-field-group">
-            <input type="text" id="add-contact-username" class="tg-field-input" placeholder=" " required>
-            <label for="add-contact-username" class="tg-field-label">Имя пользователя (@username)</label>
-          </div>
-
-          <div class="tg-field-group">
-            <input type="text" id="add-contact-name" class="tg-field-input" placeholder=" ">
-            <label for="add-contact-name" class="tg-field-label">Имя контакта (необязательно)</label>
-          </div>
-
-          <div class="tg-modal-footer" style="padding: 0; margin-top: 8px;">
-            <button type="button" id="btn-cancel-add-contact" class="tg-tab-btn">Отмена</button>
-            <button type="submit" id="btn-submit-add-contact" class="tg-primary-btn">Добавить</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- MODAL: MY FILES BROWSER (TELEGRAM STYLE) -->
-    <div id="modal-my-files" class="tg-modal-overlay hidden">
-      <div class="tg-modal-card tg-modal-card-large">
-        <div class="tg-modal-header">
-          <h3>📁 Хранилище «Мои файлы»</h3>
-          <button type="button" id="btn-close-my-files" class="tg-icon-btn" title="Закрыть">✕</button>
-        </div>
-
-        <div class="tg-myfiles-body">
-          <div class="tg-myfiles-topbar">
-            <div class="tg-search-wrapper" style="flex: 1;">
-              <input type="text" id="myfiles-search" class="tg-search-input" placeholder="Поиск по файлам...">
-            </div>
-            <div class="tg-myfiles-tabs">
-              <button type="button" class="tg-filter-chip active" data-myfiles-filter="all">Все</button>
-              <button type="button" class="tg-filter-chip" data-myfiles-filter="media">Фото/Видео</button>
-              <button type="button" class="tg-filter-chip" data-myfiles-filter="voice">Голосовые</button>
-              <button type="button" class="tg-filter-chip" data-myfiles-filter="docs">Документы</button>
-            </div>
-          </div>
-
-          <div class="tg-myfiles-list" id="myfiles-items-container"></div>
-          <div class="tg-profile-empty hidden" id="myfiles-empty-state">Файлы не найдены</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL: BLACKLIST MANAGER (TELEGRAM STYLE) -->
-    <div id="modal-blacklist" class="tg-modal-overlay hidden">
-      <div class="tg-modal-card">
-        <div class="tg-modal-header">
-          <h3>🚫 Чёрный список</h3>
-          <button type="button" id="btn-close-blacklist" class="tg-icon-btn" title="Закрыть">✕</button>
-        </div>
-
-        <div class="tg-blacklist-body" style="padding: 16px 20px 24px;">
-          <div class="tg-blacklist-add-row" style="display: flex; gap: 8px; margin-bottom: 16px;">
-            <input type="text" id="blacklist-add-input" class="tg-field-input" placeholder="@username для блокировки" style="height: 42px;">
-            <button type="button" id="btn-blacklist-add" class="tg-small-btn danger" style="flex-shrink: 0; padding: 0 16px; height: 42px;">Заблокировать</button>
-          </div>
-
-          <div class="tg-blacklist-container" id="blacklist-items-list"></div>
-          <div class="tg-profile-empty hidden" id="blacklist-empty-state" style="padding: 24px 0;">Черный список пуст</div>
-        </div>
-      </div>
-    </div>
-
     <!-- TOAST NOTIFICATIONS (TELEGRAM BOTTOM TOAST) -->
     <div id="tg-toast-container" class="tg-toast-container"></div>
 
@@ -928,7 +547,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=3.19.0"></script>
-  <script src="app.js?v=3.19.0"></script>
+  <script src="config.js?v=3.17.0"></script>
+  <script src="app.js?v=3.17.0"></script>
 </body>
 </html>
