@@ -1105,8 +1105,7 @@ class TelegramApp {
           '<div class="tg-circle-message">',
           '  <div class="tg-circle-card" data-media-id="' + mediaId + '" data-poster-id="' + posterId + '">',
           '    <svg class="tg-circle-progress" viewBox="0 0 100 100" aria-hidden="true">',
-          '      <circle class="tg-circle-progress-track" cx="50" cy="50" r="47" pathLength="100"></circle>',
-          '      <circle class="tg-circle-progress-value" cx="50" cy="50" r="47" pathLength="100"></circle>',
+          '      <circle class="tg-circle-progress-value" cx="50" cy="50" r="47"></circle>',
           '    </svg>',
           '    <div class="tg-circle-media">',
           '      <div class="tg-circle-poster-fallback" aria-hidden="true">',
@@ -1228,6 +1227,7 @@ class TelegramApp {
         const posterId = circleCard.getAttribute('data-poster-id');
         const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
         const initialPosterUrl = this._mediaBlobUrlCache.get(posterId) || (m.circleVideo && m.circleVideo.poster) || '';
+        const progressCircumference = 2 * Math.PI * 47;
         let progressFrameId = null;
 
         if (initialPosterUrl) this.applyCirclePoster(vid, circleCard, initialPosterUrl);
@@ -1235,8 +1235,8 @@ class TelegramApp {
 
         const updateCircleProgress = () => {
           const duration = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : totalDur;
-          const progress = duration > 0 ? Math.min(100, Math.max(0, (vid.currentTime / duration) * 100)) : 0;
-          if (progressValue) progressValue.style.strokeDashoffset = String(100 - progress);
+          const progress = duration > 0 ? Math.min(1, Math.max(0, vid.currentTime / duration)) : 0;
+          if (progressValue) progressValue.style.strokeDashoffset = String(progressCircumference * (1 - progress));
         };
 
         const stopProgressLoop = () => {
@@ -1261,7 +1261,6 @@ class TelegramApp {
         vid.addEventListener('timeupdate', updateCircleProgress);
         vid.addEventListener('playing', () => {
           circleCard.classList.add('playing', 'expanded', 'progress-visible');
-          circleCard.classList.remove('completed');
           runProgressLoop();
         });
         vid.addEventListener('pause', () => {
@@ -1270,12 +1269,14 @@ class TelegramApp {
           if (!vid.ended) circleCard.classList.remove('playing', 'expanded');
         });
 
-        // После завершения кольцо остаётся полностью заполненным до повторного запуска.
+        // Как в Telegram: после завершения видео возвращается на начало,
+        // а линия прогресса обнуляется и исчезает.
         vid.addEventListener('ended', () => {
           stopProgressLoop();
           circleCard.classList.remove('playing', 'expanded');
-          circleCard.classList.add('progress-visible', 'completed');
-          if (progressValue) progressValue.style.strokeDashoffset = '0';
+          circleCard.classList.remove('progress-visible');
+          try { vid.currentTime = 0; } catch (_) {}
+          if (progressValue) progressValue.style.strokeDashoffset = String(progressCircumference);
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
@@ -1302,8 +1303,7 @@ class TelegramApp {
 
             if (vid.ended || (vid.duration && vid.currentTime >= vid.duration)) {
               try { vid.currentTime = 0; } catch (_) {}
-              if (progressValue) progressValue.style.strokeDashoffset = '100';
-              circleCard.classList.remove('completed');
+              if (progressValue) progressValue.style.strokeDashoffset = String(progressCircumference);
             }
 
             circleCard.classList.add('playing', 'expanded', 'progress-visible');
