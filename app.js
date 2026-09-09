@@ -631,7 +631,7 @@ class StorageService {
       id: 'general',
       title: 'Общий чат',
       isGeneral: true,
-      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? '📎 Фото/Файл' : '')) : 'Нажмите, чтобы открыть',
+      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? 'Фото или файл' : '')) : 'Нажмите, чтобы открыть',
       lastTime: lastGen ? lastGen.time : '',
       timestamp: lastGen ? lastGen.createdAt : 0,
       unreadCount: 0
@@ -647,7 +647,7 @@ class StorageService {
       if (u1 === myName || u2 === myName) {
         const peer = u1 === myName ? parts[2] : parts[1];
         const existing = chatMap.get(m.chatId);
-        const snippet = m.voice ? '🎤 Голосовое сообщение' : (m.circleVideo ? '📹 Видеокружок' : (m.file ? (m.file.type && m.file.type.startsWith('image/') ? '📷 Фото' : '📎 ' + m.file.name) : (m.text || 'Сообщение')));
+        const snippet = m.voice ? 'Голосовое сообщение' : (m.circleVideo ? 'Видеокружок' : (m.file ? (m.file.type && m.file.type.startsWith('image/') ? 'Фото' : m.file.name) : (m.text || 'Сообщение')));
         const peerProfile = userMap.get(peer.toLowerCase());
 
         if (!existing || m.createdAt > existing.timestamp) {
@@ -1280,7 +1280,7 @@ class TelegramApp {
         this.feedAvatarIndex = 0;
         this.renderAvatars();
         this.renderProfileFeed();
-        this.showToast('Фотография установлена как главная ⭐');
+        this.showToast('Фотография установлена как главная');
       });
     }
     if (this.el.btnFeedRemovePhoto) {
@@ -1291,7 +1291,7 @@ class TelegramApp {
         this.feedAvatarIndex = 0;
         this.renderAvatars();
         this.renderProfileFeed();
-        this.showToast('Фотография профиля удалена 🗑️');
+        this.showToast('Фотография профиля удалена');
       });
     }
     if (this.el.btnProfileAvatarPrev) {
@@ -1389,7 +1389,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('⚡ Sheet Messenger v3.27.0\nЧаты, кружочки, голосовые, файлы и профили');
+        this.showToast('Sheet Messenger v3.28.0\nЧаты, кружочки, голосовые, файлы и профили');
       });
     }
 
@@ -2017,7 +2017,7 @@ class TelegramApp {
     this.el.activeChatStatus.innerText = isGeneral ? 'канал общения' : 'в сети';
 
     if (isGeneral) {
-      this.el.activeChatAvatar.innerHTML = '🌐';
+      this.el.activeChatAvatar.innerHTML = this.uiIcon('globe');
       this.el.activeChatAvatar.style.cursor = 'default';
       this.el.activeChatAvatar.onclick = null;
     } else {
@@ -2076,7 +2076,7 @@ class TelegramApp {
 
       const avatarClass = chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user';
       const avatarContent = chat.isGeneral
-        ? '🌐'
+        ? this.uiIcon('globe')
         : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?'));
 
       item.innerHTML = [
@@ -2108,7 +2108,7 @@ class TelegramApp {
     this.el.messagesFeed.innerHTML = '';
 
     if (msgs.length === 0) {
-      this.el.messagesFeed.innerHTML = '<div style="text-align:center;color:var(--tg-text-sub);padding:40px;font-size:14px;">Пока нет сообщений... Напишите первым! 💬</div>';
+      this.el.messagesFeed.innerHTML = '<div class="tg-premium-empty">' + this.uiIcon('message', 'tg-ui-icon-xl') + '<strong>Сообщений пока нет</strong><span>Начните диалог первым</span></div>';
       this.updateMessageSearch(false);
       return;
     }
@@ -2867,7 +2867,7 @@ class TelegramApp {
         const safeSrc = this.escapeAttr(src);
         const safeName = this.escapeAttr(file.name || (kind === 'video' ? 'video.mp4' : 'photo.png'));
         const content = kind === 'video'
-          ? '<video class="tg-media-photo tg-media-video" src="' + safeSrc + '" muted playsinline preload="metadata"></video><span class="tg-media-play" aria-hidden="true">▶</span>'
+          ? '<video class="tg-media-photo tg-media-video" src="' + safeSrc + '" muted playsinline preload="metadata"></video><span class="tg-media-play" aria-hidden="true">' + this.uiIcon('play') + '</span>'
           : '<img class="tg-media-photo" src="' + safeSrc + '" alt="' + safeName + '">';
         return [
           '<div class="tg-media-tile tg-media-' + kind + '-tile tg-media-open" role="button" tabindex="0" data-src="' + safeSrc + '" data-name="' + safeName + '" data-media-kind="' + kind + '">',
@@ -3110,13 +3110,13 @@ class TelegramApp {
     this.el.composerAttachments.classList.remove('hidden');
     this.el.composerAttachments.innerHTML = this.pendingFiles.map((f, idx) => {
       const kind = this.getAttachmentKind(f);
-      const icon = kind === 'image' ? '🖼️' : (kind === 'video' ? '🎬' : '📄');
+      const iconName = kind === 'image' ? 'image' : (kind === 'video' ? 'video' : 'file');
       const displayName = this.truncateFileName(f.name || 'document');
       return [
         '<div class="tg-attach-pill">',
-        '  <span>' + icon + '</span>',
+        '  <span class="tg-attach-pill-icon">' + this.uiIcon(iconName, 'tg-ui-icon-sm') + '</span>',
         '  <span class="tg-attach-pill-name" title="' + this.escapeAttr(f.name) + '">' + this.escape(displayName) + '</span>',
-        '  <button type="button" class="tg-attach-pill-remove" data-idx="' + idx + '" title="Удалить">✕</button>',
+        '  <button type="button" class="tg-attach-pill-remove" data-idx="' + idx + '" title="Удалить">' + this.uiIcon('close', 'tg-ui-icon-sm') + '</button>',
         '</div>'
       ].join('');
     }).join('');
@@ -3383,12 +3383,21 @@ class TelegramApp {
         ctx.arc(120, 120, rad, 0, Math.PI * 2);
         ctx.fill();
 
-        // Иконка камеры
+        // Векторная камера: одинаково выглядит на Android и в браузере.
+        ctx.strokeStyle = '#ffffff';
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 36px sans-serif';
+        ctx.lineWidth = 7;
+        ctx.lineJoin = 'round';
+        ctx.strokeRect(87, 93, 52, 39);
+        ctx.beginPath();
+        ctx.moveTo(139, 104);
+        ctx.lineTo(158, 95);
+        ctx.lineTo(158, 130);
+        ctx.lineTo(139, 121);
+        ctx.closePath();
+        ctx.fill();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('📹', 120, 115);
 
         ctx.font = 'bold 12px sans-serif';
         ctx.fillText('@' + this.currentUser.username, 120, 155);
@@ -3634,8 +3643,8 @@ class TelegramApp {
         this.openLightboxPlaylist(playlist, idx);
       };
     } else {
-      const initial = (user && user.username && user.username !== 'general') ? user.username[0].toUpperCase() : '🌐';
-      this.el.profileAvatarLarge.innerText = initial;
+      const isGeneralProfile = !(user && user.username && user.username !== 'general');
+      this.el.profileAvatarLarge.innerHTML = isGeneralProfile ? this.uiIcon('globe', 'tg-ui-icon-xl') : user.username[0].toUpperCase();
       this.el.profileAvatarLarge.style.cursor = 'default';
       this.el.profileAvatarLarge.onclick = null;
     }
@@ -3759,13 +3768,13 @@ class TelegramApp {
       // Карточка видеокружка
       card.innerHTML = [
         '<div class="tg-voice-play-btn" style="background:#0284c7;" title="Воспроизвести кружок">',
-        '  <span style="font-size:18px;">📹</span>',
+        '  ' + this.uiIcon('video') + '',
         '</div>',
         '<div class="tg-feed-voice-meta">',
         '  <div class="tg-feed-voice-title">Видеокружок (' + this.formatDuration(totalDur) + ')</div>',
         '  <div class="tg-feed-voice-sub">от @' + this.escape(item.sender) + (item.time ? ' · ' + item.time : '') + '</div>',
         '</div>',
-        '<button type="button" class="tg-file-dl-btn" title="Смотреть кружок" style="padding:4px 8px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Смотреть</button>'
+        '<button type="button" class="tg-file-dl-btn tg-watch-btn" title="Смотреть кружок">' + this.uiIcon('play', 'tg-ui-icon-sm') + '<span>Смотреть</span></button>'
       ].join('');
 
       const playCircle = async (e) => {
@@ -3976,11 +3985,11 @@ class TelegramApp {
           const file = item.file;
           const src = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : '';
           if (item.isVideo) {
-            thumb.innerHTML = '<span style="font-size:24px;">🎬</span><span class="tg-profile-media-video-badge">▶ ' + item.time + '</span>';
+            thumb.innerHTML = '<span class="tg-media-placeholder-icon">' + this.uiIcon('video', 'tg-ui-icon-xl') + '</span><span class="tg-profile-media-video-badge">' + this.uiIcon('play', 'tg-ui-icon-xs') + item.time + '</span>';
           } else if (src) {
             thumb.innerHTML = '<img src="' + this.escapeAttr(src) + '" alt="Photo" style="width:100%;height:100%;object-fit:cover;">';
           } else {
-            thumb.innerHTML = '<span style="font-size:24px;">📷</span>';
+            thumb.innerHTML = '<span class="tg-media-placeholder-icon">' + this.uiIcon('image', 'tg-ui-icon-xl') + '</span>';
           }
           thumb.addEventListener('click', () => {
             if (mediaPlaylist.length > 0 && mediaPlaylist[idx] && mediaPlaylist[idx].src) {
@@ -4198,7 +4207,7 @@ class TelegramApp {
           const item = document.createElement('div');
           item.className = 'tg-search-item';
           item.innerHTML = [
-            '<div class="tg-avatar tg-avatar-user" style="width:38px;height:38px;font-size:15px;">📁</div>',
+            '<div class="tg-avatar tg-avatar-user tg-avatar-icon">' + this.uiIcon('folder') + '</div>',
             '<div class="tg-chat-body">',
             '  <div class="tg-chat-name">' + this.escape(m.file ? m.file.name : 'Файл') + '</div>',
             '  <div class="tg-chat-snippet">в диалоге ' + m.chatId + ' · ' + m.time + '</div>',
@@ -4296,8 +4305,8 @@ class TelegramApp {
         '  <div class="tg-contact-sub">@' + this.escape(c.username) + (dateStr ? ' · добавлен ' + dateStr : '') + '</div>',
         '</div>',
         '<div class="tg-contact-actions">',
-        '  <button class="tg-contact-btn-chat" title="Написать сообщение">💬</button>',
-        '  <button class="tg-contact-btn-del" title="Удалить из контактов">🗑️</button>',
+        '  <button class="tg-contact-btn-chat" title="Написать сообщение" aria-label="Написать сообщение">' + this.uiIcon('message') + '</button>',
+        '  <button class="tg-contact-btn-del" title="Удалить из контактов" aria-label="Удалить из контактов">' + this.uiIcon('trash') + '</button>',
         '</div>'
       ].join('');
 
@@ -4332,7 +4341,7 @@ class TelegramApp {
   toggleContactsSort() {
     this.contactsSortMode = this.contactsSortMode === 'name' ? 'date' : 'name';
     if (this.el.btnSortContacts) {
-      this.el.btnSortContacts.innerText = this.contactsSortMode === 'name' ? 'А-Я' : 'Дата';
+      this.el.btnSortContacts.innerHTML = this.uiIcon('sort') + '<span class="tg-sort-label">' + (this.contactsSortMode === 'name' ? 'А–Я' : 'Дата') + '</span>';
       this.el.btnSortContacts.title = this.contactsSortMode === 'name' ? 'Сортировка по имени' : 'Сортировка по дате добавления';
     }
     this.renderContactsList();
@@ -4580,11 +4589,11 @@ class TelegramApp {
           const file = m.file;
           const url = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : null;
           if (m.isVideo) {
-            item.innerHTML = '<span style="font-size:24px;">🎬</span><span style="position:absolute;bottom:4px;right:6px;font-size:10px;color:#fff;background:rgba(0,0,0,0.6);padding:1px 4px;border-radius:4px;">Видео</span>';
+            item.innerHTML = '<span class="tg-media-placeholder-icon">' + this.uiIcon('video', 'tg-ui-icon-xl') + '</span><span class="tg-profile-media-video-badge">Видео</span>';
           } else if (url) {
             item.innerHTML = '<img src="' + url + '" alt="Photo" style="width:100%;height:100%;object-fit:cover;">';
           } else {
-            item.innerHTML = '<span style="font-size:24px;">📷</span>';
+            item.innerHTML = '<span class="tg-media-placeholder-icon">' + this.uiIcon('image', 'tg-ui-icon-xl') + '</span>';
           }
           item.addEventListener('click', () => {
             if (mediaPlaylist.length > 0 && mediaPlaylist[idx] && mediaPlaylist[idx].src) {
@@ -4775,12 +4784,12 @@ class TelegramApp {
         const title = item.file ? (item.file.name || (item.isVideo ? 'Видео' : 'Фото')) : 'Медиа';
         const sub = (item.time || '') + ' · диалог: ' + (item.chatId === 'general' ? 'общий чат' : (item.chatId || 'личный'));
         row.innerHTML = [
-          '<div style="font-size:22px;margin-right:12px;">' + (item.isVideo ? '🎬' : '📷') + '</div>',
+          '<div class="tg-myfile-kind-icon">' + this.uiIcon(item.isVideo ? 'video' : 'image') + '</div>',
           '<div style="flex:1;min-width:0;">',
           '  <div style="font-size:14px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(title) + '</div>',
           '  <div style="font-size:12px;color:var(--tg-text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(sub) + '</div>',
           '</div>',
-          '<button type="button" class="tg-file-dl-btn" style="padding:4px 10px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Открыть</button>'
+          '<button type="button" class="tg-file-dl-btn tg-watch-btn">' + this.uiIcon('play', 'tg-ui-icon-sm') + '<span>Открыть</span></button>'
         ].join('');
 
         const triggerOpen = (e) => {
@@ -4831,7 +4840,7 @@ class TelegramApp {
       const row = document.createElement('div');
       row.className = 'tg-contact-item';
       row.innerHTML = [
-        '<div class="tg-avatar tg-avatar-user" style="width:38px;height:38px;font-size:15px;background:#e53935;">🚫</div>',
+        '<div class="tg-avatar tg-avatar-user tg-avatar-icon tg-avatar-danger">' + this.uiIcon('shield-block') + '</div>',
         '<div class="tg-contact-info">',
         '  <div class="tg-contact-name">@' + this.escape(u) + '</div>',
         '  <div class="tg-contact-sub">Заблокирован</div>',
@@ -4865,6 +4874,12 @@ class TelegramApp {
     this.storage.toggleBlacklist(this.currentUser.username, targetUsername);
     this.renderBlacklist();
     this.showToast('Пользователь @' + targetUsername + ' разблокирован');
+  }
+
+  uiIcon(name, className = '') {
+    const safeName = String(name || '').replace(/[^a-z0-9-]/gi, '');
+    const safeClass = String(className || '').replace(/[^a-z0-9 _-]/gi, '');
+    return '<svg class="tg-ui-icon' + (safeClass ? ' ' + safeClass : '') + '" aria-hidden="true"><use href="#tg-icon-' + safeName + '"></use></svg>';
   }
 
   escape(str) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.27.0">
+  <link rel="stylesheet" href="styles.css?v=3.28.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -16,6 +16,26 @@
   </script>
 </head>
 <body class="tg-theme-dark">
+  <svg class="tg-icon-sprite" aria-hidden="true">
+    <symbol id="tg-icon-close" viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></symbol>
+    <symbol id="tg-icon-chevron-left" viewBox="0 0 24 24"><path d="m14.8 5.6-6.4 6.4 6.4 6.4 1.4-1.4-5-5 5-5-1.4-1.4Z"/></symbol>
+    <symbol id="tg-icon-chevron-right" viewBox="0 0 24 24"><path d="m9.2 5.6-1.4 1.4 5 5-5 5 1.4 1.4 6.4-6.4-6.4-6.4Z"/></symbol>
+    <symbol id="tg-icon-chevron-up" viewBox="0 0 24 24"><path d="m5.6 14.8 1.4 1.4 5-5 5 5 1.4-1.4-6.4-6.4-6.4 6.4Z"/></symbol>
+    <symbol id="tg-icon-lock" viewBox="0 0 24 24"><path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V7Zm3 9.73V18h-2v-1.27a2 2 0 1 1 2 0Z"/></symbol>
+    <symbol id="tg-icon-folder" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v8A3.5 3.5 0 0 1 17.5 20h-12A2.5 2.5 0 0 1 3 17.5v-11Z"/><path d="M3 9h18" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="tg-icon-database" viewBox="0 0 24 24"><path d="M12 3C7 3 4 4.6 4 7v10c0 2.4 3 4 8 4s8-1.6 8-4V7c0-2.4-3-4-8-4Zm0 2c3.8 0 6 .95 6 2s-2.2 2-6 2-6-.95-6-2 2.2-2 6-2Zm0 6c2.4 0 4.6-.43 6-1.25V12c0 1.05-2.2 2-6 2s-6-.95-6-2V9.75C7.4 10.57 9.6 11 12 11Zm0 8c-3.8 0-6-.95-6-2v-2.25C7.4 15.57 9.6 16 12 16s4.6-.43 6-1.25V17c0 1.05-2.2 2-6 2Z"/></symbol>
+    <symbol id="tg-icon-shield-block" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm0 3.1c1.8 0 3.4.75 4.55 1.95l-9.5 9.5A6.45 6.45 0 0 1 12 5.1Zm0 12.8a6.4 6.4 0 0 1-3.15-.82l8.23-8.23A6.45 6.45 0 0 1 12 17.9Z"/></symbol>
+    <symbol id="tg-icon-image" viewBox="0 0 24 24"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Zm0 16H5l4.3-5.4 3.1 3.72 2.1-2.52L19 19ZM8.5 10A1.5 1.5 0 1 1 8.5 7a1.5 1.5 0 0 1 0 3Z"/></symbol>
+    <symbol id="tg-icon-mic" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.92V21h3v2H8v-2h3v-2.08A7 7 0 0 1 5 12a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z"/></symbol>
+    <symbol id="tg-icon-play" viewBox="0 0 24 24"><path d="M8 5.4v13.2c0 .78.86 1.26 1.53.86l10.2-6.6a1 1 0 0 0 0-1.72l-10.2-6.6A1 1 0 0 0 8 5.4Z"/></symbol>
+    <symbol id="tg-icon-star" viewBox="0 0 24 24"><path d="m12 2.8 2.72 5.52 6.1.89-4.41 4.3 1.04 6.07L12 16.7l-5.45 2.88 1.04-6.07-4.41-4.3 6.1-.89L12 2.8Z"/></symbol>
+    <symbol id="tg-icon-message" viewBox="0 0 24 24"><path d="M4.5 4h15A2.5 2.5 0 0 1 22 6.5v9a2.5 2.5 0 0 1-2.5 2.5H9l-5.3 3.5.8-3.5A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4Zm2.25 5.25h10.5v-1.5H6.75v1.5Zm0 3.5h7.5v-1.5h-7.5v1.5Z"/></symbol>
+    <symbol id="tg-icon-sort" viewBox="0 0 24 24"><path d="M4 6h11v2H4V6Zm0 5h8v2H4v-2Zm0 5h5v2H4v-2Zm14.3-6.7 3.7 3.7-1.4 1.4-1.6-1.6V20h-2v-7.2l-1.6 1.6L14 13l3.7-3.7a.42.42 0 0 1 .6 0Z"/></symbol>
+    <symbol id="tg-icon-trash" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Zm3 2v7h1.5v-7H10Zm3 0v7h1.5v-7H13Z"/></symbol>
+    <symbol id="tg-icon-file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V8h4.5L13 3.5ZM8 12v1.6h8V12H8Zm0 3.6v1.6h8v-1.6H8Z"/></symbol>
+    <symbol id="tg-icon-video" viewBox="0 0 24 24"><path d="M5 5h10a2 2 0 0 1 2 2v2.1l4-2.6v11l-4-2.6V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></symbol>
+    <symbol id="tg-icon-globe" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.92 6h-3.04a15.8 15.8 0 0 0-1.42-3.42A8.04 8.04 0 0 1 18.92 8ZM12 4c.83 1.2 1.5 2.53 1.86 4h-3.72A13.8 13.8 0 0 1 12 4ZM4.26 14a7.8 7.8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4h-3.4Zm.82 2h3.04c.3 1.22.8 2.37 1.42 3.42A8.04 8.04 0 0 1 5.08 16Zm3.04-8H5.08a8.04 8.04 0 0 1 4.46-3.42A15.8 15.8 0 0 0 8.12 8ZM12 20a13.8 13.8 0 0 1-1.86-4h3.72A13.8 13.8 0 0 1 12 20Zm2.26-6H9.74a14.2 14.2 0 0 1 0-4h4.52a14.2 14.2 0 0 1 0 4Zm.2 5.42A15.8 15.8 0 0 0 15.88 16h3.04a8.04 8.04 0 0 1-4.46 3.42ZM16.34 14a16.5 16.5 0 0 0 0-4h3.4a7.8 7.8 0 0 1 0 4h-3.4Z"/></symbol>
+  </svg>
   <div id="app">
     <!-- AUTH SCREEN -->
     <div id="auth-screen" class="tg-auth-wrap">
@@ -61,7 +81,7 @@
 
         <div id="auth-status" class="tg-status-msg"></div>
         <div class="tg-auth-footnote">
-          <span>⚡ Полноценный Telegram Web с голосовыми, кружками и профилями</span>
+          <span>Приватное общение, голосовые сообщения и видеокружки</span>
         </div>
       </div>
     </div>
@@ -248,15 +268,15 @@
               <div class="tg-feed-avatar-wrap">
                 <div class="tg-feed-avatar" id="feed-user-avatar" title="Нажмите, чтобы открыть фото на весь экран">?</div>
                 <span class="tg-avatar-counter hidden" id="feed-avatar-counter">1 / 1</span>
-                <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-feed-avatar-prev" title="Предыдущее фото">◀</button>
-                <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-feed-avatar-next" title="Следующее фото">▶</button>
+                <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-feed-avatar-prev" title="Предыдущее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-left"/></svg></button>
+                <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-feed-avatar-next" title="Следующее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-right"/></svg></button>
                 <div class="tg-feed-avatar-actions">
                   <button type="button" class="tg-feed-photo-btn" id="btn-feed-change-photo" title="Добавить новое фото">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
                     <span>Добавить фото</span>
                   </button>
                   <button type="button" class="tg-feed-photo-btn tg-feed-photo-btn-main hidden" id="btn-feed-set-main-photo" title="Сделать эту фотографию главной">
-                    <span>⭐ Главная</span>
+                    <svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-star"/></svg><span>Главная</span>
                   </button>
                   <button type="button" class="tg-feed-photo-btn tg-feed-photo-btn-del" id="btn-feed-remove-photo" title="Удалить это фото">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -317,7 +337,7 @@
               <div class="tg-feed-pane" id="feed-pane-media">
                 <div class="tg-profile-media-grid"></div>
                 <div class="tg-empty-state">
-                  <div class="tg-empty-icon">🖼️</div>
+                  <div class="tg-empty-icon"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-image"/></svg></div>
                   <div class="tg-empty-text">Нет фото и видео</div>
                 </div>
               </div>
@@ -325,7 +345,7 @@
               <div class="tg-feed-pane hidden" id="feed-pane-files">
                 <div class="tg-profile-files-list"></div>
                 <div class="tg-empty-state">
-                  <div class="tg-empty-icon">📁</div>
+                  <div class="tg-empty-icon"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-folder"/></svg></div>
                   <div class="tg-empty-text">Нет файлов</div>
                 </div>
               </div>
@@ -333,7 +353,7 @@
               <div class="tg-feed-pane hidden" id="feed-pane-voice">
                 <div class="tg-profile-files-list"></div>
                 <div class="tg-empty-state">
-                  <div class="tg-empty-icon">🎙️</div>
+                  <div class="tg-empty-icon"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-mic"/></svg></div>
                   <div class="tg-empty-text">Нет голосовых сообщений</div>
                 </div>
               </div>
@@ -354,7 +374,7 @@
             <div class="tg-settings-group">
               <div class="tg-settings-group-title">Файлы и память</div>
               <div class="tg-settings-item" id="btn-settings-open-myfiles">
-                <div class="tg-settings-item-icon">📁</div>
+                <div class="tg-settings-item-icon"><svg class="tg-ui-icon"><use href="#tg-icon-folder"/></svg></div>
                 <div class="tg-settings-item-body">
                   <div class="tg-settings-item-title">Мои файлы</div>
                   <div class="tg-settings-item-sub">Все сохраненные медиа и документы</div>
@@ -362,7 +382,7 @@
                 <div class="tg-settings-item-chevron">›</div>
               </div>
               <div class="tg-settings-item">
-                <div class="tg-settings-item-icon">💾</div>
+                <div class="tg-settings-item-icon"><svg class="tg-ui-icon"><use href="#tg-icon-database"/></svg></div>
                 <div class="tg-settings-item-body">
                   <div class="tg-settings-item-title">Локальная память IndexedDB</div>
                   <div class="tg-settings-item-sub" id="settings-storage-usage">Расчет...</div>
@@ -374,7 +394,7 @@
             <div class="tg-settings-group">
               <div class="tg-settings-group-title">Конфиденциальность</div>
               <div class="tg-settings-item" id="btn-settings-blacklist">
-                <div class="tg-settings-item-icon">🚫</div>
+                <div class="tg-settings-item-icon tg-settings-item-icon-danger"><svg class="tg-ui-icon"><use href="#tg-icon-shield-block"/></svg></div>
                 <div class="tg-settings-item-body">
                   <div class="tg-settings-item-title">Черный список</div>
                   <div class="tg-settings-item-sub">Заблокированные пользователи</div>
@@ -417,7 +437,7 @@
           </button>
 
           <div class="tg-header-info" id="btn-open-chat-profile" style="cursor: pointer;">
-            <div class="tg-header-avatar" id="active-chat-avatar">🌐</div>
+            <div class="tg-header-avatar" id="active-chat-avatar"><svg class="tg-ui-icon"><use href="#tg-icon-globe"/></svg></div>
             <div class="tg-header-text">
               <h2 id="active-chat-title" class="tg-chat-title">Общий чат</h2>
               <span id="active-chat-status" class="tg-chat-subtitle">канал общения</span>
@@ -453,12 +473,12 @@
           <button id="message-search-next" class="tg-message-search-btn" type="button" title="Следующее совпадение" aria-label="Следующее совпадение">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
           </button>
-          <button id="message-search-close" class="tg-message-search-btn tg-message-search-close" type="button" title="Закрыть поиск" aria-label="Закрыть поиск">✕</button>
+          <button id="message-search-close" class="tg-message-search-btn tg-message-search-close" type="button" title="Закрыть поиск" aria-label="Закрыть поиск"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </section>
 
         <!-- COMPACT MEDIA PLAYER (VIDEO CIRCLES & VOICE MESSAGES) -->
         <section id="media-player-panel" class="tg-media-player hidden" aria-label="Медиаплеер">
-          <div id="media-player-avatar" class="tg-media-player-avatar">▶</div>
+          <div id="media-player-avatar" class="tg-media-player-avatar"><svg class="tg-ui-icon"><use href="#tg-icon-play"/></svg></div>
           <div class="tg-media-player-info">
             <strong id="media-player-user" class="tg-media-player-user">@user</strong>
             <span id="media-player-status" class="tg-media-player-status">Кружок · осталось 00:00</span>
@@ -469,7 +489,7 @@
               <svg id="media-player-icon-play" class="hidden" viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               <svg id="media-player-icon-pause" viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
             </button>
-            <button type="button" id="media-player-close" class="tg-media-player-btn tg-media-player-close" title="Закрыть">✕</button>
+            <button type="button" id="media-player-close" class="tg-media-player-btn tg-media-player-close" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
           </div>
         </section>
 
@@ -506,14 +526,14 @@
               <div class="tg-rec-dot"></div>
               <span id="composer-rec-timer" class="tg-composer-rec-timer">00:00</span>
               <span id="composer-rec-hint" class="tg-composer-rec-hint">Запись...</span>
-              <button type="button" id="btn-cancel-recording" class="tg-composer-rec-cancel" title="Отменить запись">✕ Отмена</button>
+              <button type="button" id="btn-cancel-recording" class="tg-composer-rec-cancel" title="Отменить запись"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-close"/></svg><span>Отмена</span></button>
             </div>
           </div>
 
           <!-- SWIPE UP LOCK INDICATOR -->
           <div id="tg-record-lock" class="tg-record-lock hidden">
-            <span class="tg-lock-icon">🔒</span>
-            <span class="tg-lock-arrow">▲</span>
+            <span class="tg-lock-icon"><svg class="tg-ui-icon"><use href="#tg-icon-lock"/></svg></span>
+            <span class="tg-lock-arrow"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-up"/></svg></span>
           </div>
 
           <!-- UNIFIED TELEGRAM MAIN ACTION BUTTON (MIC / VIDEO / SEND) -->
@@ -558,8 +578,8 @@
             <div class="tg-profile-avatar-wrap">
               <div class="tg-profile-avatar-large" id="profile-avatar-large" title="Нажмите, чтобы открыть фото на весь экран">?</div>
               <span class="tg-avatar-counter hidden" id="profile-avatar-counter">1 / 1</span>
-              <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-profile-avatar-prev" title="Предыдущее фото">◀</button>
-              <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-profile-avatar-next" title="Следующее фото">▶</button>
+              <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-profile-avatar-prev" title="Предыдущее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-left"/></svg></button>
+              <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-profile-avatar-next" title="Следующее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-right"/></svg></button>
               <button id="btn-change-avatar" class="tg-avatar-edit-btn hidden" title="Добавить фото">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                   <path d="M12 12c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v4c0 1.66 1.34 3 3 3zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -705,7 +725,7 @@
       <div class="tg-modal-card">
         <div class="tg-modal-header">
           <h3>Редактирование профиля</h3>
-          <button type="button" id="btn-close-edit-modal" class="tg-icon-btn" title="Закрыть">✕</button>
+          <button type="button" id="btn-close-edit-modal" class="tg-icon-btn" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </div>
 
         <form id="form-edit-profile" class="tg-edit-profile-form">
@@ -745,7 +765,7 @@
       <div class="tg-modal-card">
         <div class="tg-modal-header">
           <h3>Добавить контакт</h3>
-          <button type="button" id="btn-close-add-contact" class="tg-icon-btn" title="Закрыть">✕</button>
+          <button type="button" id="btn-close-add-contact" class="tg-icon-btn" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </div>
         <form id="form-add-contact" class="tg-edit-profile-form">
           <div class="tg-field-group">
@@ -773,7 +793,7 @@
       <div class="tg-modal-card tg-modal-card-large">
         <div class="tg-modal-header">
           <h3>Мои файлы</h3>
-          <button type="button" id="btn-close-myfiles" class="tg-icon-btn" title="Закрыть">✕</button>
+          <button type="button" id="btn-close-myfiles" class="tg-icon-btn" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </div>
         <div class="tg-myfiles-body">
           <div class="tg-myfiles-search-bar">
@@ -795,7 +815,7 @@
       <div class="tg-modal-card">
         <div class="tg-modal-header">
           <h3>Черный список</h3>
-          <button type="button" id="btn-close-blacklist" class="tg-icon-btn" title="Закрыть">✕</button>
+          <button type="button" id="btn-close-blacklist" class="tg-icon-btn" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </div>
         <div class="tg-blacklist-body" style="padding:16px;">
           <div class="tg-field-group" style="margin-bottom:12px;">
@@ -817,7 +837,7 @@
       <div class="tg-lightbox-backdrop" id="lightbox-backdrop"></div>
       <div class="tg-lightbox-dialog">
         <div class="tg-lightbox-bar">
-          <button type="button" id="lightbox-close" class="tg-icon-btn tg-lightbox-close" title="Закрыть" aria-label="Закрыть">✕</button>
+          <button type="button" id="lightbox-close" class="tg-icon-btn tg-lightbox-close" title="Закрыть" aria-label="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
           <div class="tg-lightbox-info">
             <span id="lightbox-filename" class="tg-lightbox-name"></span>
             <span id="lightbox-counter" class="tg-lightbox-counter hidden">1 из 1</span>
@@ -858,6 +878,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.27.0"></script>
+  <script src="app.js?v=3.28.0"></script>
 </body>
 </html>
