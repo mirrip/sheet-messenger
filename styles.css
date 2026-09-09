@@ -1387,9 +1387,9 @@ html, body {
 .tg-circle-progress {
   position: absolute;
   z-index: 6;
-  inset: -5px;
-  width: calc(100% + 10px);
-  height: calc(100% + 10px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: visible;
   pointer-events: none;
   transform: rotate(-90deg);
@@ -1399,32 +1399,23 @@ html, body {
 
 .tg-circle-progress circle {
   fill: none;
-  stroke-width: 2.2;
-  vector-effect: non-scaling-stroke;
-}
-
-.tg-circle-progress-track {
-  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.7;
 }
 
 .tg-circle-progress-value {
-  stroke: var(--tg-primary);
+  stroke: #62b0ff;
+  stroke-opacity: 0.95;
   stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
+  stroke-dasharray: 295.31 295.31;
+  stroke-dashoffset: 295.31;
   transition: none;
   will-change: stroke-dashoffset;
   filter: drop-shadow(0 0 3px rgba(51, 144, 236, 0.8));
 }
 
 .tg-circle-card.playing .tg-circle-progress,
-.tg-circle-card.progress-visible .tg-circle-progress,
-.tg-circle-card.completed .tg-circle-progress {
+.tg-circle-card.progress-visible .tg-circle-progress {
   opacity: 1;
-}
-
-.tg-circle-card.completed .tg-circle-progress-value {
-  stroke-dashoffset: 0;
 }
 
 .tg-circle-play-overlay {
