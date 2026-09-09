@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.12.5">
+  <link rel="stylesheet" href="styles.css?v=3.13.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -166,6 +166,23 @@
           </div>
         </header>
 
+        <!-- COMPACT MEDIA PLAYER (VIDEO CIRCLES & VOICE MESSAGES) -->
+        <section id="media-player-panel" class="tg-media-player hidden" aria-label="Медиаплеер">
+          <div id="media-player-avatar" class="tg-media-player-avatar">▶</div>
+          <div class="tg-media-player-info">
+            <strong id="media-player-user" class="tg-media-player-user">@user</strong>
+            <span id="media-player-status" class="tg-media-player-status">Кружок · осталось 00:00</span>
+          </div>
+          <div class="tg-media-player-actions">
+            <button type="button" id="media-player-speed" class="tg-media-player-speed" title="Скорость воспроизведения">×1</button>
+            <button type="button" id="media-player-toggle" class="tg-media-player-btn" title="Пауза">
+              <svg id="media-player-icon-play" class="hidden" viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="media-player-icon-pause" viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button type="button" id="media-player-close" class="tg-media-player-btn tg-media-player-close" title="Закрыть">✕</button>
+          </div>
+        </section>
+
         <!-- MESSAGES FEED -->
         <div class="tg-messages-scroll" id="messages-container">
           <div class="tg-messages-body" id="messages-feed"></div>
@@ -296,7 +313,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=3.12.5"></script>
-  <script src="app.js?v=3.12.5"></script>
+  <script src="config.js?v=3.13.0"></script>
+  <script src="app.js?v=3.13.0"></script>
 </body>
 </html>
