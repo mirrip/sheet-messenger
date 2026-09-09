@@ -314,6 +314,9 @@ class TelegramApp {
     this.currentPlayingAudioBtn = null;
     this._mediaBlobUrlCache = new Map(); // mediaId -> blobUrl (стабильный кэш)
     this._pendingCirclePosterBlobPromise = null;
+    const savedPlaybackRate = Number(localStorage.getItem('gm_media_playback_rate'));
+    this.mediaPlaybackRate = [1, 1.5, 2].includes(savedPlaybackRate) ? savedPlaybackRate : 1;
+    this.activeMediaSession = null;
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -458,16 +461,90 @@ class TelegramApp {
     try { video.currentTime = 0; } catch (_) {}
   }
 
-  stopAllPlayingMedia() {
-    if (this.currentPlayingCircle) {
+  formatPlaybackRate(rate) {
+    return '×' + String(rate || 1).replace('.', ',');
+  }
+
+  updateMediaPlayerPanel(media = null) {
+    const session = this.activeMediaSession;
+    if (!session || (media && session.media !== media)) return;
+
+    const duration = Number.isFinite(session.media.duration) && session.media.duration > 0
+      ? session.media.duration
+      : (session.duration || 0);
+    const remaining = Math.max(0, duration - (session.media.currentTime || 0));
+    const typeLabel = session.type === 'circle' ? 'Кружок' : 'Голосовое';
+
+    if (this.el.mediaPlayerUser) this.el.mediaPlayerUser.innerText = '@' + session.sender;
+    if (this.el.mediaPlayerStatus) {
+      this.el.mediaPlayerStatus.innerText = typeLabel + ' · осталось ' + this.formatDuration(Math.ceil(remaining));
+    }
+    if (this.el.mediaPlayerAvatar) {
+      this.el.mediaPlayerAvatar.innerText = String(session.sender || '?').charAt(0).toUpperCase();
+    }
+    if (this.el.mediaPlayerSpeed) this.el.mediaPlayerSpeed.innerText = this.formatPlaybackRate(this.mediaPlaybackRate);
+
+    const paused = session.media.paused || session.media.ended;
+    if (this.el.mediaPlayerIconPlay) this.el.mediaPlayerIconPlay.classList.toggle('hidden', !paused);
+    if (this.el.mediaPlayerIconPause) this.el.mediaPlayerIconPause.classList.toggle('hidden', paused);
+    if (this.el.mediaPlayerToggle) this.el.mediaPlayerToggle.title = paused ? 'Продолжить' : 'Пауза';
+  }
+
+  openMediaPlayerPanel(session) {
+    if (!session || !session.media) return;
+    if (this.activeMediaSession && this.activeMediaSession.media !== session.media) {
+      this.closeActiveMediaSession(true);
+    }
+
+    this.activeMediaSession = session;
+    session.media.playbackRate = this.mediaPlaybackRate;
+    if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.remove('hidden');
+    this.updateMediaPlayerPanel(session.media);
+  }
+
+  finishActiveMediaSession(media) {
+    if (!this.activeMediaSession || this.activeMediaSession.media !== media) return;
+    this.activeMediaSession = null;
+    if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
+  }
+
+  closeActiveMediaSession(reset = true) {
+    const session = this.activeMediaSession;
+    if (!session) {
+      if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
+      return;
+    }
+
+    this.activeMediaSession = null;
+    if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
+    if (typeof session.onClose === 'function') session.onClose(reset);
+    else {
+      try { session.media.pause(); } catch (_) {}
+      if (reset) {
+        try { session.media.currentTime = 0; } catch (_) {}
+      }
+    }
+    if (this.currentPlayingCircle === session.media) this.currentPlayingCircle = null;
+    if (this.currentPlayingAudio === session.media) {
+      this.currentPlayingAudio = null;
+      this.currentPlayingAudioBtn = null;
+    }
+  }
+
+  stopAllPlayingMedia(exceptMedia = null) {
+    if (this.activeMediaSession && this.activeMediaSession.media !== exceptMedia) {
+      this.closeActiveMediaSession(true);
+    }
+
+    if (this.currentPlayingCircle && this.currentPlayingCircle !== exceptMedia) {
       try { this.currentPlayingCircle.pause(); } catch (_) {}
       const parent = this.currentPlayingCircle.closest('.tg-circle-card');
       if (parent) {
-        parent.classList.remove('playing', 'expanded');
+        parent.classList.remove('playing', 'expanded', 'progress-visible');
       }
       this.currentPlayingCircle = null;
     }
-    if (this.currentPlayingAudio) {
+    if (this.currentPlayingAudio && this.currentPlayingAudio !== exceptMedia) {
       try { this.currentPlayingAudio.pause(); } catch (_) {}
       if (this.currentPlayingAudioBtn) {
         const playIcon = this.currentPlayingAudioBtn.querySelector('.tg-icon-play');
@@ -511,6 +588,15 @@ class TelegramApp {
       activeChatAvatar: document.getElementById('active-chat-avatar'),
       activeChatTitle: document.getElementById('active-chat-title'),
       activeChatStatus: document.getElementById('active-chat-status'),
+      mediaPlayerPanel: document.getElementById('media-player-panel'),
+      mediaPlayerAvatar: document.getElementById('media-player-avatar'),
+      mediaPlayerUser: document.getElementById('media-player-user'),
+      mediaPlayerStatus: document.getElementById('media-player-status'),
+      mediaPlayerSpeed: document.getElementById('media-player-speed'),
+      mediaPlayerToggle: document.getElementById('media-player-toggle'),
+      mediaPlayerClose: document.getElementById('media-player-close'),
+      mediaPlayerIconPlay: document.getElementById('media-player-icon-play'),
+      mediaPlayerIconPause: document.getElementById('media-player-icon-pause'),
 
       messagesContainer: document.getElementById('messages-container'),
       messagesFeed: document.getElementById('messages-feed'),
@@ -620,6 +706,28 @@ class TelegramApp {
       this.el.btnCancelRecording.addEventListener('click', (e) => {
         e.stopPropagation();
         this.stopRecording(false);
+      });
+    }
+
+    if (this.el.mediaPlayerToggle) {
+      this.el.mediaPlayerToggle.addEventListener('click', () => {
+        const session = this.activeMediaSession;
+        if (session && typeof session.toggle === 'function') session.toggle();
+      });
+    }
+    if (this.el.mediaPlayerClose) {
+      this.el.mediaPlayerClose.addEventListener('click', () => this.closeActiveMediaSession(true));
+    }
+    if (this.el.mediaPlayerSpeed) {
+      this.el.mediaPlayerSpeed.addEventListener('click', () => {
+        const rates = [1, 1.5, 2];
+        const currentIndex = rates.indexOf(this.mediaPlaybackRate);
+        this.mediaPlaybackRate = rates[(currentIndex + 1) % rates.length];
+        localStorage.setItem('gm_media_playback_rate', String(this.mediaPlaybackRate));
+        if (this.activeMediaSession && this.activeMediaSession.media) {
+          this.activeMediaSession.media.playbackRate = this.mediaPlaybackRate;
+        }
+        this.updateMediaPlayerPanel();
       });
     }
 
@@ -837,6 +945,7 @@ class TelegramApp {
 
     // Мобильная кнопка Назад
     this.el.btnBack.addEventListener('click', () => {
+      this.closeActiveMediaSession(true);
       sessionStorage.setItem('gm_active_chat_open', '0');
       if (this.el.chatView) this.el.chatView.classList.remove('active');
       if (window.history && window.history.state && window.history.state.chatId) {
@@ -848,6 +957,7 @@ class TelegramApp {
     window.addEventListener('popstate', (e) => {
       if (this.el.chatView && this.el.chatView.classList.contains('active')) {
         if (!e.state || !e.state.chatId) {
+          this.closeActiveMediaSession(true);
           sessionStorage.setItem('gm_active_chat_open', '0');
           this.el.chatView.classList.remove('active');
         } else if (e.state.chatId !== this.currentChatId) {
@@ -917,6 +1027,7 @@ class TelegramApp {
   }
 
   logout() {
+    this.closeActiveMediaSession(true);
     localStorage.removeItem('gm_current_user');
     this.currentUser = null;
     this.el.menuDropdown.classList.add('hidden');
@@ -979,6 +1090,9 @@ class TelegramApp {
   }
 
   openChat(chatId, title) {
+    if (this.activeMediaSession && this.activeMediaSession.chatId !== chatId) {
+      this.closeActiveMediaSession(true);
+    }
     this.currentChatId = chatId;
     this.currentChatTitle = title;
     sessionStorage.setItem('gm_active_chat_open', '1');
@@ -1237,6 +1351,7 @@ class TelegramApp {
           const duration = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : totalDur;
           const progress = duration > 0 ? Math.min(1, Math.max(0, vid.currentTime / duration)) : 0;
           if (progressValue) progressValue.style.strokeDashoffset = String(progressCircumference * (1 - progress));
+          this.updateMediaPlayerPanel(vid);
         };
 
         const stopProgressLoop = () => {
@@ -1261,13 +1376,26 @@ class TelegramApp {
         vid.addEventListener('timeupdate', updateCircleProgress);
         vid.addEventListener('playing', () => {
           circleCard.classList.add('playing', 'expanded', 'progress-visible');
+          this.updateMediaPlayerPanel(vid);
           runProgressLoop();
         });
         vid.addEventListener('pause', () => {
           stopProgressLoop();
           updateCircleProgress();
-          if (!vid.ended) circleCard.classList.remove('playing', 'expanded');
+          if (!vid.ended) circleCard.classList.remove('playing');
+          this.updateMediaPlayerPanel(vid);
         });
+
+        const closeCirclePlayback = (reset = true) => {
+          stopProgressLoop();
+          try { vid.pause(); } catch (_) {}
+          if (reset) {
+            try { vid.currentTime = 0; } catch (_) {}
+            if (progressValue) progressValue.style.strokeDashoffset = String(progressCircumference);
+          }
+          circleCard.classList.remove('playing', 'expanded', 'progress-visible');
+          if (this.currentPlayingCircle === vid) this.currentPlayingCircle = null;
+        };
 
         // Как в Telegram: после завершения видео возвращается на начало,
         // а линия прогресса обнуляется и исчезает.
@@ -1280,6 +1408,7 @@ class TelegramApp {
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
+          this.finishActiveMediaSession(vid);
         });
 
         // Запуск / пауза видеокружка (как в Telegram: увеличение при проигрывании)
@@ -1298,7 +1427,7 @@ class TelegramApp {
           if (!vid.src) return;
 
           if (vid.paused) {
-            this.stopAllPlayingMedia();
+            this.stopAllPlayingMedia(vid);
             this.currentPlayingCircle = vid;
 
             if (vid.ended || (vid.duration && vid.currentTime >= vid.duration)) {
@@ -1307,6 +1436,15 @@ class TelegramApp {
             }
 
             circleCard.classList.add('playing', 'expanded', 'progress-visible');
+            this.openMediaPlayerPanel({
+              media: vid,
+              type: 'circle',
+              sender: m.sender,
+              chatId: this.currentChatId,
+              duration: totalDur,
+              toggle: startCirclePlay,
+              onClose: closeCirclePlayback
+            });
             vid.muted = false;
 
             const playPromise = vid.play();
@@ -1317,16 +1455,15 @@ class TelegramApp {
                 vid.play().then(() => {
                   vid.muted = false;
                 }).catch(e2 => {
-                  circleCard.classList.remove('playing', 'expanded');
-                  if (!vid.currentTime) circleCard.classList.remove('progress-visible');
-                  if (this.currentPlayingCircle === vid) this.currentPlayingCircle = null;
+                  this.closeActiveMediaSession(true);
                   console.error('Play circle fallback error:', e2);
                 });
               });
             }
           } else {
             vid.pause();
-            circleCard.classList.remove('playing', 'expanded');
+            circleCard.classList.remove('playing');
+            circleCard.classList.add('expanded');
             circleCard.classList.add('progress-visible');
             updateCircleProgress();
             if (this.currentPlayingCircle === vid) {
@@ -1360,7 +1497,12 @@ class TelegramApp {
             const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
             if (waveformFg) waveformFg.style.width = pct + '%';
             if (timeEl) timeEl.innerText = this.formatDuration(Math.floor(cur)) + ' / ' + this.formatDuration(Math.floor(dur));
+            this.updateMediaPlayerPanel(audioObj);
           });
+
+          audioObj.addEventListener('play', () => this.updateMediaPlayerPanel(audioObj));
+          audioObj.addEventListener('pause', () => this.updateMediaPlayerPanel(audioObj));
+          audioObj.addEventListener('loadedmetadata', () => this.updateMediaPlayerPanel(audioObj));
 
           audioObj.addEventListener('ended', () => {
             if (waveformFg) waveformFg.style.width = '0%';
@@ -1373,6 +1515,7 @@ class TelegramApp {
               this.currentPlayingAudio = null;
               this.currentPlayingAudioBtn = null;
             }
+            this.finishActiveMediaSession(audioObj);
           });
         };
 
@@ -1380,6 +1523,24 @@ class TelegramApp {
           audio = new Audio(voiceSrc);
           setupAudio(audio);
         }
+
+        const closeVoicePlayback = (reset = true) => {
+          if (!audio) return;
+          try { audio.pause(); } catch (_) {}
+          if (reset) {
+            try { audio.currentTime = 0; } catch (_) {}
+            if (waveformFg) waveformFg.style.width = '0%';
+            if (timeEl) timeEl.innerText = this.formatDuration(totalDur);
+          }
+          const playIcon = voicePlayBtn.querySelector('.tg-icon-play');
+          const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
+          if (playIcon) playIcon.classList.remove('hidden');
+          if (pauseIcon) pauseIcon.classList.add('hidden');
+          if (this.currentPlayingAudio === audio) {
+            this.currentPlayingAudio = null;
+            this.currentPlayingAudioBtn = null;
+          }
+        };
 
         const toggleVoicePlay = async () => {
           if (!audio) {
@@ -1405,7 +1566,7 @@ class TelegramApp {
           const pauseIcon = voicePlayBtn.querySelector('.tg-icon-pause');
 
           if (audio.paused) {
-            this.stopAllPlayingMedia();
+            this.stopAllPlayingMedia(audio);
 
             this.currentPlayingAudio = audio;
             this.currentPlayingAudioBtn = voicePlayBtn;
@@ -1414,6 +1575,16 @@ class TelegramApp {
               try { audio.currentTime = 0; } catch (_) {}
             }
 
+            this.openMediaPlayerPanel({
+              media: audio,
+              type: 'voice',
+              sender: m.sender,
+              chatId: this.currentChatId,
+              duration: totalDur,
+              toggle: toggleVoicePlay,
+              onClose: closeVoicePlayback
+            });
+
             audio.play().then(() => {
               if (playIcon) playIcon.classList.add('hidden');
               if (pauseIcon) pauseIcon.classList.remove('hidden');
@@ -1421,6 +1592,7 @@ class TelegramApp {
               console.warn('Audio play error:', err);
               if (playIcon) playIcon.classList.remove('hidden');
               if (pauseIcon) pauseIcon.classList.add('hidden');
+              this.closeActiveMediaSession(true);
             });
           } else {
             audio.pause();
