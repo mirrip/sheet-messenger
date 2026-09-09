@@ -569,11 +569,11 @@ html, body {
   display: flex;
   flex-direction: column;
   background-color: var(--tg-bg-chat);
-  background-image: 
-    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 0),
-    radial-gradient(rgba(0, 0, 0, 0.2) 1px, transparent 0);
-  background-size: 28px 28px;
-  background-position: 0 0, 14px 14px;
+  background-image:
+    radial-gradient(circle at 78% 12%, rgba(51, 144, 236, 0.11), transparent 34%),
+    radial-gradient(circle at 18% 88%, rgba(91, 75, 180, 0.09), transparent 31%),
+    radial-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 0);
+  background-size: auto, auto, 28px 28px;
   position: relative;
   overflow: hidden;
 }
@@ -584,8 +584,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--tg-bg-header);
-  border-bottom: 1px solid var(--tg-header-border);
+  background: linear-gradient(135deg, rgba(24, 36, 49, 0.98), rgba(19, 31, 43, 0.98));
+  border-bottom: 1px solid rgba(89, 152, 214, 0.14);
+  box-shadow: 0 4px 18px rgba(2, 9, 16, 0.18);
   z-index: 5;
 }
 
@@ -622,6 +623,108 @@ html, body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.tg-header-actions .tg-icon-btn.active {
+  color: #fff;
+  background: rgba(51, 144, 236, 0.22);
+}
+
+/* SEARCH INSIDE THE CURRENT CHAT */
+.tg-message-search {
+  min-height: 52px;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  z-index: 6;
+  background: rgba(19, 30, 42, 0.96);
+  border-bottom: 1px solid rgba(89, 152, 214, 0.14);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(14px);
+  animation: tg-message-search-in 0.16s ease-out;
+}
+
+@keyframes tg-message-search-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tg-message-search-field {
+  flex: 1;
+  min-width: 120px;
+  height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7f91a4;
+  border: 1px solid rgba(115, 164, 211, 0.16);
+  border-radius: 19px;
+  background: rgba(37, 51, 66, 0.88);
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+
+.tg-message-search-field:focus-within {
+  color: var(--tg-primary);
+  border-color: rgba(51, 144, 236, 0.58);
+  box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.1);
+}
+
+.tg-message-search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--tg-text-main);
+  background: transparent;
+  font-size: 14px;
+}
+
+.tg-message-search-field input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.tg-message-search-count {
+  min-width: 48px;
+  color: var(--tg-text-sub);
+  text-align: center;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.tg-message-search-btn {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  color: var(--tg-text-main);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.tg-message-search-btn:hover {
+  color: var(--tg-primary);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.tg-message-search-btn:active {
+  transform: scale(0.91);
+}
+
+.tg-message-search-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.tg-message-search-close {
+  color: var(--tg-text-sub);
+  font-size: 16px;
 }
 
 /* COMPACT MEDIA PLAYER UNDER THE CHAT HEADER */
@@ -776,21 +879,36 @@ html, body {
   min-width: 120px;
   border-radius: 12px;
   padding: 6px 10px 6px 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.035);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
   word-break: break-word;
   user-select: text;
 }
 
 .tg-bubble-wrap.in .tg-msg-bubble {
-  background: var(--tg-msg-in);
+  background: linear-gradient(145deg, #1a2a39, #172431);
   border-bottom-left-radius: 4px;
   color: var(--tg-text-main);
 }
 
 .tg-bubble-wrap.out .tg-msg-bubble {
-  background: var(--tg-msg-out);
+  background: linear-gradient(145deg, #315f8c, #294f76);
   border-bottom-right-radius: 4px;
   color: #fff;
+}
+
+.tg-msg-bubble.tg-message-search-match {
+  box-shadow: 0 0 0 1px rgba(255, 199, 74, 0.34), 0 5px 16px rgba(0, 0, 0, 0.22);
+}
+
+.tg-msg-bubble.tg-message-search-current {
+  box-shadow: 0 0 0 2px #ffc74a, 0 0 22px rgba(255, 199, 74, 0.24);
+  animation: tg-search-current-pulse 0.28s ease-out;
+}
+
+@keyframes tg-search-current-pulse {
+  from { transform: scale(0.985); }
+  to { transform: scale(1); }
 }
 
 .tg-sender-heading {
@@ -902,7 +1020,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(7, 15, 23, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.055);
   padding: 8px 12px;
   border-radius: 10px;
   margin-bottom: 4px;
@@ -918,17 +1037,6 @@ html, body {
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
-}
-
-.tg-file-icon span {
-  max-width: 34px;
-  padding: 0 3px;
-  overflow: hidden;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  text-overflow: ellipsis;
 }
 
 .tg-file-meta {
@@ -950,19 +1058,20 @@ html, body {
 }
 
 .tg-file-download {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  flex: 0 0 36px;
-  color: var(--tg-primary);
-  background: rgba(51, 144, 236, 0.14);
+  flex: 0 0 40px;
+  color: #fff;
+  background: linear-gradient(145deg, #3a9df2, #277ac7);
+  box-shadow: 0 3px 10px rgba(32, 119, 196, 0.28);
   transition: background 0.15s, transform 0.15s;
 }
 
 .tg-file-download:hover {
-  background: rgba(51, 144, 236, 0.24);
+  background: linear-gradient(145deg, #48a8f7, #2c84d4);
   transform: scale(1.04);
 }
 
@@ -1094,14 +1203,15 @@ html, body {
   flex: 1;
   min-width: 0;
   position: relative;
-  background: var(--tg-input-bg);
+  background: linear-gradient(145deg, rgba(39, 53, 69, 0.98), rgba(32, 45, 59, 0.98));
+  border: 1px solid rgba(111, 158, 204, 0.12);
   border-radius: 20px;
   display: flex;
   align-items: center;
   padding: 6px 12px 6px 16px;
   min-height: 44px;
   max-height: 140px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
 }
 
 .tg-msg-textarea {
@@ -1850,113 +1960,64 @@ body.tg-media-viewer-open {
 
 .tg-profile-header {
   height: 56px;
-  padding: 0 12px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--tg-sidebar-border);
+  background: var(--tg-bg-header);
 }
 
 .tg-profile-header h3 {
   font-size: 16px;
   font-weight: 600;
+  color: var(--tg-text-main);
 }
 
 .tg-profile-body {
-  padding: 24px 16px;
+  padding: 0 0 32px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* HERO AREA */
+.tg-profile-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  overflow-y: auto;
+  padding: 24px 16px 16px;
+  background: linear-gradient(180deg, rgba(51, 144, 236, 0.08) 0%, transparent 100%);
 }
 
-.tg-profile-avatar-large {
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3390ec, #176bb8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 38px;
-  font-weight: 700;
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-}
-
-.tg-profile-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-top: 14px;
-}
-
-.tg-profile-status {
-  font-size: 13px;
-  color: #4fae4e;
-  margin-top: 2px;
-}
-
-.tg-profile-section {
-  width: 100%;
-  margin-top: 24px;
-  background: #17212b;
-  border-radius: 12px;
-  padding: 12px 14px;
-}
-
-.tg-profile-field {
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.tg-profile-field:last-child {
-  border-bottom: none;
-}
-
-.tg-profile-field-label {
-  font-size: 11.5px;
-  color: var(--tg-text-sub);
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.tg-profile-field-value {
-  font-size: 14.5px;
-  margin-top: 4px;
-  word-break: break-word;
-}
-
-.tg-small-btn {
-  background: var(--tg-primary);
-  border: none;
-  color: #fff;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 6px;
-  transition: background 0.15s;
-}
-
-.tg-small-btn:hover {
-  background: var(--tg-primary-hover);
-}
-
-/* ===================================================
-   PROFILE AVATAR EDITING
-   =================================================== */
 .tg-profile-avatar-wrap {
   position: relative;
   display: inline-block;
 }
 
+.tg-profile-avatar-large {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3390ec, #176bb8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
 .tg-avatar-edit-btn {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 32px;
-  height: 32px;
+  bottom: 2px;
+  right: 2px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--tg-primary);
   border: 2px solid var(--tg-bg-sidebar);
@@ -1964,9 +2025,567 @@ body.tg-media-viewer-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
   cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s, background 0.15s;
+}
+
+.tg-avatar-edit-btn:hover {
+  transform: scale(1.1);
+  background: var(--tg-primary-hover);
+}
+
+.tg-profile-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 14px;
+  color: #fff;
+  text-align: center;
+  word-break: break-word;
+}
+
+.tg-profile-status {
+  font-size: 13.5px;
+  color: #4fae4e;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tg-profile-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4fae4e;
+  display: inline-block;
+}
+
+/* ACTION BUTTONS ROW */
+.tg-profile-actions-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin: 12px 16px 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tg-profile-act-btn {
+  background: transparent;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--tg-text-sub);
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 0.15s, transform 0.15s;
+}
+
+.tg-profile-act-btn:hover {
+  color: var(--tg-primary);
+  transform: translateY(-1px);
+}
+
+.tg-profile-act-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tg-primary);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.tg-profile-act-btn:hover .tg-profile-act-icon {
+  background: rgba(51, 144, 236, 0.2);
+}
+
+/* PERSONAL INFO CARD */
+.tg-profile-card {
+  margin: 0 16px 16px;
+  background: var(--tg-bg-sidebar);
+  border-radius: 14px;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tg-profile-info-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tg-profile-info-item:last-child {
+  border-bottom: none;
+}
+
+.tg-profile-info-icon {
+  color: var(--tg-text-sub);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tg-profile-info-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.tg-profile-info-val {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--tg-text-main);
+  word-break: break-word;
+}
+
+.tg-profile-info-lbl {
+  font-size: 12px;
+  color: var(--tg-text-sub);
+  margin-top: 2px;
+}
+
+.tg-info-copy-btn {
+  color: var(--tg-text-sub);
+  padding: 6px;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tg-info-copy-btn:hover {
+  color: var(--tg-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* SHARED CONTENT TABS */
+.tg-profile-tabs-wrap {
+  margin: 0 16px;
+  background: var(--tg-bg-sidebar);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.tg-profile-tabs-header {
+  display: flex;
+  background: #17212b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tg-profile-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 12px 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tg-text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.tg-profile-tab.active {
+  color: var(--tg-primary);
+}
+
+.tg-profile-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 15%;
+  right: 15%;
+  height: 2.5px;
+  border-radius: 2px 2px 0 0;
+  background: var(--tg-primary);
+}
+
+.tg-profile-tab-badge {
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--tg-text-sub);
+}
+
+.tg-profile-tab.active .tg-profile-tab-badge {
+  background: rgba(51, 144, 236, 0.2);
+  color: var(--tg-primary);
+}
+
+.tg-profile-tab-content {
+  padding: 12px;
+  min-height: 120px;
+}
+
+.tg-profile-pane {
+  display: block;
+}
+
+.tg-profile-pane.hidden {
+  display: none !important;
+}
+
+/* MEDIA GRID */
+.tg-profile-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.tg-profile-media-thumb {
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  background: #17212b;
+}
+
+.tg-profile-media-thumb img,
+.tg-profile-media-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s;
+}
+
+.tg-profile-media-thumb:hover img,
+.tg-profile-media-thumb:hover video {
+  transform: scale(1.06);
+}
+
+.tg-profile-media-video-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  font-size: 10.5px;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* FILES LIST */
+.tg-profile-files-list,
+.tg-profile-voice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tg-profile-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tg-profile-file-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tg-profile-file-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--tg-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tg-profile-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tg-profile-file-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--tg-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tg-profile-file-meta {
+  font-size: 11.5px;
+  color: var(--tg-text-sub);
+  margin-top: 2px;
+}
+
+.tg-profile-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--tg-text-sub);
+  font-size: 13.5px;
+}
+
+.tg-profile-btn-wrap {
+  margin: 16px 16px 0;
+}
+
+/* ===================================================
+   TELEGRAM TOGGLE SWITCH
+   =================================================== */
+.tg-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.tg-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.tg-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #394756;
+  transition: 0.2s;
+  border-radius: 24px;
+}
+
+.tg-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.2s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.tg-switch input:checked + .tg-slider {
+  background-color: var(--tg-primary);
+}
+
+.tg-switch input:checked + .tg-slider:before {
+  transform: translateX(20px);
+}
+
+.tg-menu-item-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tg-menu-item-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ===================================================
+   SEARCH FILTER CHIPS
+   =================================================== */
+.tg-search-filters {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px 4px;
+  background: var(--tg-bg-sidebar);
+  overflow-x: auto;
+}
+
+.tg-filter-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 14px;
+  padding: 5px 12px;
+  color: var(--tg-text-sub);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tg-filter-chip.active {
+  background: var(--tg-primary);
+  color: #fff;
+}
+
+.tg-filter-chip:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--tg-text-main);
+}
+
+/* ===================================================
+   MODAL DIALOG (EDIT PROFILE)
+   =================================================== */
+.tg-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: tgFadeIn 0.15s ease-out;
+}
+
+.tg-modal-card {
+  background: var(--tg-bg-sidebar);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tg-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tg-modal-header h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.tg-edit-profile-form {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tg-edit-avatar-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.tg-edit-avatar-preview {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3390ec, #176bb8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tg-edit-avatar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tg-small-btn.danger {
+  background: rgba(255, 89, 90, 0.15);
+  color: #ff595a;
+}
+
+.tg-small-btn.danger:hover {
+  background: rgba(255, 89, 90, 0.25);
+}
+
+.tg-textarea-input {
+  height: auto !important;
+  min-height: 72px;
+  resize: none;
+  padding-top: 22px !important;
+}
+
+.tg-char-counter {
+  text-align: right;
+  font-size: 11px;
+  color: var(--tg-text-sub);
+  margin-top: 4px;
+}
+
+.tg-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* ===================================================
+   TOAST NOTIFICATIONS
+   =================================================== */
+.tg-toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.tg-toast {
+  background: rgba(23, 33, 43, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 13.5px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: tgToastIn 0.2s ease-out;
+  pointer-events: auto;
+}
+
+@keyframes tgToastIn {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes tgFadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 .tg-avatar-edit-btn:hover {
@@ -2162,6 +2781,29 @@ body.tg-media-viewer-open {
     gap: 7px;
   }
 
+  .tg-message-search {
+    min-height: 48px;
+    padding: 5px 6px;
+    gap: 2px;
+  }
+
+  .tg-message-search-field {
+    min-width: 80px;
+    height: 36px;
+    padding: 0 9px;
+  }
+
+  .tg-message-search-count {
+    min-width: 43px;
+    font-size: 10.5px;
+  }
+
+  .tg-message-search-btn {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
   .tg-media-player-avatar {
     width: 30px;
     height: 30px;
@@ -2241,7 +2883,7 @@ body.tg-media-viewer-open {
     gap: 6px;
     flex-shrink: 0 !important;
     width: 100%;
-    background: var(--tg-bg-chat);
+    background: linear-gradient(to top, rgba(14, 22, 33, 0.98), rgba(14, 22, 33, 0.9));
     box-sizing: border-box;
   }
 
