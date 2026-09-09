@@ -289,6 +289,121 @@ class StorageService {
     return { media, files, voice };
   }
 
+  getContacts(username) {
+    if (!username) return [];
+    const key = 'gm_contacts_' + username.toLowerCase();
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    if (list.length === 0) {
+      const demo = [
+        { username: 'durov', name: 'Павел Дуров', addedAt: Date.now() - 86400000 },
+        { username: 'maria', name: 'Мария', addedAt: Date.now() - 43200000 }
+      ];
+      localStorage.setItem(key, JSON.stringify(demo));
+      return demo;
+    }
+    return list;
+  }
+
+  saveContact(currentUsername, contact) {
+    if (!currentUsername || !contact || !contact.username) return false;
+    const key = 'gm_contacts_' + currentUsername.toLowerCase();
+    const list = this.getContacts(currentUsername);
+    const targetU = contact.username.toLowerCase().replace(/^@/, '');
+    const idx = list.findIndex(c => c.username.toLowerCase() === targetU);
+    if (idx !== -1) {
+      list[idx].name = contact.name || list[idx].name;
+    } else {
+      list.push({
+        username: targetU,
+        name: contact.name || ('@' + targetU),
+        addedAt: Date.now()
+      });
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+    return true;
+  }
+
+  deleteContact(currentUsername, targetUsername) {
+    if (!currentUsername || !targetUsername) return false;
+    const key = 'gm_contacts_' + currentUsername.toLowerCase();
+    const list = this.getContacts(currentUsername);
+    const targetU = targetUsername.toLowerCase().replace(/^@/, '');
+    const updated = list.filter(c => c.username.toLowerCase() !== targetU);
+    localStorage.setItem(key, JSON.stringify(updated));
+    return true;
+  }
+
+  getBlacklist(currentUsername) {
+    if (!currentUsername) return [];
+    const key = 'gm_blacklist_' + currentUsername.toLowerCase();
+    return JSON.parse(localStorage.getItem(key) || '[]');
+  }
+
+  toggleBlacklist(currentUsername, targetUsername) {
+    if (!currentUsername || !targetUsername) return false;
+    const key = 'gm_blacklist_' + currentUsername.toLowerCase();
+    let list = this.getBlacklist(currentUsername);
+    const targetU = targetUsername.toLowerCase().replace(/^@/, '');
+    const idx = list.indexOf(targetU);
+    let isBlocked = false;
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      isBlocked = false;
+    } else {
+      list.push(targetU);
+      isBlocked = true;
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+    return isBlocked;
+  }
+
+  async getAllUserMedia(username) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const myName = (username || '').toLowerCase();
+    const userMsgs = all.filter(m => {
+      const sender = (m.sender || '').toLowerCase();
+      const chatId = (m.chatId || '').toLowerCase();
+      return sender === myName || chatId.includes(myName) || chatId === 'general';
+    });
+
+    const media = [];
+    const files = [];
+    const voice = [];
+
+    userMsgs.forEach(m => {
+      if (m.files && Array.isArray(m.files)) {
+        m.files.forEach(f => {
+          const type = (f.type || '').toLowerCase();
+          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
+          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
+          if (isPhoto || isVideo) {
+            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+          } else {
+            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId });
+          }
+        });
+      } else if (m.file) {
+        const type = (m.file.type || '').toLowerCase();
+        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
+        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
+        if (isPhoto || isVideo) {
+          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+        } else {
+          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId });
+        }
+      }
+
+      if (m.voice) {
+        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId });
+      }
+      if (m.circleVideo) {
+        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId });
+      }
+    });
+
+    return { media, files, voice };
+  }
+
   async getMessages(chatId) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
@@ -425,6 +540,12 @@ class TelegramApp {
     this.activeMediaSession = null;
     this.messageSearchResults = [];
     this.messageSearchIndex = -1;
+
+    // 4-Tab Navigation & Sidebar States
+    this.activeSidebarView = 'chats';
+    this.contactsSortMode = 'name'; // 'name' | 'date'
+    this.myfilesFilter = 'all';
+    this.feedActiveTab = 'media';
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -812,11 +933,178 @@ class TelegramApp {
       btnSaveEditProfile: document.getElementById('btn-save-edit-profile'),
 
       toastContainer: document.getElementById('tg-toast-container'),
-      reactionsPopup: document.getElementById('reactions-popup')
+      reactionsPopup: document.getElementById('reactions-popup'),
+
+      // НАВИГАЦИЯ (DESKTOP RAIL И MOBILE BOTTOM NAV)
+      railNavChats: document.getElementById('rail-nav-chats'),
+      railNavContacts: document.getElementById('rail-nav-contacts'),
+      railNavProfile: document.getElementById('rail-nav-profile'),
+      railNavSettings: document.getElementById('rail-nav-settings'),
+      railBtnLogout: document.getElementById('rail-btn-logout'),
+
+      mobNavChats: document.getElementById('mob-nav-chats'),
+      mobNavContacts: document.getElementById('mob-nav-contacts'),
+      mobNavProfile: document.getElementById('mob-nav-profile'),
+      mobNavSettings: document.getElementById('mob-nav-settings'),
+
+      // РАЗДЕЛЫ САЙДБАРА
+      sidebarViewChats: document.getElementById('sidebar-view-chats'),
+      sidebarViewContacts: document.getElementById('sidebar-view-contacts'),
+      sidebarViewProfile: document.getElementById('sidebar-view-profile'),
+      sidebarViewSettings: document.getElementById('sidebar-view-settings'),
+
+      // КОНТАКТЫ
+      contactsCountLabel: document.getElementById('contacts-count-label'),
+      btnSortContacts: document.getElementById('btn-sort-contacts'),
+      btnAddContactOpen: document.getElementById('btn-add-contact-open'),
+      contactsSearch: document.getElementById('contacts-search'),
+      contactsList: document.getElementById('contacts-list'),
+
+      // ПРОФИЛЬ (ЖИВАЯ ЛЕНТА В САЙДБАРЕ)
+      feedUserAvatar: document.getElementById('feed-user-avatar'),
+      btnFeedChangePhoto: document.getElementById('btn-feed-change-photo'),
+      btnFeedRemovePhoto: document.getElementById('btn-feed-remove-photo'),
+      feedHeroName: document.getElementById('feed-hero-name'),
+      feedProfileForm: document.getElementById('feed-profile-form'),
+      feedProfileDisplayName: document.getElementById('feed-profile-displayname'),
+      feedProfileUsername: document.getElementById('feed-profile-username'),
+      feedProfileBio: document.getElementById('feed-profile-bio'),
+      feedBioCounter: document.getElementById('feed-bio-counter'),
+      statChatsCount: document.getElementById('stat-chats-count'),
+      statMediaCount: document.getElementById('stat-media-count'),
+      statContactsCount: document.getElementById('stat-contacts-count'),
+      feedTabs: document.querySelectorAll('.tg-feed-tab'),
+      feedPaneMedia: document.getElementById('feed-pane-media'),
+      feedPaneFiles: document.getElementById('feed-pane-files'),
+      feedPaneVoice: document.getElementById('feed-pane-voice'),
+
+      // НАСТРОЙКИ
+      btnSettingsOpenMyFiles: document.getElementById('btn-settings-open-myfiles'),
+      settingsStorageUsage: document.getElementById('settings-storage-usage'),
+      btnSettingsClearCache: document.getElementById('btn-settings-clear-cache'),
+      btnSettingsBlacklist: document.getElementById('btn-settings-blacklist'),
+
+      // МОДАЛЬНЫЕ ОКНА
+      modalAddContact: document.getElementById('modal-add-contact'),
+      formAddContact: document.getElementById('form-add-contact'),
+      addContactUsername: document.getElementById('add-contact-username'),
+      addContactName: document.getElementById('add-contact-name'),
+      addContactBio: document.getElementById('add-contact-bio'),
+      btnCloseAddContact: document.getElementById('btn-close-add-contact'),
+      btnCancelAddContact: document.getElementById('btn-cancel-add-contact'),
+
+      modalMyFiles: document.getElementById('modal-my-files'),
+      btnCloseMyFiles: document.getElementById('btn-close-myfiles'),
+      myfilesSearch: document.getElementById('myfiles-search'),
+      myfilesFilters: document.querySelectorAll('[data-myfiles-filter]'),
+      myfilesList: document.getElementById('myfiles-list'),
+
+      modalBlacklist: document.getElementById('modal-blacklist'),
+      btnCloseBlacklist: document.getElementById('btn-close-blacklist'),
+      blacklistInputUsername: document.getElementById('blacklist-input-username'),
+      btnAddToBlacklist: document.getElementById('btn-add-to-blacklist'),
+      blacklistItemsList: document.getElementById('blacklist-items-list')
     };
   }
 
   bindEvents() {
+    // ПЕРЕКЛЮЧЕНИЕ ГЛАВНЫХ РАЗДЕЛОВ (ЧАТЫ, КОНТАКТЫ, ПРОФИЛЬ, НАСТРОЙКИ)
+    if (this.el.railNavChats) this.el.railNavChats.addEventListener('click', () => this.switchSidebarView('chats'));
+    if (this.el.railNavContacts) this.el.railNavContacts.addEventListener('click', () => this.switchSidebarView('contacts'));
+    if (this.el.railNavProfile) this.el.railNavProfile.addEventListener('click', () => this.switchSidebarView('profile'));
+    if (this.el.railNavSettings) this.el.railNavSettings.addEventListener('click', () => this.switchSidebarView('settings'));
+    if (this.el.railBtnLogout) this.el.railBtnLogout.addEventListener('click', () => this.logout());
+
+    if (this.el.mobNavChats) this.el.mobNavChats.addEventListener('click', () => this.switchSidebarView('chats'));
+    if (this.el.mobNavContacts) this.el.mobNavContacts.addEventListener('click', () => this.switchSidebarView('contacts'));
+    if (this.el.mobNavProfile) this.el.mobNavProfile.addEventListener('click', () => this.switchSidebarView('profile'));
+    if (this.el.mobNavSettings) this.el.mobNavSettings.addEventListener('click', () => this.switchSidebarView('settings'));
+
+    // КОНТАКТЫ
+    if (this.el.btnSortContacts) {
+      this.el.btnSortContacts.addEventListener('click', () => this.toggleContactsSort());
+    }
+    if (this.el.btnAddContactOpen) {
+      this.el.btnAddContactOpen.addEventListener('click', () => this.openAddContactModal());
+    }
+    if (this.el.btnCloseAddContact) {
+      this.el.btnCloseAddContact.addEventListener('click', () => this.closeAddContactModal());
+    }
+    if (this.el.btnCancelAddContact) {
+      this.el.btnCancelAddContact.addEventListener('click', () => this.closeAddContactModal());
+    }
+    if (this.el.formAddContact) {
+      this.el.formAddContact.addEventListener('submit', (e) => this.handleAddContactSubmit(e));
+    }
+    if (this.el.contactsSearch) {
+      this.el.contactsSearch.addEventListener('input', () => this.renderContactsList());
+    }
+
+    // ПРОФИЛЬ В САЙДБАРЕ (ЖИВАЯ ЛЕНТА)
+    if (this.el.feedProfileForm) {
+      this.el.feedProfileForm.addEventListener('submit', (e) => this.handleFeedProfileSave(e));
+    }
+    if (this.el.feedProfileBio) {
+      this.el.feedProfileBio.addEventListener('input', () => {
+        if (this.el.feedBioCounter) {
+          this.el.feedBioCounter.innerText = (this.el.feedProfileBio.value || '').length + ' / 140';
+        }
+      });
+    }
+    if (this.el.btnFeedChangePhoto && this.el.avatarFileInput) {
+      this.el.btnFeedChangePhoto.addEventListener('click', () => this.el.avatarFileInput.click());
+    }
+    if (this.el.btnFeedRemovePhoto) {
+      this.el.btnFeedRemovePhoto.addEventListener('click', async () => {
+        if (!confirm('Удалить фото профиля?')) return;
+        await this.storage.updateUserAvatar(this.currentUser.username, null);
+        this.renderAvatars();
+        this.renderProfileFeed();
+        this.showToast('Фото профиля удалено');
+      });
+    }
+    if (this.el.feedTabs) {
+      this.el.feedTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const target = tab.getAttribute('data-feed-tab');
+          this.switchFeedMediaTab(target);
+        });
+      });
+    }
+
+    // НАСТРОЙКИ И МОДАЛЬНЫЕ ОКНА
+    if (this.el.btnSettingsOpenMyFiles) {
+      this.el.btnSettingsOpenMyFiles.addEventListener('click', () => this.openMyFilesModal());
+    }
+    if (this.el.btnCloseMyFiles) {
+      this.el.btnCloseMyFiles.addEventListener('click', () => this.closeMyFilesModal());
+    }
+    if (this.el.myfilesSearch) {
+      this.el.myfilesSearch.addEventListener('input', () => this.renderMyFilesList());
+    }
+    if (this.el.myfilesFilters) {
+      this.el.myfilesFilters.forEach(chip => {
+        chip.addEventListener('click', () => {
+          this.el.myfilesFilters.forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          this.myfilesFilter = chip.getAttribute('data-myfiles-filter');
+          this.renderMyFilesList();
+        });
+      });
+    }
+    if (this.el.btnSettingsBlacklist) {
+      this.el.btnSettingsBlacklist.addEventListener('click', () => this.openBlacklistModal());
+    }
+    if (this.el.btnCloseBlacklist) {
+      this.el.btnCloseBlacklist.addEventListener('click', () => this.closeBlacklistModal());
+    }
+    if (this.el.btnAddToBlacklist) {
+      this.el.btnAddToBlacklist.addEventListener('click', () => this.handleBlacklistAdd());
+    }
+    if (this.el.btnSettingsClearCache) {
+      this.el.btnSettingsClearCache.addEventListener('click', () => this.clearMediaCache());
+    }
+
     // Вкладки авторизации
     this.el.tabLogin.addEventListener('click', () => this.setAuthMode('login'));
     this.el.tabRegister.addEventListener('click', () => this.setAuthMode('register'));
@@ -1430,6 +1718,8 @@ class TelegramApp {
 
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
     this.renderAvatars();
+    this.switchSidebarView(this.activeSidebarView || 'chats');
+    this.renderProfileFeed();
 
     this.refreshData();
   }
@@ -3298,9 +3588,6 @@ class TelegramApp {
             '  <div class="tg-chat-snippet">в диалоге ' + m.chatId + ' · ' + m.time + '</div>',
             '</div>'
           ].join('');
-          item.addEventListener('click', () => {
-            this.openChat(m.chatId, m.chatId === 'general' ? 'Общий чат' : '@' + m.sender);
-          });
           this.el.searchResultsList.appendChild(item);
         });
       }
@@ -3309,6 +3596,536 @@ class TelegramApp {
     if (itemsCount === 0) {
       this.el.searchResultsList.innerHTML = '<div style="padding:28px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">Ничего не найдено по запросу «' + this.escape(q) + '»</div>';
     }
+  }
+
+  // ==========================================
+  // НАВИГАЦИЯ САЙДБАРА (ЧАТЫ, КОНТАКТЫ, ПРОФИЛЬ, НАСТРОЙКИ)
+  // ==========================================
+
+  switchSidebarView(viewName) {
+    this.activeSidebarView = viewName || 'chats';
+    const views = ['chats', 'contacts', 'profile', 'settings'];
+
+    // Обновляем состояние табов на Desktop Rail и Mobile Bottom Nav
+    views.forEach(v => {
+      const railBtn = document.getElementById('rail-nav-' + v);
+      if (railBtn) railBtn.classList.toggle('active', v === viewName);
+      const mobBtn = document.getElementById('mob-nav-' + v);
+      if (mobBtn) mobBtn.classList.toggle('active', v === viewName);
+      const viewEl = document.getElementById('sidebar-view-' + v);
+      if (viewEl) viewEl.classList.toggle('hidden', v !== viewName);
+    });
+
+    // На мобильном, если пользователь переключает вкладки внизу, закрываем чат-вью, чтобы показать сайдбар
+    if (this.el.chatView && window.innerWidth <= 768 && viewName !== 'chats') {
+      this.el.chatView.classList.remove('active');
+      sessionStorage.setItem('gm_active_chat_open', '0');
+    }
+
+    if (viewName === 'chats') {
+      this.renderChatList();
+    } else if (viewName === 'contacts') {
+      this.renderContactsList();
+    } else if (viewName === 'profile') {
+      this.renderProfileFeed();
+    } else if (viewName === 'settings') {
+      this.renderSettingsView();
+    }
+  }
+
+  // ==========================================
+  // КОНТАКТЫ
+  // ==========================================
+
+  renderContactsList() {
+    if (!this.currentUser || !this.el.contactsList) return;
+    const allContacts = this.storage.getContacts(this.currentUser.username);
+    const searchVal = (this.el.contactsSearch ? this.el.contactsSearch.value : '').toLowerCase().trim();
+
+    let filtered = allContacts.filter(c => {
+      if (!searchVal) return true;
+      return (c.name || '').toLowerCase().includes(searchVal) || (c.username || '').toLowerCase().includes(searchVal);
+    });
+
+    if (this.contactsSortMode === 'name') {
+      filtered.sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, 'ru'));
+    } else {
+      filtered.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    }
+
+    if (this.el.contactsCountLabel) {
+      this.el.contactsCountLabel.innerText = allContacts.length + ' контактов';
+    }
+    if (this.el.statContactsCount) {
+      this.el.statContactsCount.innerText = allContacts.length;
+    }
+
+    this.el.contactsList.innerHTML = '';
+    if (filtered.length === 0) {
+      this.el.contactsList.innerHTML = '<div style="padding:28px 16px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">' +
+        (searchVal ? 'Контакты не найдены' : 'Список контактов пуст. Нажмите «+» чтобы добавить.') + '</div>';
+      return;
+    }
+
+    filtered.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'tg-contact-item';
+      const initial = (c.name || c.username || '?')[0].toUpperCase();
+      const dateStr = c.addedAt ? new Date(c.addedAt).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+
+      row.innerHTML = [
+        '<div class="tg-avatar tg-avatar-user" style="width:42px;height:42px;font-size:16px;">' + initial + '</div>',
+        '<div class="tg-contact-info">',
+        '  <div class="tg-contact-name">' + this.escape(c.name || ('@' + c.username)) + '</div>',
+        '  <div class="tg-contact-sub">@' + this.escape(c.username) + (dateStr ? ' · добавлен ' + dateStr : '') + '</div>',
+        '</div>',
+        '<div class="tg-contact-actions">',
+        '  <button class="tg-contact-btn-chat" title="Написать сообщение">💬</button>',
+        '  <button class="tg-contact-btn-del" title="Удалить из контактов">🗑️</button>',
+        '</div>'
+      ].join('');
+
+      const btnChat = row.querySelector('.tg-contact-btn-chat');
+      const btnDel = row.querySelector('.tg-contact-btn-del');
+
+      row.addEventListener('click', (e) => {
+        if (btnDel && btnDel.contains(e.target)) return;
+        this.openDirectChat(c.username);
+        this.switchSidebarView('chats');
+      });
+
+      if (btnChat) {
+        btnChat.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.openDirectChat(c.username);
+          this.switchSidebarView('chats');
+        });
+      }
+
+      if (btnDel) {
+        btnDel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.deleteContact(c.username);
+        });
+      }
+
+      this.el.contactsList.appendChild(row);
+    });
+  }
+
+  toggleContactsSort() {
+    this.contactsSortMode = this.contactsSortMode === 'name' ? 'date' : 'name';
+    if (this.el.btnSortContacts) {
+      this.el.btnSortContacts.innerText = this.contactsSortMode === 'name' ? 'А-Я' : 'Дата';
+      this.el.btnSortContacts.title = this.contactsSortMode === 'name' ? 'Сортировка по имени' : 'Сортировка по дате добавления';
+    }
+    this.renderContactsList();
+    this.showToast(this.contactsSortMode === 'name' ? 'Сортировка: по алфавиту (А-Я)' : 'Сортировка: по дате добавления');
+  }
+
+  openAddContactModal(prefillUsername = '') {
+    if (this.el.modalAddContact) {
+      this.el.modalAddContact.classList.remove('hidden');
+      if (this.el.addContactUsername) {
+        this.el.addContactUsername.value = prefillUsername || '';
+        this.el.addContactUsername.focus();
+      }
+      if (this.el.addContactName) this.el.addContactName.value = '';
+    }
+  }
+
+  closeAddContactModal() {
+    if (this.el.modalAddContact) {
+      this.el.modalAddContact.classList.add('hidden');
+    }
+  }
+
+  handleAddContactSubmit(e) {
+    e.preventDefault();
+    const username = (this.el.addContactUsername ? this.el.addContactUsername.value : '').trim().replace(/^@/, '');
+    const name = (this.el.addContactName ? this.el.addContactName.value : '').trim();
+
+    if (!username) {
+      this.showToast('Укажите @username контакта');
+      return;
+    }
+
+    this.storage.saveContact(this.currentUser.username, { username, name: name || ('@' + username) });
+    this.closeAddContactModal();
+    this.renderContactsList();
+    this.showToast('Контакт @' + username + ' сохранён');
+  }
+
+  deleteContact(targetUsername) {
+    if (!confirm('Удалить контакт @' + targetUsername + '?')) return;
+    this.storage.deleteContact(this.currentUser.username, targetUsername);
+    this.renderContactsList();
+    this.showToast('Контакт @' + targetUsername + ' удалён');
+  }
+
+  // ==========================================
+  // ПРОФИЛЬ (ЖИВАЯ ЛЕНТА В САЙДБАРЕ)
+  // ==========================================
+
+  async renderProfileFeed() {
+    if (!this.currentUser) return;
+    const profile = await this.storage.getUserProfile(this.currentUser.username);
+    const displayName = (profile && profile.name) ? profile.name : (this.currentUser.name || this.currentUser.username);
+    const bio = (profile && profile.bio) ? profile.bio : '';
+
+    if (this.el.feedHeroName) this.el.feedHeroName.innerText = displayName;
+    if (this.el.feedProfileDisplayName) this.el.feedProfileDisplayName.value = displayName;
+    if (this.el.feedProfileUsername) this.el.feedProfileUsername.value = '@' + this.currentUser.username;
+    if (this.el.feedProfileBio) {
+      this.el.feedProfileBio.value = bio;
+      if (this.el.feedBioCounter) {
+        this.el.feedBioCounter.innerText = bio.length + ' / 140';
+      }
+    }
+
+    if (this.el.feedUserAvatar) {
+      if (profile && profile.avatar) {
+        this.el.feedUserAvatar.innerHTML = '<img src="' + profile.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
+      } else {
+        this.el.feedUserAvatar.innerHTML = '<span style="font-size:32px;color:#fff;">' + this.currentUser.username[0].toUpperCase() + '</span>';
+      }
+    }
+
+    // Статистика
+    const chats = await this.storage.getUserChats(this.currentUser.username);
+    const mediaObj = await this.storage.getAllUserMedia(this.currentUser.username);
+    const contacts = this.storage.getContacts(this.currentUser.username);
+
+    if (this.el.statChatsCount) this.el.statChatsCount.innerText = chats.length;
+    if (this.el.statMediaCount) this.el.statMediaCount.innerText = mediaObj.media.length + mediaObj.files.length + mediaObj.voice.length;
+    if (this.el.statContactsCount) this.el.statContactsCount.innerText = contacts.length;
+
+    this.renderProfileFeedMedia(mediaObj);
+  }
+
+  switchFeedMediaTab(tab) {
+    this.feedActiveTab = tab || 'media';
+    if (this.el.feedTabs) {
+      this.el.feedTabs.forEach(t => {
+        t.classList.toggle('active', t.getAttribute('data-feed-tab') === tab);
+      });
+    }
+    if (this.el.feedPaneMedia) this.el.feedPaneMedia.classList.toggle('hidden', tab !== 'media');
+    if (this.el.feedPaneFiles) this.el.feedPaneFiles.classList.toggle('hidden', tab !== 'files');
+    if (this.el.feedPaneVoice) this.el.feedPaneVoice.classList.toggle('hidden', tab !== 'voice');
+  }
+
+  async renderProfileFeedMedia(cachedMedia = null) {
+    const data = cachedMedia || await this.storage.getAllUserMedia(this.currentUser.username);
+
+    // 1. Фото / Видео
+    if (this.el.feedPaneMedia) {
+      this.el.feedPaneMedia.innerHTML = '';
+      if (data.media.length === 0) {
+        this.el.feedPaneMedia.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13px;">Нет сохраненных фото и видео</div>';
+      } else {
+        const grid = document.createElement('div');
+        grid.className = 'tg-feed-media-grid';
+        data.media.forEach(m => {
+          const item = document.createElement('div');
+          item.className = 'tg-feed-grid-item';
+          const file = m.file;
+          const url = file ? (file.dataUrl || (file.mediaId ? null : file.url)) : null;
+          if (m.isVideo) {
+            item.innerHTML = '<span style="font-size:24px;">🎬</span><span style="position:absolute;bottom:4px;right:6px;font-size:10px;color:#fff;background:rgba(0,0,0,0.6);padding:1px 4px;border-radius:4px;">Видео</span>';
+          } else if (url) {
+            item.innerHTML = '<img src="' + url + '" alt="Photo" style="width:100%;height:100%;object-fit:cover;">';
+          } else {
+            item.innerHTML = '<span style="font-size:24px;">📷</span>';
+          }
+          item.addEventListener('click', () => {
+            if (url) {
+              this.openLightbox(url, file ? (file.name || 'Медиа') : 'Медиа', m.isVideo ? 'video' : 'image');
+            } else if (m.chatId) {
+              this.openChat(m.chatId, m.chatId === 'general' ? 'Общий чат' : 'Диалог');
+            }
+          });
+          grid.appendChild(item);
+        });
+        this.el.feedPaneMedia.appendChild(grid);
+      }
+    }
+
+    // 2. Файлы
+    if (this.el.feedPaneFiles) {
+      this.el.feedPaneFiles.innerHTML = '';
+      if (data.files.length === 0) {
+        this.el.feedPaneFiles.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13px;">Нет отправленных документов</div>';
+      } else {
+        data.files.forEach(f => {
+          const row = document.createElement('div');
+          row.className = 'tg-feed-file-row';
+          const file = f.file;
+          const sizeStr = file && file.size ? (Math.round(file.size / 1024) + ' KB') : '';
+          const fileName = file ? (file.name || 'Документ') : 'Документ';
+          const dlUrl = file ? file.dataUrl : null;
+          row.innerHTML = [
+            '<div style="font-size:22px;margin-right:10px;">📄</div>',
+            '<div style="flex:1;min-width:0;">',
+            '  <div style="font-size:13.5px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(fileName) + '</div>',
+            '  <div style="font-size:11.5px;color:var(--tg-text-sub);">' + sizeStr + (f.time ? ' · ' + f.time : '') + '</div>',
+            '</div>',
+            (dlUrl ? '<a href="' + dlUrl + '" download="' + this.escapeAttr(fileName) + '" class="tg-file-dl-btn" style="text-decoration:none;font-size:15px;" title="Скачать">⬇️</a>' : '')
+          ].join('');
+          this.el.feedPaneFiles.appendChild(row);
+        });
+      }
+    }
+
+    // 3. Голосовые и кружочки
+    if (this.el.feedPaneVoice) {
+      this.el.feedPaneVoice.innerHTML = '';
+      if (data.voice.length === 0) {
+        this.el.feedPaneVoice.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13px;">Нет голосовых сообщений и кружочков</div>';
+      } else {
+        data.voice.forEach(v => {
+          const row = document.createElement('div');
+          row.className = 'tg-feed-file-row';
+          const isCircle = v.type === 'circle';
+          const label = isCircle ? 'Видеокружок' : 'Голосовое сообщение';
+          const icon = isCircle ? '📹' : '🎤';
+          const dur = v.voice ? this.formatDuration(v.voice.duration) : (v.circleVideo ? this.formatDuration(v.circleVideo.duration) : '');
+          row.innerHTML = [
+            '<div style="font-size:22px;margin-right:10px;">' + icon + '</div>',
+            '<div style="flex:1;min-width:0;">',
+            '  <div style="font-size:13.5px;font-weight:500;color:var(--tg-text-main);">' + label + '</div>',
+            '  <div style="font-size:11.5px;color:var(--tg-text-sub);">' + dur + (v.time ? ' · ' + v.time : '') + '</div>',
+            '</div>'
+          ].join('');
+          row.addEventListener('click', () => {
+            if (v.chatId) {
+              this.openChat(v.chatId, v.chatId === 'general' ? 'Общий чат' : 'Диалог');
+            }
+          });
+          this.el.feedPaneVoice.appendChild(row);
+        });
+      }
+    }
+  }
+
+  async handleFeedProfileSave(e) {
+    if (e) e.preventDefault();
+    const displayName = (this.el.feedProfileDisplayName ? this.el.feedProfileDisplayName.value : '').trim();
+    const bio = (this.el.feedProfileBio ? this.el.feedProfileBio.value : '').trim();
+
+    await this.storage.updateUserProfile(this.currentUser.username, displayName || this.currentUser.username, bio);
+    this.currentUser.name = displayName;
+    localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
+
+    if (this.el.feedHeroName) this.el.feedHeroName.innerText = displayName;
+    if (this.el.currentUserName) this.el.currentUserName.innerText = '@' + this.currentUser.username;
+    this.renderAvatars();
+    this.showToast('Профиль успешно сохранён');
+  }
+
+  // ==========================================
+  // НАСТРОЙКИ И УПРАВЛЕНИЕ ПАМЯТЬЮ
+  // ==========================================
+
+  async renderSettingsView() {
+    if (!this.currentUser) return;
+    let bytes = 0;
+    try {
+      for (let key in localStorage) {
+        if (localStorage.hasOwnProperty(key)) {
+          bytes += ((localStorage[key].length + key.length) * 2);
+        }
+      }
+    } catch (_) {}
+    const kb = Math.round(bytes / 1024);
+    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    const text = bytes > 1024 * 1024 ? (mb + ' МБ') : (kb + ' КБ');
+    if (this.el.settingsStorageUsage) {
+      this.el.settingsStorageUsage.innerText = text + ' (сообщения, кэш медиа и вложения)';
+    }
+  }
+
+  async clearMediaCache() {
+    if (!confirm('Очистить локальный кэш медиа и освободить место на устройстве?')) return;
+    try {
+      if (this.storage.mediaDB) {
+        const tx = this.storage.mediaDB.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').clear();
+      }
+      this._mediaBlobUrlCache.clear();
+      this.showToast('Кэш медиа успешно очищен');
+      this.renderSettingsView();
+    } catch (e) {
+      this.showToast('Кэш очищен');
+      this.renderSettingsView();
+    }
+  }
+
+  // ==========================================
+  // МОДАЛЬНОЕ ОКНО «МОИ ФАЙЛЫ»
+  // ==========================================
+
+  openMyFilesModal() {
+    if (this.el.modalMyFiles) {
+      this.el.modalMyFiles.classList.remove('hidden');
+      this.myfilesFilter = 'all';
+      if (this.el.myfilesFilters) {
+        this.el.myfilesFilters.forEach((c, idx) => c.classList.toggle('active', idx === 0));
+      }
+      if (this.el.myfilesSearch) this.el.myfilesSearch.value = '';
+      this.renderMyFilesList();
+    }
+  }
+
+  closeMyFilesModal() {
+    if (this.el.modalMyFiles) {
+      this.el.modalMyFiles.classList.add('hidden');
+    }
+  }
+
+  async renderMyFilesList() {
+    if (!this.currentUser || !this.el.myfilesList) return;
+    const data = await this.storage.getAllUserMedia(this.currentUser.username);
+    const q = (this.el.myfilesSearch ? this.el.myfilesSearch.value : '').toLowerCase().trim();
+    const filter = this.myfilesFilter || 'all';
+
+    let allItems = [];
+    if (filter === 'all' || filter === 'media') {
+      data.media.forEach(m => allItems.push({ ...m, itemType: 'media' }));
+    }
+    if (filter === 'all' || filter === 'files') {
+      data.files.forEach(f => allItems.push({ ...f, itemType: 'file' }));
+    }
+    if (filter === 'all' || filter === 'voice') {
+      data.voice.forEach(v => allItems.push({ ...v, itemType: 'voice' }));
+    }
+
+    if (q) {
+      allItems = allItems.filter(item => {
+        const name = (item.file ? item.file.name : (item.type === 'circle' ? 'Видеокружок' : 'Голосовое')) || '';
+        return name.toLowerCase().includes(q) || (item.chatId || '').toLowerCase().includes(q);
+      });
+    }
+
+    this.el.myfilesList.innerHTML = '';
+    if (allItems.length === 0) {
+      this.el.myfilesList.innerHTML = '<div style="padding:28px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">Файлы не найдены</div>';
+      return;
+    }
+
+    allItems.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'tg-myfile-row';
+      let icon = '📁';
+      let title = 'Файл';
+      let sub = (item.time || '') + ' · диалог: ' + (item.chatId || 'общий');
+      let dlUrl = null;
+
+      if (item.itemType === 'media') {
+        icon = item.isVideo ? '🎬' : '📷';
+        title = item.file ? (item.file.name || (item.isVideo ? 'Видеофайл' : 'Фотография')) : 'Медиа';
+        dlUrl = item.file ? (item.file.dataUrl || item.file.url) : null;
+      } else if (item.itemType === 'file') {
+        icon = '📄';
+        title = item.file ? item.file.name : 'Документ';
+        if (item.file && item.file.size) {
+          sub = Math.round(item.file.size / 1024) + ' KB · ' + sub;
+        }
+        dlUrl = item.file ? (item.file.dataUrl || item.file.url) : null;
+      } else if (item.itemType === 'voice') {
+        icon = item.type === 'circle' ? '📹' : '🎤';
+        title = item.type === 'circle' ? 'Видеокружок' : 'Голосовое сообщение';
+        const dur = item.voice ? this.formatDuration(item.voice.duration) : (item.circleVideo ? this.formatDuration(item.circleVideo.duration) : '');
+        if (dur) sub = dur + ' · ' + sub;
+      }
+
+      row.innerHTML = [
+        '<div style="font-size:22px;margin-right:12px;">' + icon + '</div>',
+        '<div style="flex:1;min-width:0;">',
+        '  <div style="font-size:14px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(title) + '</div>',
+        '  <div style="font-size:12px;color:var(--tg-text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(sub) + '</div>',
+        '</div>',
+        (dlUrl ? '<a href="' + dlUrl + '" download="' + this.escapeAttr(title) + '" class="tg-file-dl-btn" style="text-decoration:none;font-size:16px;padding:6px 10px;" title="Скачать">⬇️</a>' : '')
+      ].join('');
+
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return;
+        if (dlUrl && item.itemType === 'media') {
+          this.openLightbox(dlUrl, title, item.isVideo ? 'video' : 'image');
+        } else if (item.chatId) {
+          this.closeMyFilesModal();
+          this.openChat(item.chatId, item.chatId === 'general' ? 'Общий чат' : 'Диалог');
+        }
+      });
+
+      this.el.myfilesList.appendChild(row);
+    });
+  }
+
+  // ==========================================
+  // МОДАЛЬНОЕ ОКНО «ЧЕРНЫЙ СПИСОК»
+  // ==========================================
+
+  openBlacklistModal() {
+    if (this.el.modalBlacklist) {
+      this.el.modalBlacklist.classList.remove('hidden');
+      this.renderBlacklist();
+    }
+  }
+
+  closeBlacklistModal() {
+    if (this.el.modalBlacklist) {
+      this.el.modalBlacklist.classList.add('hidden');
+    }
+  }
+
+  renderBlacklist() {
+    if (!this.currentUser || !this.el.blacklistItemsList) return;
+    const list = this.storage.getBlacklist(this.currentUser.username);
+    this.el.blacklistItemsList.innerHTML = '';
+    if (list.length === 0) {
+      this.el.blacklistItemsList.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13.5px;">Черный список пуст</div>';
+      return;
+    }
+
+    list.forEach(u => {
+      const row = document.createElement('div');
+      row.className = 'tg-contact-item';
+      row.innerHTML = [
+        '<div class="tg-avatar tg-avatar-user" style="width:38px;height:38px;font-size:15px;background:#e53935;">🚫</div>',
+        '<div class="tg-contact-info">',
+        '  <div class="tg-contact-name">@' + this.escape(u) + '</div>',
+        '  <div class="tg-contact-sub">Заблокирован</div>',
+        '</div>',
+        '<button class="tg-btn tg-btn-secondary" style="font-size:12px;padding:4px 10px;">Разблокировать</button>'
+      ].join('');
+
+      const btn = row.querySelector('button');
+      btn.addEventListener('click', () => {
+        this.unblockUser(u);
+      });
+
+      this.el.blacklistItemsList.appendChild(row);
+    });
+  }
+
+  handleBlacklistAdd() {
+    const input = this.el.blacklistInputUsername;
+    const username = (input ? input.value : '').trim().replace(/^@/, '');
+    if (!username) {
+      this.showToast('Введите @username для блокировки');
+      return;
+    }
+    this.storage.toggleBlacklist(this.currentUser.username, username);
+    if (input) input.value = '';
+    this.renderBlacklist();
+    this.showToast('Пользователь @' + username + ' добавлен в черный список');
+  }
+
+  unblockUser(targetUsername) {
+    this.storage.toggleBlacklist(this.currentUser.username, targetUsername);
+    this.renderBlacklist();
+    this.showToast('Пользователь @' + targetUsername + ' разблокирован');
   }
 
   escape(str) {
