@@ -684,6 +684,24 @@ class TelegramApp {
       currentUserName: document.getElementById('current-user-name'),
       btnMenuLogout: document.getElementById('btn-menu-logout'),
 
+      navRail: document.getElementById('nav-rail'),
+      btnRailToggle: document.getElementById('btn-rail-toggle'),
+      railTabAll: document.getElementById('rail-tab-all'),
+      railTabDm: document.getElementById('rail-tab-dm'),
+      railTabChannels: document.getElementById('rail-tab-channels'),
+      railBtnProfile: document.getElementById('rail-btn-profile'),
+      railUserAvatar: document.getElementById('rail-user-avatar'),
+      railUserName: document.getElementById('rail-user-name'),
+      railBtnNightmode: document.getElementById('rail-btn-nightmode'),
+      railBtnLogout: document.getElementById('rail-btn-logout'),
+
+      mobileNav: document.getElementById('mobile-nav'),
+      mobNavAll: document.getElementById('mob-nav-all'),
+      mobNavDm: document.getElementById('mob-nav-dm'),
+      mobNavChannels: document.getElementById('mob-nav-channels'),
+      mobNavProfile: document.getElementById('mob-nav-profile'),
+      mobUserAvatar: document.getElementById('mob-user-avatar'),
+
       chatSearch: document.getElementById('chat-search'),
       btnSearchClear: document.getElementById('btn-search-clear'),
       searchResultsSection: document.getElementById('search-results-section'),
@@ -821,6 +839,79 @@ class TelegramApp {
     this.el.tabLogin.addEventListener('click', () => this.setAuthMode('login'));
     this.el.tabRegister.addEventListener('click', () => this.setAuthMode('register'));
     this.el.authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
+
+    // Навигационная панель (Desktop Rail toggle)
+    if (this.el.btnRailToggle && this.el.navRail) {
+      this.el.btnRailToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.el.navRail.classList.toggle('expanded');
+      });
+    }
+
+    // Переключение папок / разделов (Все, Личные, Каналы)
+    const setFolder = (folder) => {
+      this.activeFolder = folder;
+      // Синхронизация Desktop Rail
+      if (this.el.railTabAll) this.el.railTabAll.classList.toggle('active', folder === 'all');
+      if (this.el.railTabDm) this.el.railTabDm.classList.toggle('active', folder === 'dm');
+      if (this.el.railTabChannels) this.el.railTabChannels.classList.toggle('active', folder === 'channels');
+      // Синхронизация Mobile Bottom Nav
+      if (this.el.mobNavAll) this.el.mobNavAll.classList.toggle('active', folder === 'all');
+      if (this.el.mobNavDm) this.el.mobNavDm.classList.toggle('active', folder === 'dm');
+      if (this.el.mobNavChannels) this.el.mobNavChannels.classList.toggle('active', folder === 'channels');
+      // Синхронизация Folders Bar (если есть)
+      if (this.el.foldersBar) {
+        this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => {
+          tab.classList.toggle('active', tab.getAttribute('data-folder') === folder);
+        });
+      }
+      this.renderChatList();
+    };
+
+    if (this.el.railTabAll) this.el.railTabAll.addEventListener('click', () => setFolder('all'));
+    if (this.el.railTabDm) this.el.railTabDm.addEventListener('click', () => setFolder('dm'));
+    if (this.el.railTabChannels) this.el.railTabChannels.addEventListener('click', () => setFolder('channels'));
+
+    if (this.el.mobNavAll) this.el.mobNavAll.addEventListener('click', () => setFolder('all'));
+    if (this.el.mobNavDm) this.el.mobNavDm.addEventListener('click', () => setFolder('dm'));
+    if (this.el.mobNavChannels) this.el.mobNavChannels.addEventListener('click', () => setFolder('channels'));
+
+    if (this.el.foldersBar) {
+      this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          setFolder(tab.getAttribute('data-folder') || 'all');
+        });
+      });
+    }
+
+    // Профиль из боковой панели (Desktop) и нижнего бара (Mobile)
+    if (this.el.railBtnProfile) {
+      this.el.railBtnProfile.addEventListener('click', () => {
+        if (this.currentUser) this.openUserProfile(this.currentUser.username, true);
+      });
+    }
+    if (this.el.mobNavProfile) {
+      this.el.mobNavProfile.addEventListener('click', () => {
+        if (this.currentUser) this.openUserProfile(this.currentUser.username, true);
+      });
+    }
+
+    // Переключение темы из Desktop Rail
+    if (this.el.railBtnNightmode) {
+      this.el.railBtnNightmode.addEventListener('click', () => {
+        const currentTheme = localStorage.getItem('tg_theme') || 'dark';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        document.body.className = newTheme === 'dark' ? 'tg-theme-dark' : 'tg-theme-light';
+        localStorage.setItem('tg_theme', newTheme);
+        if (this.el.toggleNightMode) this.el.toggleNightMode.checked = newTheme === 'dark';
+        this.showToast(newTheme === 'dark' ? 'Ночной режим включен' : 'Дневной режим включен');
+      });
+    }
+
+    // Выход из Desktop Rail
+    if (this.el.railBtnLogout) {
+      this.el.railBtnLogout.addEventListener('click', () => this.logout());
+    }
 
     // Меню и выход
     this.el.btnSidebarMenu.addEventListener('click', (e) => {
@@ -2978,21 +3069,32 @@ class TelegramApp {
 
   async openUserProfile(username, isOwn = false) {
     username = (username || '').replace(/^@/, '').toLowerCase();
+    const myUsername = (this.currentUser && this.currentUser.username ? this.currentUser.username : '').toLowerCase();
+    const isReallyOwn = Boolean(isOwn || (myUsername && myUsername === username));
+
     this.activeProfileUser = await this.storage.getUserProfile(username);
     const isMuted = this.isChatMuted(this.currentChatId);
 
     // Заголовок и кнопка редактирования
     if (this.el.profilePanelHeaderTitle) {
-      this.el.profilePanelHeaderTitle.innerText = isOwn ? 'Мой профиль' : 'Информация';
+      this.el.profilePanelHeaderTitle.innerText = isReallyOwn ? 'Мой профиль' : 'Информация';
     }
     if (this.el.btnHeaderEditProfile) {
-      this.el.btnHeaderEditProfile.classList.toggle('hidden', !isOwn);
+      this.el.btnHeaderEditProfile.classList.toggle('hidden', !isReallyOwn);
+      this.el.btnHeaderEditProfile.style.display = isReallyOwn ? '' : 'none';
     }
-    if (this.el.profileEditBox) {
-      this.el.profileEditBox.classList.toggle('hidden', !isOwn);
+    if (this.el.btnEditProfile) {
+      this.el.btnEditProfile.classList.toggle('hidden', !isReallyOwn);
+      this.el.btnEditProfile.style.display = isReallyOwn ? '' : 'none';
+    }
+    const profileEditBox = document.getElementById('profile-edit-box');
+    if (profileEditBox) {
+      profileEditBox.classList.toggle('hidden', !isReallyOwn);
+      profileEditBox.style.display = isReallyOwn ? '' : 'none';
     }
     if (this.el.btnChangeAvatar) {
-      this.el.btnChangeAvatar.classList.toggle('hidden', !isOwn);
+      this.el.btnChangeAvatar.classList.toggle('hidden', !isReallyOwn);
+      this.el.btnChangeAvatar.style.display = isReallyOwn ? '' : 'none';
     }
 
     // Аватар (клик открывает фото на весь экран в Lightbox)
@@ -3186,6 +3288,23 @@ class TelegramApp {
       } else {
         this.el.currentUserAvatar.innerText = initial;
       }
+    }
+    if (this.el.railUserAvatar) {
+      if (avatarSrc) {
+        this.el.railUserAvatar.innerHTML = '<img src="' + avatarSrc + '" alt="Avatar">';
+      } else {
+        this.el.railUserAvatar.innerText = initial;
+      }
+    }
+    if (this.el.mobUserAvatar) {
+      if (avatarSrc) {
+        this.el.mobUserAvatar.innerHTML = '<img src="' + avatarSrc + '" alt="Avatar">';
+      } else {
+        this.el.mobUserAvatar.innerText = initial;
+      }
+    }
+    if (this.el.railUserName && this.currentUser) {
+      this.el.railUserName.innerText = this.currentUser.name || ('@' + this.currentUser.username);
     }
     if (this.el.currentUserName && this.currentUser) {
       this.el.currentUserName.innerText = this.currentUser.name || ('@' + this.currentUser.username);
