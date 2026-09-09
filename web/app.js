@@ -331,6 +331,10 @@ class StorageService {
 
   async getUserChats(currentUsername) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const userMap = new Map();
+    users.forEach(u => userMap.set((u.username || '').toLowerCase(), u));
+
     const myName = currentUsername.toLowerCase();
     const chatMap = new Map();
 
@@ -357,13 +361,15 @@ class StorageService {
         const peer = u1 === myName ? parts[2] : parts[1];
         const existing = chatMap.get(m.chatId);
         const snippet = m.voice ? '🎤 Голосовое сообщение' : (m.circleVideo ? '📹 Видеокружок' : (m.file ? (m.file.type && m.file.type.startsWith('image/') ? '📷 Фото' : '📎 ' + m.file.name) : (m.text || 'Сообщение')));
+        const peerProfile = userMap.get(peer.toLowerCase());
 
         if (!existing || m.createdAt > existing.timestamp) {
           const isFromOther = m.sender.toLowerCase() !== myName;
           chatMap.set(m.chatId, {
             id: m.chatId,
             peer: peer,
-            title: '@' + peer,
+            title: (peerProfile && peerProfile.name) ? peerProfile.name : ('@' + peer),
+            avatar: peerProfile ? peerProfile.avatar : null,
             isGeneral: false,
             lastMsg: snippet,
             lastTime: m.time,
@@ -721,7 +727,11 @@ class TelegramApp {
       lightboxImg: document.getElementById('lightbox-img'),
       lightboxVideo: document.getElementById('lightbox-video'),
       lightboxFilename: document.getElementById('lightbox-filename'),
+      lightboxCounter: document.getElementById('lightbox-counter'),
       lightboxDownload: document.getElementById('lightbox-download'),
+      lightboxPrev: document.getElementById('lightbox-prev'),
+      lightboxNext: document.getElementById('lightbox-next'),
+      lightboxImgwrap: document.getElementById('lightbox-imgwrap'),
 
       btnMainAction: document.getElementById('btn-main-action'),
       recordLock: document.getElementById('tg-record-lock'),
@@ -746,6 +756,8 @@ class TelegramApp {
       btnMenuAbout: document.getElementById('btn-menu-about'),
       currentUserHandle: document.getElementById('current-user-handle'),
 
+      profileModalOverlay: document.getElementById('profile-modal-overlay'),
+      profileBackdrop: document.getElementById('profile-backdrop'),
       profilePanel: document.getElementById('profile-panel'),
       btnCloseProfile: document.getElementById('btn-close-profile'),
       profilePanelHeaderTitle: document.getElementById('profile-panel-header-title'),
@@ -882,12 +894,24 @@ class TelegramApp {
       this.el.btnEditProfile.addEventListener('click', () => this.openEditProfileModal());
     }
 
+    // Закрытие профиля
+    if (this.el.btnCloseProfile) {
+      this.el.btnCloseProfile.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeUserProfile();
+      });
+    }
+    if (this.el.profileBackdrop) {
+      this.el.profileBackdrop.addEventListener('click', () => this.closeUserProfile());
+    }
+
     // Действия в профиле: Написать, Звук, Поделиться, Копировать @username
     if (this.el.btnProfileActionMsg) {
       this.el.btnProfileActionMsg.addEventListener('click', () => {
-        this.el.profilePanel.classList.add('hidden');
-        if (this.activeProfileUser && this.activeProfileUser.username) {
-          this.openDirectChat(this.activeProfileUser.username);
+        const u = this.activeProfileUser && this.activeProfileUser.username ? this.activeProfileUser.username : null;
+        this.closeUserProfile();
+        if (u) {
+          this.openDirectChat(u);
         }
         if (this.el.messageInput) this.el.messageInput.focus();
       });
@@ -1260,12 +1284,55 @@ class TelegramApp {
       }
     });
 
-    // Полноэкранный просмотр фото и видео
-    this.el.lightboxClose.addEventListener('click', () => this.closeLightbox());
-    this.el.lightboxBackdrop.addEventListener('click', () => this.closeLightbox());
+    // Полноэкранный просмотр фото и видео (галерея Lightbox)
+    if (this.el.lightboxClose) this.el.lightboxClose.addEventListener('click', () => this.closeLightbox());
+    if (this.el.lightboxBackdrop) this.el.lightboxBackdrop.addEventListener('click', () => this.closeLightbox());
+    if (this.el.lightboxPrev) this.el.lightboxPrev.addEventListener('click', () => this.lightboxPrev());
+    if (this.el.lightboxNext) this.el.lightboxNext.addEventListener('click', () => this.lightboxNext());
+
+    // Клавиатурная навигация (Escape, ArrowLeft, ArrowRight)
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !this.el.lightboxModal.classList.contains('hidden')) this.closeLightbox();
+      if (this.el.lightboxModal && !this.el.lightboxModal.classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+          this.closeLightbox();
+        } else if (e.key === 'ArrowLeft') {
+          this.lightboxPrev();
+        } else if (e.key === 'ArrowRight') {
+          this.lightboxNext();
+        }
+      } else if (this.el.profileModalOverlay && !this.el.profileModalOverlay.classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+          this.closeUserProfile();
+        }
+      } else if (this.el.modalEditProfile && !this.el.modalEditProfile.classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+          this.closeEditProfileModal();
+        }
+      }
     });
+
+    // Сенсорные свайпы для галереи Lightbox
+    if (this.el.lightboxModal) {
+      let touchStartX = 0;
+      let touchStartY = 0;
+      this.el.lightboxModal.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches[0]) {
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+
+      this.el.lightboxModal.addEventListener('touchend', (e) => {
+        if (e.changedTouches && e.changedTouches[0]) {
+          const deltaX = e.changedTouches[0].clientX - touchStartX;
+          const deltaY = e.changedTouches[0].clientY - touchStartY;
+          if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            if (deltaX > 0) this.lightboxPrev();
+            else this.lightboxNext();
+          }
+        }
+      }, { passive: true });
+    }
 
     // Слушатели событий
     window.addEventListener('tg_new_message', (e) => {
@@ -1405,8 +1472,32 @@ class TelegramApp {
 
     const isGeneral = chatId === 'general';
     this.el.activeChatTitle.innerText = title;
-    this.el.activeChatAvatar.innerText = isGeneral ? '🌐' : title.replace('@', '')[0].toUpperCase();
     this.el.activeChatStatus.innerText = isGeneral ? 'канал общения' : 'в сети';
+
+    if (isGeneral) {
+      this.el.activeChatAvatar.innerHTML = '🌐';
+      this.el.activeChatAvatar.style.cursor = 'default';
+      this.el.activeChatAvatar.onclick = null;
+    } else {
+      const peerUsername = (chatId.startsWith('dm:') ? (chatId.split(':')[1] === this.currentUser.username.toLowerCase() ? chatId.split(':')[2] : chatId.split(':')[1]) : title.replace('@', '')).toLowerCase();
+      this.storage.getUserProfile(peerUsername).then(profile => {
+        if (profile && profile.avatar) {
+          this.el.activeChatAvatar.innerHTML = '<img src="' + profile.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
+          this.el.activeChatAvatar.style.cursor = 'pointer';
+          this.el.activeChatAvatar.onclick = (e) => {
+            e.stopPropagation();
+            this.openLightbox(profile.avatar, (profile.name || ('@' + peerUsername)) + ' — Фото профиля', 'image');
+          };
+        } else {
+          this.el.activeChatAvatar.innerText = peerUsername[0] ? peerUsername[0].toUpperCase() : '?';
+          this.el.activeChatAvatar.style.cursor = 'pointer';
+          this.el.activeChatAvatar.onclick = (e) => {
+            e.stopPropagation();
+            this.openUserProfile(peerUsername, false);
+          };
+        }
+      });
+    }
 
     if (this.isRecordingAudio || this.isRecordingVideo) {
       this.stopRecording(false);
@@ -1442,7 +1533,9 @@ class TelegramApp {
       item.className = 'tg-chat-item' + (isActive ? ' active' : '');
 
       const avatarClass = chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user';
-      const avatarContent = chat.isGeneral ? '🌐' : (chat.peer ? chat.peer[0].toUpperCase() : '?');
+      const avatarContent = chat.isGeneral
+        ? '🌐'
+        : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?'));
 
       item.innerHTML = [
         '<div class="tg-avatar ' + avatarClass + '">',
@@ -1505,6 +1598,29 @@ class TelegramApp {
         }
       }
     }
+
+    const usersList = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const userMap = new Map();
+    usersList.forEach(u => userMap.set((u.username || '').toLowerCase(), u));
+
+    // Сбор всех медиа-элементов чата для непрерывной галереи (Playlist)
+    const chatMediaPlaylist = [];
+    msgs.forEach(m => {
+      const attachments = m.files && m.files.length ? m.files : (m.file ? [m.file] : []);
+      attachments.forEach(file => {
+        const kind = this.getAttachmentKind(file);
+        if (kind === 'image' || kind === 'video') {
+          const src = this.getAttachmentSrc(file);
+          if (src) {
+            chatMediaPlaylist.push({
+              src,
+              name: file.name || (kind === 'video' ? 'video.mp4' : 'photo.png'),
+              kind
+            });
+          }
+        }
+      });
+    });
 
     msgs.forEach(m => {
       const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
@@ -1599,13 +1715,27 @@ class TelegramApp {
         .concat(messageAttachments.map(file => file.name || ''))
         .join(' ');
 
+      // Аватар отправителя для входящих сообщений (Telegram Style)
+      let avatarHtml = '';
+      if (!isOut) {
+        const senderProfile = userMap.get((m.sender || '').toLowerCase()) || {};
+        const senderAvatarSrc = senderProfile.avatar || null;
+        const senderInitial = (m.sender || '?')[0].toUpperCase();
+        avatarHtml = senderAvatarSrc
+          ? '<div class="tg-msg-avatar" data-sender="' + this.escapeAttr(m.sender) + '" title="@' + this.escapeAttr(m.sender) + '"><img src="' + senderAvatarSrc + '" alt="' + this.escapeAttr(m.sender) + '"></div>'
+          : '<div class="tg-msg-avatar" data-sender="' + this.escapeAttr(m.sender) + '" title="@' + this.escapeAttr(m.sender) + '">' + senderInitial + '</div>';
+      }
+
       wrap.innerHTML = [
-        '<div class="tg-msg-bubble ' + (isCircle ? 'is-circle' : '') + '" data-msg-id="' + m.id + '" data-search-text="' + this.escapeAttr(messageSearchText) + '">',
-        (!isOut && !isCircle ? '  <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
+        '<div class="tg-bubble-row">',
+        (!isOut ? avatarHtml : ''),
+        '  <div class="tg-msg-bubble ' + (isCircle ? 'is-circle' : '') + '" data-msg-id="' + m.id + '" data-search-text="' + this.escapeAttr(messageSearchText) + '">',
+        (!isOut && !isCircle ? '    <div class="tg-sender-heading">@' + this.escape(m.sender) + '</div>' : ''),
         specialContent,
-        (m.text ? '  <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
+        (m.text ? '    <span class="tg-msg-content">' + this.escape(m.text) + '</span>' : ''),
         bubbleMetaHtml,
         reactionsHtml,
+        '  </div>',
         '</div>'
       ].join('');
 
@@ -1910,14 +2040,30 @@ class TelegramApp {
         });
       }
 
-      // Полноэкранный просмотр фото и видео
+      // Клик по аватару отправителя: просмотр фото профиля или открытие информации
+      const msgAvatar = wrap.querySelector('.tg-msg-avatar');
+      if (msgAvatar) {
+        msgAvatar.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const sender = msgAvatar.getAttribute('data-sender');
+          const uProfile = userMap.get((sender || '').toLowerCase());
+          if (uProfile && uProfile.avatar) {
+            this.openLightbox(uProfile.avatar, (uProfile.name || ('@' + sender)) + ' — Фото профиля', 'image');
+          } else {
+            this.openUserProfile(sender, false);
+          }
+        });
+      }
+
+      // Полноэкранный просмотр фото и видео с непрерывной галереей (Telegram Lightbox)
       wrap.querySelectorAll('.tg-media-open').forEach(mediaEl => {
         mediaEl.addEventListener('click', () => {
-          this.openLightbox(
-            mediaEl.getAttribute('data-src') || '',
-            mediaEl.getAttribute('data-name') || 'media',
-            mediaEl.getAttribute('data-media-kind') || 'image'
-          );
+          const src = mediaEl.getAttribute('data-src') || '';
+          const name = mediaEl.getAttribute('data-name') || 'media';
+          const kind = mediaEl.getAttribute('data-media-kind') || 'image';
+          let idx = chatMediaPlaylist.findIndex(p => p.src === src);
+          if (idx === -1) idx = 0;
+          this.openLightbox(src, name, kind, chatMediaPlaylist.length ? chatMediaPlaylist : [{ src, name, kind }], idx);
         });
       });
       wrap.querySelectorAll('.tg-attachment-download').forEach(downloadEl => {
@@ -2290,27 +2436,79 @@ class TelegramApp {
     }
   }
 
-  openLightbox(src, name, kind = 'image') {
-    if (!src) return;
-    const isVideo = kind === 'video';
-    this.el.lightboxImg.classList.toggle('hidden', isVideo);
-    this.el.lightboxVideo.classList.toggle('hidden', !isVideo);
-    this.el.lightboxImg.src = isVideo ? '' : src;
-    this.el.lightboxVideo.src = isVideo ? src : '';
-    this.el.lightboxFilename.innerText = name;
-    this.el.lightboxDownload.href = src;
-    this.el.lightboxDownload.setAttribute('download', name);
-    this.el.lightboxModal.classList.remove('hidden');
+  openLightbox(src, name, kind = 'image', playlist = null, index = 0) {
+    if (!src && (!playlist || !playlist.length)) return;
+    this.lightboxPlaylist = (playlist && playlist.length) ? playlist : [{ src, name, kind }];
+    this.lightboxIndex = typeof index === 'number' && index >= 0 && index < this.lightboxPlaylist.length ? index : 0;
+    this.lightboxShowCurrent();
+    if (this.el.lightboxModal) this.el.lightboxModal.classList.remove('hidden');
     document.body.classList.add('tg-media-viewer-open');
-    if (isVideo) this.el.lightboxVideo.play().catch(() => {});
+  }
+
+  lightboxShowCurrent() {
+    if (!this.lightboxPlaylist || !this.lightboxPlaylist.length) return;
+    const item = this.lightboxPlaylist[this.lightboxIndex];
+    if (!item) return;
+
+    const isVideo = item.kind === 'video';
+    if (this.el.lightboxImg) {
+      this.el.lightboxImg.classList.toggle('hidden', isVideo);
+      this.el.lightboxImg.src = isVideo ? '' : item.src;
+    }
+    if (this.el.lightboxVideo) {
+      this.el.lightboxVideo.classList.toggle('hidden', !isVideo);
+      this.el.lightboxVideo.pause();
+      this.el.lightboxVideo.src = isVideo ? item.src : '';
+      if (isVideo) {
+        this.el.lightboxVideo.load();
+        this.el.lightboxVideo.play().catch(() => {});
+      }
+    }
+    if (this.el.lightboxFilename) {
+      this.el.lightboxFilename.innerText = item.name || (isVideo ? 'Видео' : 'Фото');
+    }
+    if (this.el.lightboxDownload) {
+      this.el.lightboxDownload.href = item.src;
+      this.el.lightboxDownload.setAttribute('download', item.name || (isVideo ? 'video.mp4' : 'photo.png'));
+    }
+
+    const total = this.lightboxPlaylist.length;
+    if (total > 1) {
+      if (this.el.lightboxPrev) this.el.lightboxPrev.classList.remove('hidden');
+      if (this.el.lightboxNext) this.el.lightboxNext.classList.remove('hidden');
+      if (this.el.lightboxCounter) {
+        this.el.lightboxCounter.classList.remove('hidden');
+        this.el.lightboxCounter.innerText = (this.lightboxIndex + 1) + ' из ' + total;
+      }
+    } else {
+      if (this.el.lightboxPrev) this.el.lightboxPrev.classList.add('hidden');
+      if (this.el.lightboxNext) this.el.lightboxNext.classList.add('hidden');
+      if (this.el.lightboxCounter) this.el.lightboxCounter.classList.add('hidden');
+    }
+  }
+
+  lightboxNext() {
+    if (!this.lightboxPlaylist || this.lightboxPlaylist.length <= 1) return;
+    this.lightboxIndex = (this.lightboxIndex + 1) % this.lightboxPlaylist.length;
+    this.lightboxShowCurrent();
+  }
+
+  lightboxPrev() {
+    if (!this.lightboxPlaylist || this.lightboxPlaylist.length <= 1) return;
+    this.lightboxIndex = (this.lightboxIndex - 1 + this.lightboxPlaylist.length) % this.lightboxPlaylist.length;
+    this.lightboxShowCurrent();
   }
 
   closeLightbox() {
-    this.el.lightboxModal.classList.add('hidden');
-    this.el.lightboxVideo.pause();
-    this.el.lightboxVideo.removeAttribute('src');
-    this.el.lightboxVideo.load();
-    this.el.lightboxImg.src = '';
+    if (this.el.lightboxModal) this.el.lightboxModal.classList.add('hidden');
+    if (this.el.lightboxVideo) {
+      this.el.lightboxVideo.pause();
+      this.el.lightboxVideo.removeAttribute('src');
+      this.el.lightboxVideo.load();
+    }
+    if (this.el.lightboxImg) this.el.lightboxImg.src = '';
+    this.lightboxPlaylist = [];
+    this.lightboxIndex = 0;
     document.body.classList.remove('tg-media-viewer-open');
   }
 
@@ -2773,8 +2971,13 @@ class TelegramApp {
     }
   }
 
+  closeUserProfile() {
+    if (this.el.profileModalOverlay) this.el.profileModalOverlay.classList.add('hidden');
+    if (this.el.profilePanel) this.el.profilePanel.classList.add('hidden');
+  }
+
   async openUserProfile(username, isOwn = false) {
-    username = username.replace(/^@/, '').toLowerCase();
+    username = (username || '').replace(/^@/, '').toLowerCase();
     this.activeProfileUser = await this.storage.getUserProfile(username);
     const isMuted = this.isChatMuted(this.currentChatId);
 
@@ -2792,15 +2995,21 @@ class TelegramApp {
       this.el.btnChangeAvatar.classList.toggle('hidden', !isOwn);
     }
 
-    // Аватар
-    if (this.activeProfileUser.avatar) {
-      this.el.profileAvatarLarge.innerHTML = '<img src="' + this.activeProfileUser.avatar + '" alt="Avatar">';
+    // Аватар (клик открывает фото на весь экран в Lightbox)
+    if (this.activeProfileUser && this.activeProfileUser.avatar) {
+      this.el.profileAvatarLarge.innerHTML = '<img src="' + this.activeProfileUser.avatar + '" alt="Avatar" style="cursor:pointer;">';
+      this.el.profileAvatarLarge.style.cursor = 'pointer';
+      this.el.profileAvatarLarge.onclick = () => {
+        this.openLightbox(this.activeProfileUser.avatar, (this.activeProfileUser.name || ('@' + username)) + ' — Фото профиля', 'image');
+      };
     } else {
-      this.el.profileAvatarLarge.innerText = username === 'general' ? '🌐' : username[0].toUpperCase();
+      this.el.profileAvatarLarge.innerText = username === 'general' ? '🌐' : (username[0] ? username[0].toUpperCase() : '?');
+      this.el.profileAvatarLarge.style.cursor = 'default';
+      this.el.profileAvatarLarge.onclick = null;
     }
 
     // Имя и статус
-    this.el.profileName.innerText = this.activeProfileUser.name || ('@' + username);
+    this.el.profileName.innerText = (this.activeProfileUser && this.activeProfileUser.name) || ('@' + username);
     this.el.profileStatus.innerText = isOwn ? 'в сети' : 'был(а) недавно';
 
     // Поля информации
@@ -2808,7 +3017,7 @@ class TelegramApp {
       this.el.profileUsernameVal.innerText = '@' + username;
     }
     if (this.el.profileBioVal) {
-      this.el.profileBioVal.innerText = this.activeProfileUser.bio || (isOwn ? 'Пользуюсь Telegram Web ✨' : 'О себе пока ничего не написано');
+      this.el.profileBioVal.innerText = (this.activeProfileUser && this.activeProfileUser.bio) || (isOwn ? 'Пользуюсь Telegram Web ✨' : 'О себе пока ничего не написано');
     }
 
     // Звук / Уведомления
@@ -2818,7 +3027,8 @@ class TelegramApp {
     const targetChatId = isOwn ? 'general' : (this.currentChatId || 'general');
     await this.renderProfileMediaTabs(targetChatId);
 
-    this.el.profilePanel.classList.remove('hidden');
+    if (this.el.profileModalOverlay) this.el.profileModalOverlay.classList.remove('hidden');
+    if (this.el.profilePanel) this.el.profilePanel.classList.remove('hidden');
   }
 
   async renderProfileMediaTabs(chatId) {
