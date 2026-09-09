@@ -1412,12 +1412,19 @@ html, body {
   stroke-linecap: round;
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  transition: stroke-dashoffset 0.08s linear;
+  transition: none;
+  will-change: stroke-dashoffset;
   filter: drop-shadow(0 0 3px rgba(51, 144, 236, 0.8));
 }
 
-.tg-circle-card.playing .tg-circle-progress {
+.tg-circle-card.playing .tg-circle-progress,
+.tg-circle-card.progress-visible .tg-circle-progress,
+.tg-circle-card.completed .tg-circle-progress {
   opacity: 1;
+}
+
+.tg-circle-card.completed .tg-circle-progress-value {
+  stroke-dashoffset: 0;
 }
 
 .tg-circle-play-overlay {
