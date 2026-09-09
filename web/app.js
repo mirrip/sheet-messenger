@@ -1189,6 +1189,32 @@ class TelegramApp {
   }
 
   bindEvents() {
+    // ПОИСК СООБЩЕНИЙ ВНУТРИ ТЕКУЩЕГО ЧАТА
+    if (this.el.btnChatSearch) {
+      this.el.btnChatSearch.addEventListener('click', () => this.openMessageSearch());
+    }
+    if (this.el.messageSearchClose) {
+      this.el.messageSearchClose.addEventListener('click', () => this.closeMessageSearch());
+    }
+    if (this.el.messageSearchInput) {
+      this.el.messageSearchInput.addEventListener('input', () => this.updateMessageSearch());
+      this.el.messageSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.closeMessageSearch();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          this.moveMessageSearch(e.shiftKey ? -1 : 1);
+        }
+      });
+    }
+    if (this.el.messageSearchPrev) {
+      this.el.messageSearchPrev.addEventListener('click', () => this.moveMessageSearch(-1));
+    }
+    if (this.el.messageSearchNext) {
+      this.el.messageSearchNext.addEventListener('click', () => this.moveMessageSearch(1));
+    }
+
     // ПЕРЕКЛЮЧЕНИЕ ГЛАВНЫХ РАЗДЕЛОВ (ЧАТЫ, КОНТАКТЫ, ПРОФИЛЬ, НАСТРОЙКИ)
     if (this.el.railNavChats) this.el.railNavChats.addEventListener('click', () => this.switchSidebarView('chats'));
     if (this.el.railNavContacts) this.el.railNavContacts.addEventListener('click', () => this.switchSidebarView('contacts'));
