@@ -313,6 +313,7 @@ class TelegramApp {
     this.currentPlayingAudio = null;
     this.currentPlayingAudioBtn = null;
     this._mediaBlobUrlCache = new Map(); // mediaId -> blobUrl (стабильный кэш)
+    this._pendingCirclePosterBlobPromise = null;
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -352,6 +353,109 @@ class TelegramApp {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  async captureVideoPosterBlob(video, seekToFirstFrame = false) {
+    if (!video) return null;
+
+    const waitForFrame = () => new Promise((resolve) => {
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve();
+        return;
+      }
+
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        video.removeEventListener('loadeddata', finish);
+        video.removeEventListener('canplay', finish);
+        resolve();
+      };
+      const timeoutId = setTimeout(finish, 2200);
+      video.addEventListener('loadeddata', finish, { once: true });
+      video.addEventListener('canplay', finish, { once: true });
+    });
+
+    await waitForFrame();
+    if (!video.videoWidth || !video.videoHeight) return null;
+
+    if (seekToFirstFrame && Number.isFinite(video.duration) && video.duration > 0.08) {
+      const targetTime = Math.min(0.16, video.duration / 4);
+      if (Math.abs((video.currentTime || 0) - targetTime) > 0.03) {
+        await new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            video.removeEventListener('seeked', finish);
+            resolve();
+          };
+          const timeoutId = setTimeout(finish, 1400);
+          video.addEventListener('seeked', finish, { once: true });
+          try { video.currentTime = targetTime; } catch (_) { finish(); }
+        });
+      }
+    }
+
+    try {
+      const size = 360;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) return null;
+
+      const sourceSize = Math.min(video.videoWidth, video.videoHeight);
+      const sourceX = Math.max(0, (video.videoWidth - sourceSize) / 2);
+      const sourceY = Math.max(0, (video.videoHeight - sourceSize) / 2);
+      ctx.drawImage(video, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+
+      return await new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob || null), 'image/jpeg', 0.84);
+      });
+    } catch (err) {
+      console.warn('Circle poster capture error:', err);
+      return null;
+    }
+  }
+
+  applyCirclePoster(video, circleCard, posterUrl) {
+    if (!video || !circleCard || !posterUrl) return;
+    const image = new Image();
+    image.onload = () => {
+      video.poster = posterUrl;
+      circleCard.classList.add('poster-ready');
+    };
+    image.onerror = () => circleCard.classList.remove('poster-ready');
+    image.src = posterUrl;
+  }
+
+  async ensureCirclePoster(video, circleCard, posterId) {
+    if (!video || !circleCard || !posterId || circleCard.classList.contains('poster-ready')) return;
+    const cachedPoster = this._mediaBlobUrlCache.get(posterId);
+    if (cachedPoster) {
+      this.applyCirclePoster(video, circleCard, cachedPoster);
+      return;
+    }
+
+    const savedPoster = await this.storage.getMediaBlob(posterId);
+    if (savedPoster) {
+      const savedPosterUrl = URL.createObjectURL(savedPoster);
+      this._mediaBlobUrlCache.set(posterId, savedPosterUrl);
+      this.applyCirclePoster(video, circleCard, savedPosterUrl);
+      return;
+    }
+
+    const posterBlob = await this.captureVideoPosterBlob(video, true);
+    if (!posterBlob) return;
+    await this.storage.saveMediaBlob(posterId, posterBlob);
+    const posterUrl = URL.createObjectURL(posterBlob);
+    this._mediaBlobUrlCache.set(posterId, posterUrl);
+    this.applyCirclePoster(video, circleCard, posterUrl);
+    try { video.currentTime = 0; } catch (_) {}
   }
 
   stopAllPlayingMedia() {
@@ -968,6 +1072,11 @@ class TelegramApp {
         if (b) {
           this._mediaBlobUrlCache.set(m.circleVideo.mediaId, URL.createObjectURL(b));
         }
+        const posterId = m.circleVideo.posterId || (m.circleVideo.mediaId + '_poster');
+        if (!this._mediaBlobUrlCache.has(posterId)) {
+          const posterBlob = await this.storage.getMediaBlob(posterId);
+          if (posterBlob) this._mediaBlobUrlCache.set(posterId, URL.createObjectURL(posterBlob));
+        }
       }
       if (m.voice && m.voice.mediaId && !this._mediaBlobUrlCache.has(m.voice.mediaId)) {
         const b = await this.storage.getMediaBlob(m.voice.mediaId);
@@ -988,15 +1097,30 @@ class TelegramApp {
 
       // 1. ВИДЕОКРУЖОЧЕК TELEGRAM (по умолчанию на паузе, увеличивается при включении)
       if (m.circleVideo) {
-        const dur = m.circleVideo.duration ? String(m.circleVideo.duration).padStart(2, '0') : '00';
+        const dur = m.circleVideo.duration || 0;
         const mediaId = m.circleVideo.mediaId || '';
+        const posterId = m.circleVideo.posterId || (mediaId ? mediaId + '_poster' : (m.id + '_poster'));
         const circleSrc = this._mediaBlobUrlCache.get(mediaId) || m.circleVideo.data || '';
         specialContent = [
-          '<div class="tg-circle-card" data-media-id="' + mediaId + '">',
-          '  <video src="' + circleSrc + '" playsinline webkit-playsinline preload="auto"></video>',
-          '  <div class="tg-circle-time-badge">00:' + dur + ' • ' + m.time + '</div>',
-          '  <div class="tg-circle-play-overlay">',
-          '    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+          '<div class="tg-circle-message">',
+          '  <div class="tg-circle-card" data-media-id="' + mediaId + '" data-poster-id="' + posterId + '">',
+          '    <svg class="tg-circle-progress" viewBox="0 0 100 100" aria-hidden="true">',
+          '      <circle class="tg-circle-progress-track" cx="50" cy="50" r="47" pathLength="100"></circle>',
+          '      <circle class="tg-circle-progress-value" cx="50" cy="50" r="47" pathLength="100"></circle>',
+          '    </svg>',
+          '    <div class="tg-circle-media">',
+          '      <div class="tg-circle-poster-fallback" aria-hidden="true">',
+          '        <svg viewBox="0 0 24 24" width="42" height="42" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>',
+          '      </div>',
+          '      <video src="' + circleSrc + '" playsinline webkit-playsinline preload="auto" muted></video>',
+          '      <div class="tg-circle-play-overlay">',
+          '        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+          '      </div>',
+          '  </div>',
+          '  </div>',
+          '  <div class="tg-circle-meta">',
+          '    <span class="tg-circle-duration">' + this.formatDuration(dur) + '</span>',
+          '    <span class="tg-circle-sent-time">' + this.escape(m.time || '') + (isOut ? ' <span class="tg-checks">✓✓</span>' : '') + '</span>',
           '  </div>',
           '</div>'
         ].join('');
@@ -1099,18 +1223,20 @@ class TelegramApp {
       const circleCard = wrap.querySelector('.tg-circle-card');
       if (circleCard) {
         const vid = circleCard.querySelector('video');
-        const timeBadge = circleCard.querySelector('.tg-circle-time-badge');
+        const progressValue = circleCard.querySelector('.tg-circle-progress-value');
         const mediaId = circleCard.getAttribute('data-media-id');
+        const posterId = circleCard.getAttribute('data-poster-id');
         const totalDur = (m.circleVideo && m.circleVideo.duration) || 0;
-        const totalDurStr = String(totalDur).padStart(2, '0');
+        const initialPosterUrl = this._mediaBlobUrlCache.get(posterId) || (m.circleVideo && m.circleVideo.poster) || '';
 
-        // Динамический таймер проигрывания кружочка
+        if (initialPosterUrl) this.applyCirclePoster(vid, circleCard, initialPosterUrl);
+        else this.ensureCirclePoster(vid, circleCard, posterId);
+
+        // Кольцо прогресса синхронизировано с реальной длительностью видео.
         vid.addEventListener('timeupdate', () => {
-          if (!vid.paused && timeBadge && !isNaN(vid.currentTime)) {
-            const cur = Math.floor(vid.currentTime);
-            const curStr = String(cur).padStart(2, '0');
-            timeBadge.innerText = '00:' + curStr + ' / 00:' + totalDurStr;
-          }
+          const duration = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : totalDur;
+          const progress = duration > 0 ? Math.min(100, Math.max(0, (vid.currentTime / duration) * 100)) : 0;
+          if (progressValue) progressValue.style.strokeDashoffset = String(100 - progress);
         });
 
         // По окончании видео: возврат в исходное состояние (пауза и компактный размер)
@@ -1118,7 +1244,7 @@ class TelegramApp {
           vid.pause();
           circleCard.classList.remove('playing', 'expanded');
           try { vid.currentTime = 0; } catch (_) {}
-          if (timeBadge) timeBadge.innerText = '00:' + totalDurStr + ' • ' + m.time;
+          if (progressValue) progressValue.style.strokeDashoffset = '100';
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
@@ -1157,7 +1283,11 @@ class TelegramApp {
                 vid.muted = true;
                 vid.play().then(() => {
                   vid.muted = false;
-                }).catch(e2 => console.error('Play circle fallback error:', e2));
+                }).catch(e2 => {
+                  circleCard.classList.remove('playing', 'expanded');
+                  if (this.currentPlayingCircle === vid) this.currentPlayingCircle = null;
+                  console.error('Play circle fallback error:', e2);
+                });
               });
             }
           } else {
@@ -1724,10 +1854,23 @@ class TelegramApp {
           const finalType = selectedMime || (this.recordedChunks[0] && this.recordedChunks[0].type) || 'video/webm';
           const blob = new Blob(this.recordedChunks, { type: finalType });
           const mediaId = 'circle_' + Date.now();
+          const posterId = mediaId + '_poster';
+          const pendingPosterPromise = this._pendingCirclePosterBlobPromise;
+          const posterBlob = pendingPosterPromise
+            ? await pendingPosterPromise
+            : await this.captureVideoPosterBlob(this.el.videoStreamPreview, false);
+          if (this._pendingCirclePosterBlobPromise === pendingPosterPromise) {
+            this._pendingCirclePosterBlobPromise = null;
+          }
           await this.storage.saveMediaBlob(mediaId, blob);
           this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
+          if (posterBlob) {
+            await this.storage.saveMediaBlob(posterId, posterBlob);
+            this._mediaBlobUrlCache.set(posterId, URL.createObjectURL(posterBlob));
+          }
           await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
             mediaId: mediaId,
+            posterId: posterId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
           await this.refreshData();
@@ -1824,6 +1967,14 @@ class TelegramApp {
     this.shouldSendRecorded = send;
     this.isRecordingLocked = false;
     this.isHoldingMainAction = false;
+
+    // Захватываем кадр до скрытия превью и остановки камеры: это особенно
+    // важно для Android WebView, который часто не рисует кадр у paused video.
+    if (send && this.recordMode === 'video' && this.el.videoStreamPreview && this.el.videoStreamPreview.srcObject) {
+      this._pendingCirclePosterBlobPromise = this.captureVideoPosterBlob(this.el.videoStreamPreview, false);
+    } else if (!send) {
+      this._pendingCirclePosterBlobPromise = null;
+    }
     if (this.el.recordLock) {
       this.el.recordLock.classList.add('hidden');
       this.el.recordLock.classList.remove('locked');
