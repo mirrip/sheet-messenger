@@ -336,7 +336,11 @@ class StorageService {
     const chatMsgs = all.filter(m => {
       if (m.chatId === dmChatId) return true;
       if (u2 === 'general' && m.chatId === 'general') return true;
-      if (m.chatId === 'general' && (m.sender.toLowerCase() === u2 || (m.text && m.text.toLowerCase().includes('@' + u2)))) return true;
+      const sender = (m.sender || '').toLowerCase();
+      if (sender === u2) {
+        if (m.chatId === 'general' || m.chatId.includes(u1)) return true;
+      }
+      if (sender === u1 && (m.chatId === dmChatId || (m.text && m.text.toLowerCase().includes('@' + u2)))) return true;
       return false;
     });
 
@@ -3554,6 +3558,282 @@ class TelegramApp {
     this.updateModalAvatarUI();
   }
 
+  getFileBadge(fileName, mimeType) {
+    const ext = (fileName || '').split('.').pop().toLowerCase();
+    let bg = '#546e7a';
+    let label = ext ? ext.substring(0, 4).toUpperCase() : 'DOC';
+
+    if (['pdf'].includes(ext)) { bg = '#e53935'; label = 'PDF'; }
+    else if (['doc', 'docx', 'rtf'].includes(ext)) { bg = '#1e88e5'; label = 'DOC'; }
+    else if (['xls', 'xlsx', 'csv'].includes(ext)) { bg = '#2e7d32'; label = 'XLS'; }
+    else if (['ppt', 'pptx'].includes(ext)) { bg = '#d84315'; label = 'PPT'; }
+    else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) { bg = '#ef6c00'; label = 'ZIP'; }
+    else if (['apk'].includes(ext)) { bg = '#00897b'; label = 'APK'; }
+    else if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(ext)) { bg = '#8e24aa'; label = 'AUDIO'; }
+    else if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) { bg = '#0288d1'; label = 'VIDEO'; }
+    else if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) { bg = '#43a047'; label = 'IMG'; }
+    else if (['txt', 'log', 'md', 'json', 'js', 'html', 'css'].includes(ext)) { bg = '#455a64'; label = ext.toUpperCase(); }
+
+    return { bg, label };
+  }
+
+  formatSize(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+  }
+
+  async downloadFile(file) {
+    if (!file) return;
+    const fileName = file.name || 'document';
+    let url = file.dataUrl || file.url || file.data;
+    if (!url && file.mediaId) {
+      url = this._mediaBlobUrlCache.get(file.mediaId);
+      if (!url) {
+        const blob = await this.storage.getMediaBlob(file.mediaId);
+        if (blob) {
+          url = URL.createObjectURL(blob);
+          this._mediaBlobUrlCache.set(file.mediaId, url);
+        }
+      }
+    }
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 100);
+      this.showToast('Скачивание файла «' + fileName + '» началось 📥');
+    } else {
+      this.showToast('Файл недоступен для скачивания');
+    }
+  }
+
+  createProfileFileCard(item) {
+    const row = document.createElement('div');
+    row.className = 'tg-feed-file-row';
+    const file = item.file || {};
+    const fileName = file.name || 'Документ';
+    const sizeStr = file.size ? this.formatSize(file.size) : '';
+    const { bg, label } = this.getFileBadge(fileName, file.type);
+    const timeStr = item.time ? item.time : '';
+    const senderStr = item.sender ? (' · @' + item.sender) : '';
+
+    row.innerHTML = [
+      '<div class="tg-doc-badge" style="background:' + bg + ';">' + label + '</div>',
+      '<div class="tg-feed-file-info">',
+      '  <div class="tg-feed-file-name" title="' + this.escapeAttr(fileName) + '">' + this.escape(fileName) + '</div>',
+      '  <div class="tg-feed-file-meta">' + sizeStr + (timeStr ? ' · ' + timeStr : '') + this.escape(senderStr) + '</div>',
+      '</div>',
+      '<button type="button" class="tg-file-dl-btn" title="Скачать файл">',
+      '  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+      '</button>'
+    ].join('');
+
+    const dlBtn = row.querySelector('.tg-file-dl-btn');
+    const triggerDownload = (e) => {
+      e.stopPropagation();
+      this.downloadFile(file);
+    };
+
+    if (dlBtn) dlBtn.addEventListener('click', triggerDownload);
+    row.addEventListener('click', triggerDownload);
+    return row;
+  }
+
+  createProfileVoiceCard(item) {
+    const card = document.createElement('div');
+    card.className = 'tg-feed-voice-card';
+    const isCircle = item.type === 'circle';
+    const totalDur = (item.voice && item.voice.duration) || (item.circleVideo && item.circleVideo.duration) || 0;
+    const voiceMediaId = item.voice ? item.voice.mediaId : (item.circleVideo ? item.circleVideo.mediaId : null);
+    let voiceSrc = item.voice ? (item.voice.dataUrl || item.voice.data || item.voice.url) : (item.circleVideo ? (item.circleVideo.dataUrl || item.circleVideo.url) : null);
+
+    if (isCircle) {
+      // Карточка видеокружка
+      card.innerHTML = [
+        '<div class="tg-voice-play-btn" style="background:#0284c7;" title="Воспроизвести кружок">',
+        '  <span style="font-size:18px;">📹</span>',
+        '</div>',
+        '<div class="tg-feed-voice-meta">',
+        '  <div class="tg-feed-voice-title">Видеокружок (' + this.formatDuration(totalDur) + ')</div>',
+        '  <div class="tg-feed-voice-sub">от @' + this.escape(item.sender) + (item.time ? ' · ' + item.time : '') + '</div>',
+        '</div>',
+        '<button type="button" class="tg-file-dl-btn" title="Смотреть кружок" style="padding:4px 8px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Смотреть</button>'
+      ].join('');
+
+      const playCircle = async (e) => {
+        e.stopPropagation();
+        let src = voiceSrc;
+        if (!src && voiceMediaId) {
+          src = this._mediaBlobUrlCache.get(voiceMediaId);
+          if (!src) {
+            const blob = await this.storage.getMediaBlob(voiceMediaId);
+            if (blob) {
+              src = URL.createObjectURL(blob);
+              this._mediaBlobUrlCache.set(voiceMediaId, src);
+            }
+          }
+        }
+        if (src) {
+          this.openLightbox(src, 'Видеокружок от @' + (item.sender || 'пользователя'), 'video');
+        } else {
+          this.showToast('Медиафайл кружочка недоступен');
+        }
+      };
+
+      card.addEventListener('click', playCircle);
+      return card;
+    }
+
+    // Карточка голосового сообщения с живым плеером
+    const barsCount = 26;
+    const waveformHtml = this.generateWaveformBars(item.msgId || item.time || 'profile_voice', barsCount);
+
+    card.innerHTML = [
+      '<button type="button" class="tg-voice-play-btn" title="Воспроизвести">',
+      '  <svg class="tg-icon-play" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      '  <svg class="tg-icon-pause hidden" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
+      '</button>',
+      '<div class="tg-feed-voice-meta">',
+      '  <div class="tg-voice-waveform">',
+      '    <div class="tg-waveform-bars tg-waveform-bg">' + waveformHtml + '</div>',
+      '    <div class="tg-waveform-fg" style="width: 0%;"><div class="tg-waveform-bars">' + waveformHtml + '</div></div>',
+      '  </div>',
+      '  <div class="tg-feed-voice-row">',
+      '    <span class="tg-voice-time-label">' + this.formatDuration(totalDur) + '</span>',
+      '    <span class="tg-feed-voice-sub">от @' + this.escape(item.sender) + (item.time ? ' · ' + item.time : '') + '</span>',
+      '  </div>',
+      '</div>'
+    ].join('');
+
+    const playBtn = card.querySelector('.tg-voice-play-btn');
+    const playIcon = card.querySelector('.tg-icon-play');
+    const pauseIcon = card.querySelector('.tg-icon-pause');
+    const waveformFg = card.querySelector('.tg-waveform-fg');
+    const waveformEl = card.querySelector('.tg-voice-waveform');
+    const timeLabel = card.querySelector('.tg-voice-time-label');
+
+    let audio = null;
+
+    const setupAudioEvents = (a) => {
+      a.addEventListener('timeupdate', () => {
+        const dur = a.duration || totalDur || 1;
+        const progress = Math.min(1, Math.max(0, a.currentTime / dur));
+        if (waveformFg) waveformFg.style.width = (progress * 100) + '%';
+        if (timeLabel) timeLabel.innerText = this.formatDuration(Math.floor(a.currentTime)) + ' / ' + this.formatDuration(Math.floor(dur));
+      });
+      a.addEventListener('ended', () => {
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+        if (waveformFg) waveformFg.style.width = '0%';
+        if (timeLabel) timeLabel.innerText = this.formatDuration(totalDur);
+        if (this.currentPlayingAudio === a) {
+          this.currentPlayingAudio = null;
+          this.currentPlayingAudioBtn = null;
+        }
+      });
+      a.addEventListener('pause', () => {
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+      });
+    };
+
+    const togglePlay = async () => {
+      if (!audio) {
+        if (!voiceSrc && voiceMediaId) {
+          let url = this._mediaBlobUrlCache.get(voiceMediaId);
+          if (!url) {
+            const b = await this.storage.getMediaBlob(voiceMediaId);
+            if (b) {
+              url = URL.createObjectURL(b);
+              this._mediaBlobUrlCache.set(voiceMediaId, url);
+            }
+          }
+          if (url) voiceSrc = url;
+        }
+        if (voiceSrc) {
+          audio = new Audio(voiceSrc);
+          setupAudioEvents(audio);
+        }
+      }
+      if (!audio) {
+        this.showToast('Голосовое сообщение недоступно для воспроизведения');
+        return;
+      }
+
+      if (audio.paused) {
+        this.stopAllPlayingMedia(audio);
+        this.currentPlayingAudio = audio;
+        this.currentPlayingAudioBtn = playBtn;
+
+        if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+          try { audio.currentTime = 0; } catch (_) {}
+        }
+
+        audio.play().then(() => {
+          if (playIcon) playIcon.classList.add('hidden');
+          if (pauseIcon) pauseIcon.classList.remove('hidden');
+        }).catch(err => {
+          console.warn('Audio play error:', err);
+          if (playIcon) playIcon.classList.remove('hidden');
+          if (pauseIcon) pauseIcon.classList.add('hidden');
+        });
+      } else {
+        audio.pause();
+        if (playIcon) playIcon.classList.remove('hidden');
+        if (pauseIcon) pauseIcon.classList.add('hidden');
+        if (this.currentPlayingAudio === audio) {
+          this.currentPlayingAudio = null;
+          this.currentPlayingAudioBtn = null;
+        }
+      }
+    };
+
+    playBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePlay();
+    });
+
+    waveformEl.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const rect = waveformEl.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+      if (!audio) {
+        if (!voiceSrc && voiceMediaId) {
+          let url = this._mediaBlobUrlCache.get(voiceMediaId);
+          if (!url) {
+            const b = await this.storage.getMediaBlob(voiceMediaId);
+            if (b) {
+              url = URL.createObjectURL(b);
+              this._mediaBlobUrlCache.set(voiceMediaId, url);
+            }
+          }
+          if (url) voiceSrc = url;
+        }
+        if (voiceSrc) {
+          audio = new Audio(voiceSrc);
+          setupAudioEvents(audio);
+        }
+      }
+      if (!audio) return;
+
+      const dur = audio.duration || totalDur || 1;
+      try { audio.currentTime = pct * dur; } catch (_) {}
+      if (waveformFg) waveformFg.style.width = (pct * 100) + '%';
+      if (timeLabel) timeLabel.innerText = this.formatDuration(Math.floor(audio.currentTime)) + ' / ' + this.formatDuration(Math.floor(dur));
+
+      if (audio.paused) {
+        togglePlay();
+      }
+    });
+
+    return card;
+  }
+
   async renderProfileMediaTabs(targetUsername, isOwn = false) {
     let data;
     if (isOwn) {
@@ -3568,14 +3848,25 @@ class TelegramApp {
     if (this.el.badgeCountFiles) this.el.badgeCountFiles.innerText = files.length;
     if (this.el.badgeCountVoice) this.el.badgeCountVoice.innerText = voice.length;
 
-    // 1. Медиа (Фото / Видео)
+    // 1. Медиа (Фото / Видео) с галереей плейлиста
     if (this.el.profileMediaGrid && this.el.emptyProfileMedia) {
       this.el.profileMediaGrid.innerHTML = '';
       if (media.length === 0) {
         this.el.emptyProfileMedia.classList.remove('hidden');
       } else {
         this.el.emptyProfileMedia.classList.add('hidden');
-        media.forEach(item => {
+        const mediaPlaylist = media.map((item, pIdx) => {
+          const file = item.file;
+          const src = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : '';
+          return {
+            src,
+            name: (file && file.name) || (item.isVideo ? 'Видео' : 'Фотография'),
+            type: item.isVideo ? 'video' : 'image',
+            kind: item.isVideo ? 'video' : 'image'
+          };
+        });
+
+        media.forEach((item, idx) => {
           const thumb = document.createElement('div');
           thumb.className = 'tg-profile-media-thumb';
           const file = item.file;
@@ -3588,7 +3879,9 @@ class TelegramApp {
             thumb.innerHTML = '<span style="font-size:24px;">📷</span>';
           }
           thumb.addEventListener('click', () => {
-            if (src) {
+            if (mediaPlaylist.length > 0 && mediaPlaylist[idx] && mediaPlaylist[idx].src) {
+              this.openLightboxPlaylist(mediaPlaylist, idx);
+            } else if (src) {
               this.openLightbox(src, (file && file.name) || 'Медиа', item.isVideo ? 'video' : 'image');
             }
           });
@@ -3597,7 +3890,7 @@ class TelegramApp {
       }
     }
 
-    // 2. Файлы (Документы)
+    // 2. Файлы (Документы как реальные карточки файлов)
     if (this.el.profileFilesList && this.el.emptyProfileFiles) {
       this.el.profileFilesList.innerHTML = '';
       if (files.length === 0) {
@@ -3605,26 +3898,13 @@ class TelegramApp {
       } else {
         this.el.emptyProfileFiles.classList.add('hidden');
         files.forEach(item => {
-          const fileEl = document.createElement('div');
-          fileEl.className = 'tg-profile-file-item';
-          const file = item.file;
-          const src = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : '';
-          const name = file ? (file.name || 'Документ') : 'Документ';
-          const sizeStr = file && file.size ? this.formatSize(file.size) : '';
-          fileEl.innerHTML = [
-            '<div class="tg-profile-file-icon">📄</div>',
-            '<div class="tg-profile-file-info">',
-            '  <div class="tg-profile-file-name">' + this.escape(name) + '</div>',
-            '  <div class="tg-profile-file-meta">' + sizeStr + (item.time ? ' · ' + item.time : '') + '</div>',
-            '</div>',
-            (src ? '<a class="tg-icon-btn" href="' + this.escapeAttr(src) + '" download="' + this.escapeAttr(name) + '" title="Скачать"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></a>' : '')
-          ].join('');
-          this.el.profileFilesList.appendChild(fileEl);
+          const card = this.createProfileFileCard(item);
+          this.el.profileFilesList.appendChild(card);
         });
       }
     }
 
-    // 3. Голосовые / Кружочки
+    // 3. Голосовые / Кружочки с живым аудиопроигрывателем
     if (this.el.profileVoiceList && this.el.emptyProfileVoice) {
       this.el.profileVoiceList.innerHTML = '';
       if (voice.length === 0) {
@@ -3632,20 +3912,8 @@ class TelegramApp {
       } else {
         this.el.emptyProfileVoice.classList.add('hidden');
         voice.forEach(item => {
-          const voiceEl = document.createElement('div');
-          voiceEl.className = 'tg-profile-file-item';
-          const isCircle = item.type === 'circle';
-          const icon = isCircle ? '📹' : '🎙️';
-          const title = isCircle ? 'Видеокружок' : 'Голосовое сообщение';
-          const dur = (item.voice && item.voice.duration) || (item.circleVideo && item.circleVideo.duration) || 0;
-          voiceEl.innerHTML = [
-            '<div class="tg-profile-file-icon" style="background: ' + (isCircle ? '#0284c7' : '#3390ec') + '">' + icon + '</div>',
-            '<div class="tg-profile-file-info">',
-            '  <div class="tg-profile-file-name">' + title + ' (' + this.formatDuration(dur) + ')</div>',
-            '  <div class="tg-profile-file-meta">от @' + this.escape(item.sender) + ' · ' + item.time + '</div>',
-            '</div>'
-          ].join('');
-          this.el.profileVoiceList.appendChild(voiceEl);
+          const card = this.createProfileVoiceCard(item);
+          this.el.profileVoiceList.appendChild(card);
         });
       }
     }
@@ -4173,11 +4441,23 @@ class TelegramApp {
       } else {
         const grid = document.createElement('div');
         grid.className = 'tg-feed-media-grid';
-        data.media.forEach(m => {
+
+        const mediaPlaylist = data.media.map(m => {
+          const file = m.file;
+          const url = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : '';
+          return {
+            src: url,
+            name: (file && file.name) || (m.isVideo ? 'Видео' : 'Фотография'),
+            type: m.isVideo ? 'video' : 'image',
+            kind: m.isVideo ? 'video' : 'image'
+          };
+        });
+
+        data.media.forEach((m, idx) => {
           const item = document.createElement('div');
           item.className = 'tg-feed-grid-item';
           const file = m.file;
-          const url = file ? (file.dataUrl || (file.mediaId ? null : file.url)) : null;
+          const url = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : null;
           if (m.isVideo) {
             item.innerHTML = '<span style="font-size:24px;">🎬</span><span style="position:absolute;bottom:4px;right:6px;font-size:10px;color:#fff;background:rgba(0,0,0,0.6);padding:1px 4px;border-radius:4px;">Видео</span>';
           } else if (url) {
@@ -4186,7 +4466,9 @@ class TelegramApp {
             item.innerHTML = '<span style="font-size:24px;">📷</span>';
           }
           item.addEventListener('click', () => {
-            if (url) {
+            if (mediaPlaylist.length > 0 && mediaPlaylist[idx] && mediaPlaylist[idx].src) {
+              this.openLightboxPlaylist(mediaPlaylist, idx);
+            } else if (url) {
               this.openLightbox(url, file ? (file.name || 'Медиа') : 'Медиа', m.isVideo ? 'video' : 'image');
             } else if (m.chatId) {
               this.openChat(m.chatId, m.chatId === 'general' ? 'Общий чат' : 'Диалог');
@@ -4198,58 +4480,28 @@ class TelegramApp {
       }
     }
 
-    // 2. Файлы
+    // 2. Файлы (Реальные карточки документов с кнопкой скачивания)
     if (this.el.feedPaneFiles) {
       this.el.feedPaneFiles.innerHTML = '';
       if (data.files.length === 0) {
         this.el.feedPaneFiles.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13px;">Нет отправленных документов</div>';
       } else {
         data.files.forEach(f => {
-          const row = document.createElement('div');
-          row.className = 'tg-feed-file-row';
-          const file = f.file;
-          const sizeStr = file && file.size ? (Math.round(file.size / 1024) + ' KB') : '';
-          const fileName = file ? (file.name || 'Документ') : 'Документ';
-          const dlUrl = file ? file.dataUrl : null;
-          row.innerHTML = [
-            '<div style="font-size:22px;margin-right:10px;">📄</div>',
-            '<div style="flex:1;min-width:0;">',
-            '  <div style="font-size:13.5px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(fileName) + '</div>',
-            '  <div style="font-size:11.5px;color:var(--tg-text-sub);">' + sizeStr + (f.time ? ' · ' + f.time : '') + '</div>',
-            '</div>',
-            (dlUrl ? '<a href="' + dlUrl + '" download="' + this.escapeAttr(fileName) + '" class="tg-file-dl-btn" style="text-decoration:none;font-size:15px;" title="Скачать">⬇️</a>' : '')
-          ].join('');
-          this.el.feedPaneFiles.appendChild(row);
+          const card = this.createProfileFileCard(f);
+          this.el.feedPaneFiles.appendChild(card);
         });
       }
     }
 
-    // 3. Голосовые и кружочки
+    // 3. Голосовые и кружочки с живым аудиоплеером
     if (this.el.feedPaneVoice) {
       this.el.feedPaneVoice.innerHTML = '';
       if (data.voice.length === 0) {
         this.el.feedPaneVoice.innerHTML = '<div style="padding:20px;text-align:center;color:var(--tg-text-sub);font-size:13px;">Нет голосовых сообщений и кружочков</div>';
       } else {
         data.voice.forEach(v => {
-          const row = document.createElement('div');
-          row.className = 'tg-feed-file-row';
-          const isCircle = v.type === 'circle';
-          const label = isCircle ? 'Видеокружок' : 'Голосовое сообщение';
-          const icon = isCircle ? '📹' : '🎤';
-          const dur = v.voice ? this.formatDuration(v.voice.duration) : (v.circleVideo ? this.formatDuration(v.circleVideo.duration) : '');
-          row.innerHTML = [
-            '<div style="font-size:22px;margin-right:10px;">' + icon + '</div>',
-            '<div style="flex:1;min-width:0;">',
-            '  <div style="font-size:13.5px;font-weight:500;color:var(--tg-text-main);">' + label + '</div>',
-            '  <div style="font-size:11.5px;color:var(--tg-text-sub);">' + dur + (v.time ? ' · ' + v.time : '') + '</div>',
-            '</div>'
-          ].join('');
-          row.addEventListener('click', () => {
-            if (v.chatId) {
-              this.openChat(v.chatId, v.chatId === 'general' ? 'Общий чат' : 'Диалог');
-            }
-          });
-          this.el.feedPaneVoice.appendChild(row);
+          const card = this.createProfileVoiceCard(v);
+          this.el.feedPaneVoice.appendChild(card);
         });
       }
     }
@@ -4361,51 +4613,38 @@ class TelegramApp {
     }
 
     allItems.forEach(item => {
-      const row = document.createElement('div');
-      row.className = 'tg-myfile-row';
-      let icon = '📁';
-      let title = 'Файл';
-      let sub = (item.time || '') + ' · диалог: ' + (item.chatId || 'общий');
-      let dlUrl = null;
-
-      if (item.itemType === 'media') {
-        icon = item.isVideo ? '🎬' : '📷';
-        title = item.file ? (item.file.name || (item.isVideo ? 'Видеофайл' : 'Фотография')) : 'Медиа';
-        dlUrl = item.file ? (item.file.dataUrl || item.file.url) : null;
-      } else if (item.itemType === 'file') {
-        icon = '📄';
-        title = item.file ? item.file.name : 'Документ';
-        if (item.file && item.file.size) {
-          sub = Math.round(item.file.size / 1024) + ' KB · ' + sub;
-        }
-        dlUrl = item.file ? (item.file.dataUrl || item.file.url) : null;
+      if (item.itemType === 'file') {
+        const card = this.createProfileFileCard(item);
+        this.el.myfilesList.appendChild(card);
       } else if (item.itemType === 'voice') {
-        icon = item.type === 'circle' ? '📹' : '🎤';
-        title = item.type === 'circle' ? 'Видеокружок' : 'Голосовое сообщение';
-        const dur = item.voice ? this.formatDuration(item.voice.duration) : (item.circleVideo ? this.formatDuration(item.circleVideo.duration) : '');
-        if (dur) sub = dur + ' · ' + sub;
+        const card = this.createProfileVoiceCard(item);
+        this.el.myfilesList.appendChild(card);
+      } else if (item.itemType === 'media') {
+        const file = item.file;
+        const url = file ? (file.dataUrl || (file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : file.url) || file.data) : null;
+        const row = document.createElement('div');
+        row.className = 'tg-myfile-row';
+        const title = item.file ? (item.file.name || (item.isVideo ? 'Видео' : 'Фото')) : 'Медиа';
+        const sub = (item.time || '') + ' · диалог: ' + (item.chatId || 'общий');
+        row.innerHTML = [
+          '<div style="font-size:22px;margin-right:12px;">' + (item.isVideo ? '🎬' : '📷') + '</div>',
+          '<div style="flex:1;min-width:0;">',
+          '  <div style="font-size:14px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(title) + '</div>',
+          '  <div style="font-size:12px;color:var(--tg-text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(sub) + '</div>',
+          '</div>',
+          (url ? '<button type="button" class="tg-file-dl-btn" style="padding:4px 8px;font-size:12px;width:auto;height:32px;border-radius:16px;">▶ Открыть</button>' : '')
+        ].join('');
+
+        row.addEventListener('click', () => {
+          if (url) {
+            this.openLightbox(url, title, item.isVideo ? 'video' : 'image');
+          } else if (item.chatId) {
+            this.closeMyFilesModal();
+            this.openChat(item.chatId, item.chatId === 'general' ? 'Общий чат' : 'Диалог');
+          }
+        });
+        this.el.myfilesList.appendChild(row);
       }
-
-      row.innerHTML = [
-        '<div style="font-size:22px;margin-right:12px;">' + icon + '</div>',
-        '<div style="flex:1;min-width:0;">',
-        '  <div style="font-size:14px;font-weight:500;color:var(--tg-text-main);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(title) + '</div>',
-        '  <div style="font-size:12px;color:var(--tg-text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + this.escape(sub) + '</div>',
-        '</div>',
-        (dlUrl ? '<a href="' + dlUrl + '" download="' + this.escapeAttr(title) + '" class="tg-file-dl-btn" style="text-decoration:none;font-size:16px;padding:6px 10px;" title="Скачать">⬇️</a>' : '')
-      ].join('');
-
-      row.addEventListener('click', (e) => {
-        if (e.target.closest('a')) return;
-        if (dlUrl && item.itemType === 'media') {
-          this.openLightbox(dlUrl, title, item.isVideo ? 'video' : 'image');
-        } else if (item.chatId) {
-          this.closeMyFilesModal();
-          this.openChat(item.chatId, item.chatId === 'general' ? 'Общий чат' : 'Диалог');
-        }
-      });
-
-      this.el.myfilesList.appendChild(row);
     });
   }
 
