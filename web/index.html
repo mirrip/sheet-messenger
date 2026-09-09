@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.14.0">
+  <link rel="stylesheet" href="styles.css?v=3.16.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -98,8 +98,8 @@
           <div class="tg-menu-header" id="btn-open-my-profile">
             <div class="tg-menu-avatar" id="current-user-avatar">?</div>
             <div class="tg-menu-info">
-              <div class="tg-menu-name" id="current-user-name">@user</div>
-              <div class="tg-menu-phone">Мой профиль</div>
+              <div class="tg-menu-name" id="current-user-name">Пользователь</div>
+              <div class="tg-menu-phone" id="current-user-handle">@user</div>
             </div>
           </div>
           <div class="tg-menu-divider"></div>
@@ -107,14 +107,47 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
             </svg>
-            <span>Настройки профиля</span>
+            <span>Мой профиль</span>
           </div>
+          <div class="tg-menu-item tg-menu-item-toggle" id="btn-menu-nightmode">
+            <div class="tg-menu-item-left">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M12.3 2a10 10 0 0 0-.19 20 10 10 0 0 0 8.04-4.04.75.75 0 0 0-.67-1.18 8 8 0 1 1-8.36-15.45.75.75 0 0 0 .68-.9A.75.75 0 0 0 12.3 2z"/>
+              </svg>
+              <span>Ночной режим</span>
+            </div>
+            <label class="tg-switch" onclick="event.stopPropagation()">
+              <input type="checkbox" id="toggle-night-mode" checked>
+              <span class="tg-slider"></span>
+            </label>
+          </div>
+          <div class="tg-menu-item" id="btn-menu-notifications">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            <span>Уведомления</span>
+          </div>
+          <div class="tg-menu-item" id="btn-menu-about">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+            </svg>
+            <span>О Telegram Web</span>
+          </div>
+          <div class="tg-menu-divider"></div>
           <div class="tg-menu-item danger" id="btn-menu-logout">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
             </svg>
-            <span>Выйти из аккаунта</span>
+            <span>Выйти</span>
           </div>
+        </div>
+
+        <!-- SEARCH FILTER PILLS (TELEGRAM STYLE) -->
+        <div class="tg-search-filters hidden" id="search-filters">
+          <button type="button" class="tg-filter-chip active" data-filter="all">Все</button>
+          <button type="button" class="tg-filter-chip" data-filter="chats">Чаты</button>
+          <button type="button" class="tg-filter-chip" data-filter="media">Медиа</button>
+          <button type="button" class="tg-filter-chip" data-filter="files">Файлы</button>
         </div>
 
         <!-- FOLDERS BAR -->
@@ -126,7 +159,7 @@
 
         <!-- SEARCH RESULTS -->
         <div class="tg-search-results hidden" id="search-results-section">
-          <div class="tg-section-caption">Глобальный поиск</div>
+          <div class="tg-section-caption" id="search-results-caption">Результаты поиска</div>
           <div class="tg-search-list" id="search-results-list"></div>
         </div>
 
@@ -165,6 +198,24 @@
             </button>
           </div>
         </header>
+
+        <!-- TELEGRAM-LIKE SEARCH INSIDE CURRENT CHAT -->
+        <section id="message-search-panel" class="tg-message-search hidden" aria-label="Поиск сообщений в чате">
+          <div class="tg-message-search-field">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+              <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 1 0 14 15.5l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 9.5 5a4.5 4.5 0 0 1 0 9z"/>
+            </svg>
+            <input id="message-search-input" type="search" placeholder="Поиск сообщений" autocomplete="off" spellcheck="false">
+          </div>
+          <span id="message-search-count" class="tg-message-search-count" aria-live="polite">0 из 0</span>
+          <button id="message-search-prev" class="tg-message-search-btn" type="button" title="Предыдущее совпадение" aria-label="Предыдущее совпадение">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="m7.41 14.59 4.59-4.58 4.59 4.58L18 13.17l-6-6-6 6z"/></svg>
+          </button>
+          <button id="message-search-next" class="tg-message-search-btn" type="button" title="Следующее совпадение" aria-label="Следующее совпадение">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+          </button>
+          <button id="message-search-close" class="tg-message-search-btn tg-message-search-close" type="button" title="Закрыть поиск" aria-label="Закрыть поиск">✕</button>
+        </section>
 
         <!-- COMPACT MEDIA PLAYER (VIDEO CIRCLES & VOICE MESSAGES) -->
         <section id="media-player-panel" class="tg-media-player hidden" aria-label="Медиаплеер">
@@ -244,43 +295,210 @@
         </footer>
       </main>
 
-      <!-- PROFILE DRAWER / RIGHT PANEL -->
+      <!-- PROFILE DRAWER / RIGHT PANEL (TELEGRAM STYLE) -->
       <aside id="profile-panel" class="tg-profile-panel hidden">
         <header class="tg-profile-header">
-          <button id="btn-close-profile" class="tg-icon-btn" title="Закрыть">✕</button>
-          <h3>Информация</h3>
-          <div style="width: 40px;"></div>
+          <button id="btn-close-profile" class="tg-icon-btn" title="Закрыть">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+            </svg>
+          </button>
+          <h3 id="profile-panel-header-title">Информация</h3>
+          <button id="btn-header-edit-profile" class="tg-icon-btn hidden" title="Редактировать">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+            </svg>
+          </button>
         </header>
 
         <div class="tg-profile-body">
-          <div class="tg-profile-avatar-wrap">
-            <div class="tg-profile-avatar-large" id="profile-avatar-large">?</div>
-            <button id="btn-change-avatar" class="tg-avatar-edit-btn" title="Сменить фото профиля">📷</button>
-            <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+          <!-- HERO / AVATAR AREA -->
+          <div class="tg-profile-hero">
+            <div class="tg-profile-avatar-wrap">
+              <div class="tg-profile-avatar-large" id="profile-avatar-large">?</div>
+              <button id="btn-change-avatar" class="tg-avatar-edit-btn hidden" title="Сменить фото">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 12c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v4c0 1.66 1.34 3 3 3zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                  <circle cx="18" cy="18" r="4" fill="#3390ec"/>
+                  <path d="M18 15v6m-3-3h6" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+            </div>
+            <h2 class="tg-profile-title" id="profile-name">Имя пользователя</h2>
+            <span class="tg-profile-status" id="profile-status">в сети</span>
           </div>
-          <h2 class="tg-profile-title" id="profile-name">@username</h2>
-          <span class="tg-profile-status" id="profile-status">в сети</span>
 
-          <div class="tg-profile-section">
-            <div class="tg-profile-field">
-              <div class="tg-profile-field-label">Имя</div>
-              <div class="tg-profile-field-value" id="profile-displayname-val">Пользователь</div>
+          <!-- ACTION BUTTONS ROW (TELEGRAM STYLE) -->
+          <div class="tg-profile-actions-row" id="profile-actions-row">
+            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-msg">
+              <div class="tg-profile-act-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
+                </svg>
+              </div>
+              <span>Написать</span>
+            </button>
+            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-mute">
+              <div class="tg-profile-act-icon" id="profile-mute-icon-wrap">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+              </div>
+              <span id="profile-mute-text">Звук</span>
+            </button>
+            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-share">
+              <div class="tg-profile-act-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
+                </svg>
+              </div>
+              <span>Ссылка</span>
+            </button>
+          </div>
+
+          <!-- PERSONAL INFO LIST -->
+          <div class="tg-profile-card">
+            <div class="tg-profile-info-item" id="item-profile-username">
+              <div class="tg-profile-info-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+                </svg>
+              </div>
+              <div class="tg-profile-info-content">
+                <div class="tg-profile-info-val" id="profile-username-val">@username</div>
+                <div class="tg-profile-info-lbl">Имя пользователя</div>
+              </div>
+              <button type="button" class="tg-icon-btn tg-info-copy-btn" id="btn-copy-username" title="Копировать @username">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                </svg>
+              </button>
             </div>
-            <div class="tg-profile-field">
-              <div class="tg-profile-field-label">Имя пользователя</div>
-              <div class="tg-profile-field-value" id="profile-username-val">@username</div>
+
+            <div class="tg-profile-info-item" id="item-profile-bio">
+              <div class="tg-profile-info-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                </svg>
+              </div>
+              <div class="tg-profile-info-content">
+                <div class="tg-profile-info-val" id="profile-bio-val">Пользуюсь Telegram Web ✨</div>
+                <div class="tg-profile-info-lbl">О себе (Bio)</div>
+              </div>
             </div>
-            <div class="tg-profile-field">
-              <div class="tg-profile-field-label">О себе (Bio)</div>
-              <div class="tg-profile-field-value" id="profile-bio-val">Пользуюсь Telegram Web ✨</div>
+
+            <div class="tg-profile-info-item">
+              <div class="tg-profile-info-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+              </div>
+              <div class="tg-profile-info-content">
+                <div class="tg-profile-info-val" id="profile-notifications-text">Включены</div>
+                <div class="tg-profile-info-lbl">Уведомления и звуки</div>
+              </div>
+              <label class="tg-switch">
+                <input type="checkbox" id="toggle-profile-notifications" checked>
+                <span class="tg-slider"></span>
+              </label>
             </div>
-            <div class="tg-profile-field" id="profile-edit-box">
-              <button id="btn-edit-profile" class="tg-small-btn full-width">Редактировать профиль</button>
+          </div>
+
+          <!-- SHARED CONTENT TABS (MEDIA / FILES / VOICE) -->
+          <div class="tg-profile-tabs-wrap">
+            <div class="tg-profile-tabs-header">
+              <button type="button" class="tg-profile-tab active" data-tab="media" id="tab-profile-media">
+                <span>Медиа</span>
+                <span class="tg-profile-tab-badge" id="badge-count-media">0</span>
+              </button>
+              <button type="button" class="tg-profile-tab" data-tab="files" id="tab-profile-files">
+                <span>Файлы</span>
+                <span class="tg-profile-tab-badge" id="badge-count-files">0</span>
+              </button>
+              <button type="button" class="tg-profile-tab" data-tab="voice" id="tab-profile-voice">
+                <span>Голосовые</span>
+                <span class="tg-profile-tab-badge" id="badge-count-voice">0</span>
+              </button>
             </div>
+
+            <div class="tg-profile-tab-content">
+              <!-- MEDIA GRID -->
+              <div class="tg-profile-pane active" id="pane-profile-media">
+                <div class="tg-profile-media-grid" id="profile-media-grid"></div>
+                <div class="tg-profile-empty hidden" id="empty-profile-media">Нет фотографий и видео</div>
+              </div>
+
+              <!-- FILES LIST -->
+              <div class="tg-profile-pane hidden" id="pane-profile-files">
+                <div class="tg-profile-files-list" id="profile-files-list"></div>
+                <div class="tg-profile-empty hidden" id="empty-profile-files">Нет прикрепленных файлов</div>
+              </div>
+
+              <!-- VOICE LIST -->
+              <div class="tg-profile-pane hidden" id="pane-profile-voice">
+                <div class="tg-profile-voice-list" id="profile-voice-list"></div>
+                <div class="tg-profile-empty hidden" id="empty-profile-voice">Нет голосовых и кружочков</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- EDIT PROFILE BUTTON FOR OWN PROFILE -->
+          <div class="tg-profile-btn-wrap" id="profile-edit-box">
+            <button type="button" id="btn-edit-profile" class="tg-primary-btn full-width">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+              </svg>
+              <span>Редактировать профиль</span>
+            </button>
           </div>
         </div>
       </aside>
     </div>
+
+    <!-- MODAL: EDIT PROFILE DIALOG (TELEGRAM STYLE) -->
+    <div id="modal-edit-profile" class="tg-modal-overlay hidden">
+      <div class="tg-modal-card">
+        <div class="tg-modal-header">
+          <h3>Редактирование профиля</h3>
+          <button type="button" id="btn-close-edit-modal" class="tg-icon-btn" title="Закрыть">✕</button>
+        </div>
+
+        <form id="form-edit-profile" class="tg-edit-profile-form">
+          <div class="tg-edit-avatar-section">
+            <div class="tg-edit-avatar-preview" id="edit-avatar-preview">?</div>
+            <div class="tg-edit-avatar-actions">
+              <button type="button" id="btn-modal-change-photo" class="tg-small-btn">Выбрать фото</button>
+              <button type="button" id="btn-modal-remove-photo" class="tg-small-btn danger">Удалить</button>
+            </div>
+          </div>
+
+          <div class="tg-field-group">
+            <input type="text" id="edit-profile-displayname" class="tg-field-input" placeholder=" " required maxlength="64">
+            <label for="edit-profile-displayname" class="tg-field-label">Имя (отображаемое)</label>
+          </div>
+
+          <div class="tg-field-group">
+            <input type="text" id="edit-profile-username" class="tg-field-input" placeholder=" " required maxlength="32" readonly>
+            <label for="edit-profile-username" class="tg-field-label">Имя пользователя (@username)</label>
+          </div>
+
+          <div class="tg-field-group">
+            <textarea id="edit-profile-bio" class="tg-field-input tg-textarea-input" placeholder=" " rows="3" maxlength="140"></textarea>
+            <label for="edit-profile-bio" class="tg-field-label">О себе (Bio, до 140 символов)</label>
+            <div class="tg-char-counter" id="edit-bio-counter">0 / 140</div>
+          </div>
+
+          <div class="tg-modal-footer">
+            <button type="button" id="btn-cancel-edit-profile" class="tg-tab-btn">Отмена</button>
+            <button type="submit" id="btn-save-edit-profile" class="tg-primary-btn">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS (TELEGRAM BOTTOM TOAST) -->
+    <div id="tg-toast-container" class="tg-toast-container"></div>
 
     <!-- FULLSCREEN MEDIA VIEWER -->
     <div id="lightbox-modal" class="tg-lightbox hidden" role="dialog" aria-modal="true" aria-label="Просмотр медиа">
@@ -313,7 +531,7 @@
     </div>
   </div>
 
-  <script src="config.js?v=3.14.0"></script>
-  <script src="app.js?v=3.14.0"></script>
+  <script src="config.js?v=3.16.0"></script>
+  <script src="app.js?v=3.16.0"></script>
 </body>
 </html>
