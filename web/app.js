@@ -800,7 +800,6 @@ class TelegramApp {
     this.mediaPlaybackRate = [1, 1.5, 2].includes(savedPlaybackRate) ? savedPlaybackRate : 1;
     this.activeMediaSession = null;
     this.chatMediaPlaybackQueue = [];
-    this.mediaFocusPaddingState = null;
     this.downloadTasks = new Map();
     this.messageSearchResults = [];
     this.messageSearchIndex = -1;
@@ -997,59 +996,6 @@ class TelegramApp {
     this.updateMediaPlayerPanel(session.media);
   }
 
-  clearMediaMessageFocus() {
-    this.mediaFocusRequest = (this.mediaFocusRequest || 0) + 1;
-    const feed = this.el && this.el.messagesFeed;
-    if (!feed || !this.mediaFocusPaddingState) return;
-    feed.style.paddingTop = this.mediaFocusPaddingState.paddingTop;
-    feed.style.paddingBottom = this.mediaFocusPaddingState.paddingBottom;
-    this.mediaFocusPaddingState = null;
-  }
-
-  alignMediaMessageToInput(messageId, highlight = false) {
-    const feed = this.el && this.el.messagesFeed;
-    if (!feed || !messageId) return;
-    const request = this.mediaFocusRequest = (this.mediaFocusRequest || 0) + 1;
-
-    const center = (behavior = 'smooth') => {
-      if (request !== this.mediaFocusRequest) return;
-      const message = feed.querySelector('[data-msg-id="' + CSS.escape(messageId) + '"]');
-      if (!message) return;
-      const target = message.closest('.tg-bubble-wrap') || message;
-
-      if (!this.mediaFocusPaddingState) {
-        this.mediaFocusPaddingState = {
-          paddingTop: feed.style.paddingTop,
-          paddingBottom: feed.style.paddingBottom
-        };
-      }
-
-      // Первое сообщение тоже должно опускаться к строке ввода.
-      // Нижний край области сообщений уже расположен над композером.
-      const focusSpace = Math.max(0, feed.clientHeight - target.offsetHeight - 12);
-      feed.style.paddingTop = focusSpace + 'px';
-      feed.style.paddingBottom = this.mediaFocusPaddingState.paddingBottom;
-
-      requestAnimationFrame(() => {
-        if (request !== this.mediaFocusRequest) return;
-        const feedRect = feed.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const delta = (targetRect.top + targetRect.height) - (feedRect.top + feed.clientHeight - 12);
-        feed.scrollTo({ top: Math.max(0, feed.scrollTop + delta), behavior });
-      });
-
-      if (highlight) {
-        message.classList.remove('tg-media-source-pulse');
-        requestAnimationFrame(() => message.classList.add('tg-media-source-pulse'));
-        window.setTimeout(() => message.classList.remove('tg-media-source-pulse'), 1800);
-      }
-    };
-
-    center();
-    // Размер кружка меняется 350 мс: уточняем положение после анимации.
-    window.setTimeout(() => center('smooth'), 400);
-  }
-
   playNextChatMedia(messageId) {
     const queue = Array.isArray(this.chatMediaPlaybackQueue) ? this.chatMediaPlaybackQueue : [];
     const currentIndex = queue.findIndex(item => item.messageId === messageId);
@@ -1089,7 +1035,10 @@ class TelegramApp {
         this.showToast('Сообщение уже не находится в этом чате');
         return;
       }
-      this.alignMediaMessageToInput(session.messageId, true);
+      message.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      message.classList.remove('tg-media-source-pulse');
+      requestAnimationFrame(() => message.classList.add('tg-media-source-pulse'));
+      window.setTimeout(() => message.classList.remove('tg-media-source-pulse'), 1800);
     }, 80);
   }
 
@@ -1097,7 +1046,6 @@ class TelegramApp {
     if (!this.activeMediaSession || this.activeMediaSession.media !== media) return;
     this.activeMediaSession = null;
     if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
-    this.clearMediaMessageFocus();
   }
 
   closeActiveMediaSession(reset = true) {
@@ -1109,7 +1057,6 @@ class TelegramApp {
 
     this.activeMediaSession = null;
     if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
-    this.clearMediaMessageFocus();
     if (typeof session.onClose === 'function') session.onClose(reset);
     else {
       try { session.media.pause(); } catch (_) {}
@@ -2650,7 +2597,6 @@ class TelegramApp {
               toggle: startCirclePlay,
               onClose: closeCirclePlayback
             });
-            this.alignMediaMessageToInput(m.id);
             vid.muted = false;
 
             const playPromise = vid.play();
@@ -2792,7 +2738,6 @@ class TelegramApp {
               toggle: toggleVoicePlay,
               onClose: closeVoicePlayback
             });
-            if (autoAdvance) this.alignMediaMessageToInput(m.id);
 
             audio.play().then(() => {
               if (playIcon) playIcon.classList.add('hidden');
