@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.28.0">
+  <link rel="stylesheet" href="styles.css?v=3.29.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -31,7 +31,7 @@
     <symbol id="tg-icon-star" viewBox="0 0 24 24"><path d="m12 2.8 2.72 5.52 6.1.89-4.41 4.3 1.04 6.07L12 16.7l-5.45 2.88 1.04-6.07-4.41-4.3 6.1-.89L12 2.8Z"/></symbol>
     <symbol id="tg-icon-message" viewBox="0 0 24 24"><path d="M4.5 4h15A2.5 2.5 0 0 1 22 6.5v9a2.5 2.5 0 0 1-2.5 2.5H9l-5.3 3.5.8-3.5A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4Zm2.25 5.25h10.5v-1.5H6.75v1.5Zm0 3.5h7.5v-1.5h-7.5v1.5Z"/></symbol>
     <symbol id="tg-icon-sort" viewBox="0 0 24 24"><path d="M4 6h16v2H4V6Zm0 5h11v2H4v-2Zm0 5h7v2H4v-2Z"/></symbol>
-    <symbol id="tg-icon-sort" viewBox="0 0 24 24"><path d="M4 6h11v2H4V6Zm0 5h8v2H4v-2Zm0 5h5v2H4v-2Zm14.3-6.7 3.7 3.7-1.4 1.4-1.6-1.6V20h-2v-7.2l-1.6 1.6L14 13l3.7-3.7a.42.42 0 0 1 .6 0Z"/></symbol>
+    
     <symbol id="tg-icon-trash" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-.7 11H7.7L7 9Zm3 2v7h1.5v-7H10Zm3 0v7h1.5v-7H13Z"/></symbol>
     <symbol id="tg-icon-file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V8h4.5L13 3.5ZM8 12v1.6h8V12H8Zm0 3.6v1.6h8v-1.6H8Z"/></symbol>
     <symbol id="tg-icon-video" viewBox="0 0 24 24"><path d="M5 5h10a2 2 0 0 1 2 2v2.1l4-2.6v11l-4-2.6V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></symbol>
@@ -117,13 +117,7 @@
             <span class="tg-rail-label">Настройки</span>
           </button>
         </div>
-        <div class="tg-rail-bottom">
-          <button type="button" class="tg-rail-btn" id="rail-btn-logout" title="Выйти">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
-            </svg>
-          </button>
-        </div>
+
       </nav>
 
       <!-- LEFT SIDEBAR -->
@@ -204,9 +198,9 @@
 
           <!-- SEARCH FILTER PILLS (TELEGRAM STYLE) -->
           <div class="tg-search-filters hidden" id="search-filters">
-            <button type="button" class="tg-filter-chip active" data-filter="all">Все</button>
-            <button type="button" class="tg-filter-chip" data-filter="chats">Чаты</button>
+            <button type="button" class="tg-filter-chip active" data-filter="chats">Чаты</button>
             <button type="button" class="tg-filter-chip" data-filter="media">Медиа</button>
+            <button type="button" class="tg-filter-chip" data-filter="voice">Голосовые</button>
             <button type="button" class="tg-filter-chip" data-filter="files">Файлы</button>
           </div>
 
@@ -267,7 +261,7 @@
           <div class="tg-profile-scroll-feed" id="profile-feed-scroll">
             <div class="tg-feed-hero">
               <div class="tg-feed-avatar-wrap">
-                <div class="tg-feed-avatar" id="feed-user-avatar" title="Нажмите, чтобы открыть фото на весь экран">?</div>
+                <div class="tg-feed-avatar" id="feed-user-avatar" title="Нажмите, чтобы развернуть фото">?</div>
                 <span class="tg-avatar-counter hidden" id="feed-avatar-counter">1 / 1</span>
                 <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-feed-avatar-prev" title="Предыдущее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-left"/></svg></button>
                 <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-feed-avatar-next" title="Следующее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-right"/></svg></button>
@@ -296,8 +290,9 @@
               </div>
 
               <div class="tg-field-group">
-                <input type="text" id="feed-profile-username" class="tg-field-input" placeholder=" " readonly disabled>
+                <input type="text" id="feed-profile-username" class="tg-field-input" placeholder=" " readonly autocomplete="off" spellcheck="false" maxlength="33">
                 <label for="feed-profile-username" class="tg-field-label">Имя пользователя (@username)</label>
+                <button type="button" id="btn-edit-username" class="tg-username-edit tg-icon-btn" aria-label="Редактировать username" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg></button>
               </div>
 
               <div class="tg-field-group">
@@ -403,6 +398,7 @@
                 <div class="tg-settings-item-chevron">›</div>
               </div>
             </div>
+            <button type="button" class="tg-settings-logout" id="btn-settings-logout">Выйти из аккаунта</button>
           </div>
         </div>
 
@@ -577,7 +573,7 @@
           <!-- HERO / AVATAR AREA -->
           <div class="tg-profile-hero">
             <div class="tg-profile-avatar-wrap">
-              <div class="tg-profile-avatar-large" id="profile-avatar-large" title="Нажмите, чтобы открыть фото на весь экран">?</div>
+              <div class="tg-profile-avatar-large" id="profile-avatar-large" title="Нажмите, чтобы развернуть фото">?</div>
               <span class="tg-avatar-counter hidden" id="profile-avatar-counter">1 / 1</span>
               <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-prev hidden" id="btn-profile-avatar-prev" title="Предыдущее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-left"/></svg></button>
               <button type="button" class="tg-avatar-nav-arrow tg-avatar-arrow-next hidden" id="btn-profile-avatar-next" title="Следующее фото"><svg class="tg-ui-icon"><use href="#tg-icon-chevron-right"/></svg></button>
@@ -879,6 +875,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.28.0"></script>
+  <script src="app.js?v=3.29.0"></script>
 </body>
 </html>
