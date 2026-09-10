@@ -5444,3 +5444,77 @@ textarea:focus-visible {
 @media (max-width: 768px) {
   .photo-expanded .tg-avatar-nav-arrow { display: none !important; }
 }
+/* v3.30 — native downloads, contact actions, camera switching and media navigation */
+.tg-header-actions { position: relative; }
+.tg-chat-actions-menu {
+  position: absolute; z-index: 80; top: calc(100% + 10px); right: 0; width: 248px;
+  padding: 7px; border: 1px solid rgba(255,255,255,.09); border-radius: 14px;
+  background: rgba(29,42,56,.98); box-shadow: 0 18px 48px rgba(0,0,0,.42);
+  backdrop-filter: blur(18px);
+}
+.tg-chat-actions-menu button {
+  width: 100%; min-height: 42px; display: flex; align-items: center; gap: 12px;
+  padding: 9px 11px; border: 0; border-radius: 9px; background: transparent;
+  color: var(--tg-text-main); font: inherit; text-align: left; cursor: pointer;
+}
+.tg-chat-actions-menu button:hover { background: rgba(255,255,255,.07); }
+.tg-chat-actions-menu button.danger { color: #ef7982; }
+.tg-chat-actions-menu button.hidden { display: none; }
+
+.tg-downloads-panel {
+  position: fixed; z-index: 2600; right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom)); width: min(380px, calc(100vw - 28px));
+  max-height: min(480px, calc(100dvh - 28px)); overflow: hidden;
+  border: 1px solid rgba(255,255,255,.1); border-radius: 18px;
+  background: rgba(29,42,56,.98); box-shadow: 0 22px 64px rgba(0,0,0,.5);
+  backdrop-filter: blur(20px);
+}
+.tg-downloads-panel > header {
+  display: flex; align-items: center; justify-content: space-between; padding: 13px 14px 9px;
+}
+.tg-downloads-list { padding: 0 8px 9px; overflow-y: auto; max-height: 400px; }
+.tg-download-task {
+  width: 100%; display: flex; align-items: center; gap: 11px; padding: 11px 9px;
+  border: 0; border-radius: 12px; color: var(--tg-text-main); background: transparent;
+  text-align: left; font: inherit; cursor: default;
+}
+.tg-download-task.is-complete, .tg-download-task.is-failed { cursor: pointer; }
+.tg-download-task:hover { background: rgba(255,255,255,.055); }
+.tg-download-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #3390ec; }
+.tg-download-main { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.tg-download-main strong, .tg-download-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tg-download-main strong { font-size: 13.5px; }
+.tg-download-status { font-size: 11.5px; color: var(--tg-text-sub); }
+.tg-download-track { display: block; height: 3px; overflow: hidden; border-radius: 3px; background: rgba(255,255,255,.12); }
+.tg-download-track > span { display: block; width: 0; height: 100%; background: #3390ec; transition: width .16s ease; }
+.tg-download-task.is-complete .tg-download-track > span { background: #4fbf8f; }
+.tg-download-task.is-failed .tg-download-track > span { background: #ef7982; }
+.tg-download-percent { color: #59a8ef; font-size: 11.5px; font-weight: 700; }
+
+.tg-video-record-wrap { pointer-events: auto; touch-action: manipulation; }
+.tg-video-circle-preview { position: relative; cursor: pointer; }
+.tg-video-circle-preview video { transform: none; transition: transform .22s ease; }
+.tg-video-circle-preview video.is-front-camera { transform: scaleX(-1); }
+.tg-camera-switch-hint {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  width: max-content; max-width: 86%; padding: 7px 11px; border-radius: 16px;
+  color: #fff; background: rgba(0,0,0,.54); font-size: 11px; pointer-events: none;
+}
+.tg-lightbox.is-circle-viewer .tg-lightbox-imgwrap { width: min(78vw, 520px); height: min(78vw, 520px); aspect-ratio: 1; border-radius: 50%; overflow: hidden; }
+.tg-lightbox.is-circle-viewer #lightbox-video { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.tg-media-source-pulse { animation: tg-media-source-pulse 1.7s ease; }
+@keyframes tg-media-source-pulse { 0%,100% { filter:none; } 30%,65% { filter: drop-shadow(0 0 12px rgba(51,144,236,.9)); } }
+.tg-add-contact-preview { display:flex; align-items:center; gap:12px; padding:4px 2px 14px; }
+.tg-add-contact-preview .tg-avatar { width:48px; height:48px; flex:0 0 auto; overflow:hidden; }
+.tg-add-contact-preview img { width:100%; height:100%; object-fit:cover; }
+.tg-add-contact-preview > div:last-child { min-width:0; display:grid; gap:3px; }
+.tg-add-contact-preview span { color:var(--tg-text-sub); font-size:11.5px; }
+#item-profile-phone.is-empty .tg-profile-info-val { color: var(--tg-text-sub); }
+.tg-profile-actions-row { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.tg-circle-message, .tg-circle-card, .tg-circle-media { overflow: visible; }
+.tg-circle-media { clip-path: circle(50% at 50% 50%); }
+@media (max-width: 768px) {
+  .tg-downloads-panel { left: 10px; right: 10px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }
+  .tg-chat-actions-menu { position: fixed; top: 58px; right: 8px; width: min(272px, calc(100vw - 16px)); }
+  .tg-lightbox.is-circle-viewer .tg-lightbox-imgwrap { width: min(88vw, 420px); height: min(88vw, 420px); }
+}

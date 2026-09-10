@@ -30,7 +30,7 @@ jobs:
       - name: Install Capacitor CLI and Dependencies
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/filesystem @capacitor-community/file-opener
 
       - name: Initialize Capacitor Project
         run: |
@@ -42,6 +42,7 @@ jobs:
           # 1. AndroidManifest.xml permissions
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.front" android:required="false" />\n    <uses-feature android:name="android.hardware.microphone" android:required="false" />' "$MANIFEST_PATH"
+          sed -i 's/<application/<application android:largeHeap="true"/' "$MANIFEST_PATH"
 
           # 2. Fix Kotlin stdlib duplicate class conflict in root build.gradle
           ROOT_GRADLE="android/build.gradle"

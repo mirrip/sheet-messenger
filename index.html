@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.29.0">
+  <link rel="stylesheet" href="styles.css?v=3.30.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -300,6 +300,10 @@
                 <label for="feed-profile-bio" class="tg-field-label">О себе (Bio)</label>
                 <div class="tg-char-counter" id="feed-bio-counter">0 / 140</div>
               </div>
+              <div class="tg-field-group">
+                <input type="tel" id="feed-profile-phone" class="tg-field-input" placeholder=" " maxlength="32">
+                <label for="feed-profile-phone" class="tg-field-label">Телефон (необязательно)</label>
+              </div>
 
               <button type="submit" class="tg-primary-btn full-width" id="btn-feed-save-profile">
                 <span>Сохранить профиль</span>
@@ -447,11 +451,16 @@
                 <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
               </svg>
             </button>
-            <button class="tg-icon-btn" id="btn-chat-info-panel" title="Профиль чата">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-              </svg>
+            <button class="tg-icon-btn" id="btn-chat-info-panel" title="Действия чата" aria-label="Действия чата" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
             </button>
+            <div id="chat-actions-menu" class="tg-chat-actions-menu hidden" role="menu">
+              <button type="button" data-chat-action="contact" role="menuitem"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-message"/></svg><span>Добавить контакт</span></button>
+              <button type="button" data-chat-action="mute" role="menuitem"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-mic"/></svg><span>Выключить звук</span></button>
+              <button type="button" data-chat-action="clear" role="menuitem"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-trash"/></svg><span>Очистить чат</span></button>
+              <button type="button" data-chat-action="block" role="menuitem"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-shield-block"/></svg><span>Добавить в чёрный список</span></button>
+              <button type="button" data-chat-action="delete" class="danger" role="menuitem"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-trash"/></svg><span>Удалить чат</span></button>
+            </div>
           </div>
         </header>
 
@@ -474,7 +483,7 @@
         </section>
 
         <!-- COMPACT MEDIA PLAYER (VIDEO CIRCLES & VOICE MESSAGES) -->
-        <section id="media-player-panel" class="tg-media-player hidden" aria-label="Медиаплеер">
+        <section id="media-player-panel" class="tg-media-player hidden" aria-label="Медиаплеер" tabindex="0" title="Перейти к сообщению">
           <div id="media-player-avatar" class="tg-media-player-avatar"><svg class="tg-ui-icon"><use href="#tg-icon-play"/></svg></div>
           <div class="tg-media-player-info">
             <strong id="media-player-user" class="tg-media-player-user">@user</strong>
@@ -496,9 +505,10 @@
         </div>
 
         <!-- VIDEO NOTE RECORDING PREVIEW (CENTER SCREEN MODAL) -->
-        <div id="video-recording-panel" class="tg-video-record-wrap hidden">
+        <div id="video-recording-panel" class="tg-video-record-wrap hidden" role="button" tabindex="0" aria-label="Переключить камеру">
           <div class="tg-video-circle-preview">
             <video id="video-stream-preview" autoplay playsinline muted></video>
+            <span class="tg-camera-switch-hint">Коснитесь, чтобы сменить камеру</span>
           </div>
         </div>
 
@@ -600,21 +610,17 @@
               </div>
               <span>Написать</span>
             </button>
-            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-mute">
-              <div class="tg-profile-act-icon" id="profile-mute-icon-wrap">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-                </svg>
-              </div>
-              <span id="profile-mute-text">Звук</span>
+            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-contact">
+              <div class="tg-profile-act-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zM6 10V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>
+              <span id="profile-contact-text">Добавить</span>
             </button>
-            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-share">
+            <button type="button" class="tg-profile-act-btn" id="btn-profile-action-call">
               <div class="tg-profile-act-icon">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
+                  <path d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.61 21 3 13.39 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
                 </svg>
               </div>
-              <span>Ссылка</span>
+              <span>Позвонить</span>
             </button>
           </div>
 
@@ -647,6 +653,11 @@
                 <div class="tg-profile-info-val" id="profile-bio-val">Пользуюсь Telegram Web ✨</div>
                 <div class="tg-profile-info-lbl">О себе (Bio)</div>
               </div>
+            </div>
+
+            <div class="tg-profile-info-item" id="item-profile-phone">
+              <div class="tg-profile-info-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.61 21 3 13.39 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></div>
+              <div class="tg-profile-info-content"><div class="tg-profile-info-val" id="profile-phone-val">Не указан</div><div class="tg-profile-info-lbl">Номер телефона</div></div>
             </div>
 
             <div class="tg-profile-info-item">
@@ -749,6 +760,10 @@
             <label for="edit-profile-bio" class="tg-field-label">О себе (Bio, до 140 символов)</label>
             <div class="tg-char-counter" id="edit-bio-counter">0 / 140</div>
           </div>
+          <div class="tg-field-group">
+            <input type="tel" id="edit-profile-phone" class="tg-field-input" placeholder=" " maxlength="32">
+            <label for="edit-profile-phone" class="tg-field-label">Телефон (необязательно)</label>
+          </div>
 
           <div class="tg-modal-footer">
             <button type="button" id="btn-cancel-edit-profile" class="tg-tab-btn">Отмена</button>
@@ -761,10 +776,14 @@
     <div id="modal-add-contact" class="tg-modal-overlay hidden">
       <div class="tg-modal-card">
         <div class="tg-modal-header">
-          <h3>Добавить контакт</h3>
+          <h3 id="add-contact-modal-title">Добавить контакт</h3>
           <button type="button" id="btn-close-add-contact" class="tg-icon-btn" title="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
         </div>
         <form id="form-add-contact" class="tg-edit-profile-form">
+          <div class="tg-add-contact-preview">
+            <div id="add-contact-avatar" class="tg-avatar tg-avatar-user">?</div>
+            <div><strong id="add-contact-preview-name">Новый контакт</strong><span>Данные сохраняются в вашей книге контактов</span></div>
+          </div>
           <div class="tg-field-group">
             <input type="text" id="add-contact-username" class="tg-field-input" placeholder=" " required maxlength="32">
             <label for="add-contact-username" class="tg-field-label">Логин контакта (@username)</label>
@@ -774,12 +793,16 @@
             <label for="add-contact-name" class="tg-field-label">Имя (по желанию)</label>
           </div>
           <div class="tg-field-group">
+            <input type="tel" id="add-contact-phone" class="tg-field-input" placeholder=" " maxlength="32">
+            <label for="add-contact-phone" class="tg-field-label">Номер телефона (необязательно)</label>
+          </div>
+          <div class="tg-field-group">
             <textarea id="add-contact-bio" class="tg-field-input tg-textarea-input" placeholder=" " rows="2" maxlength="140"></textarea>
             <label for="add-contact-bio" class="tg-field-label">Примечание / Описание</label>
           </div>
           <div class="tg-modal-footer">
             <button type="button" id="btn-cancel-add-contact" class="tg-tab-btn">Отмена</button>
-            <button type="submit" class="tg-primary-btn">Добавить</button>
+            <button type="submit" id="add-contact-submit" class="tg-primary-btn">Добавить</button>
           </div>
         </form>
       </div>
@@ -826,6 +849,10 @@
       </div>
     </div>
 
+    <aside id="downloads-panel" class="tg-downloads-panel hidden" aria-label="Загрузки">
+      <header><strong>Загрузки</strong><button type="button" id="downloads-close" class="tg-icon-btn" aria-label="Скрыть загрузки"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-close"/></svg></button></header>
+      <div id="downloads-list" class="tg-downloads-list"></div>
+    </aside>
     <!-- TOAST NOTIFICATIONS (TELEGRAM BOTTOM TOAST) -->
     <div id="tg-toast-container" class="tg-toast-container"></div>
 
@@ -875,6 +902,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.29.0"></script>
+  <script src="app.js?v=3.30.0"></script>
 </body>
 </html>

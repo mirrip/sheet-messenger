@@ -101,3 +101,21 @@ test('global search excludes other users private dialogs and supports empty rece
   await app.handleSearch('','chats');
   assert.match(app.el.searchResultsList.children[0].textContent, /недавно найденные/);
 });
+
+test('chat clearing removes only the selected conversation', () => {
+  const storage = fixture();
+  save('gm_messages', [
+    {id:'one',chatId:'dm:alice:bobby',sender:'alice'},
+    {id:'two',chatId:'general',sender:'bobby'}
+  ]);
+  const removed = storage.clearChat('dm:alice:bobby');
+  assert.deepEqual(removed.map(item => item.id), ['one']);
+  assert.deepEqual(read('gm_messages').map(item => item.id), ['two']);
+});
+
+test('download MIME inference covers APK and common media', () => {
+  const app = Object.create(TelegramApp.prototype);
+  assert.equal(app.inferMimeType('release.apk'), 'application/vnd.android.package-archive');
+  assert.equal(app.inferMimeType('photo.JPG'), 'image/jpeg');
+  assert.equal(app.inferMimeType('unknown.mina'), 'application/octet-stream');
+});
