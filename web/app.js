@@ -799,6 +799,8 @@ class TelegramApp {
     const savedPlaybackRate = Number(localStorage.getItem('gm_media_playback_rate'));
     this.mediaPlaybackRate = [1, 1.5, 2].includes(savedPlaybackRate) ? savedPlaybackRate : 1;
     this.activeMediaSession = null;
+    this.chatMediaPlaybackQueue = [];
+    this.mediaFocusPaddingState = null;
     this.downloadTasks = new Map();
     this.messageSearchResults = [];
     this.messageSearchIndex = -1;
@@ -995,6 +997,73 @@ class TelegramApp {
     this.updateMediaPlayerPanel(session.media);
   }
 
+  clearMediaMessageFocus() {
+    const feed = this.el && this.el.messagesFeed;
+    if (!feed || !this.mediaFocusPaddingState) return;
+    feed.style.paddingTop = this.mediaFocusPaddingState.paddingTop;
+    feed.style.paddingBottom = this.mediaFocusPaddingState.paddingBottom;
+    this.mediaFocusPaddingState = null;
+  }
+
+  centerMediaMessage(messageId, highlight = false) {
+    const feed = this.el && this.el.messagesFeed;
+    if (!feed || !messageId) return;
+
+    const center = (behavior = 'smooth') => {
+      const message = feed.querySelector('[data-msg-id="' + CSS.escape(messageId) + '"]');
+      if (!message) return;
+      const target = message.closest('.tg-bubble-wrap') || message;
+
+      if (!this.mediaFocusPaddingState) {
+        this.mediaFocusPaddingState = {
+          paddingTop: feed.style.paddingTop,
+          paddingBottom: feed.style.paddingBottom
+        };
+      }
+
+      // Дополнительное пространство позволяет центрировать даже первое или
+      // последнее сообщение, где обычный scrollIntoView упирается в край чата.
+      const focusSpace = Math.max(24, Math.floor((feed.clientHeight - target.offsetHeight) / 2));
+      feed.style.paddingTop = focusSpace + 'px';
+      feed.style.paddingBottom = focusSpace + 'px';
+
+      requestAnimationFrame(() => {
+        const feedRect = feed.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const delta = (targetRect.top + targetRect.height / 2) - (feedRect.top + feedRect.height / 2);
+        feed.scrollTo({ top: Math.max(0, feed.scrollTop + delta), behavior });
+      });
+
+      if (highlight) {
+        message.classList.remove('tg-media-source-pulse');
+        requestAnimationFrame(() => message.classList.add('tg-media-source-pulse'));
+        window.setTimeout(() => message.classList.remove('tg-media-source-pulse'), 1800);
+      }
+    };
+
+    center();
+    // Кружок увеличивается с анимацией, поэтому после изменения размера
+    // выполняется точная повторная центровка.
+    window.setTimeout(() => center('smooth'), 280);
+  }
+
+  playNextChatMedia(messageId) {
+    const queue = Array.isArray(this.chatMediaPlaybackQueue) ? this.chatMediaPlaybackQueue : [];
+    const currentIndex = queue.findIndex(item => item.messageId === messageId);
+    const next = currentIndex >= 0 ? queue[currentIndex + 1] : null;
+    if (!next || typeof next.start !== 'function') return false;
+
+    window.setTimeout(() => {
+      Promise.resolve(next.start(true)).catch(err => {
+        console.warn('Next media playback error:', err);
+        if (this.activeMediaSession && this.activeMediaSession.messageId === messageId) {
+          this.finishActiveMediaSession(this.activeMediaSession.media);
+        }
+      });
+    }, 40);
+    return true;
+  }
+
   async revealMediaSource() {
     const session = this.activeMediaSession;
     if (!session || !session.messageId) return;
@@ -1014,10 +1083,7 @@ class TelegramApp {
         this.showToast('Сообщение уже не находится в этом чате');
         return;
       }
-      message.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      message.classList.remove('tg-media-source-pulse');
-      requestAnimationFrame(() => message.classList.add('tg-media-source-pulse'));
-      window.setTimeout(() => message.classList.remove('tg-media-source-pulse'), 1800);
+      this.centerMediaMessage(session.messageId, true);
     }, 80);
   }
 
@@ -1025,6 +1091,7 @@ class TelegramApp {
     if (!this.activeMediaSession || this.activeMediaSession.media !== media) return;
     this.activeMediaSession = null;
     if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
+    this.clearMediaMessageFocus();
   }
 
   closeActiveMediaSession(reset = true) {
@@ -1036,6 +1103,7 @@ class TelegramApp {
 
     this.activeMediaSession = null;
     if (this.el.mediaPlayerPanel) this.el.mediaPlayerPanel.classList.add('hidden');
+    this.clearMediaMessageFocus();
     if (typeof session.onClose === 'function') session.onClose(reset);
     else {
       try { session.media.pause(); } catch (_) {}
@@ -2286,6 +2354,7 @@ class TelegramApp {
   async renderMessages() {
     const msgs = await this.storage.getMessages(this.currentChatId);
     this.el.messagesFeed.innerHTML = '';
+    this.chatMediaPlaybackQueue = [];
 
     if (msgs.length === 0) {
       this.el.messagesFeed.innerHTML = '<div class="tg-premium-empty">' + this.uiIcon('message', 'tg-ui-icon-xl') + '<strong>Сообщений пока нет</strong><span>Начните диалог первым</span></div>';
@@ -2537,7 +2606,7 @@ class TelegramApp {
           if (this.currentPlayingCircle === vid) {
             this.currentPlayingCircle = null;
           }
-          this.finishActiveMediaSession(vid);
+          if (!this.playNextChatMedia(m.id)) this.finishActiveMediaSession(vid);
         });
 
         // Запуск / пауза видеокружка (как в Telegram: увеличение при проигрывании)
@@ -2575,6 +2644,7 @@ class TelegramApp {
               toggle: startCirclePlay,
               onClose: closeCirclePlayback
             });
+            this.centerMediaMessage(m.id);
             vid.muted = false;
 
             const playPromise = vid.play();
@@ -2606,6 +2676,7 @@ class TelegramApp {
           e.stopPropagation();
           startCirclePlay();
         });
+        this.chatMediaPlaybackQueue.push({ messageId: m.id, type: 'circle', start: startCirclePlay });
       }
 
       // Интерактив для голосового сообщения с живой волнограммой (Telegram Waveform)
@@ -2645,7 +2716,7 @@ class TelegramApp {
               this.currentPlayingAudio = null;
               this.currentPlayingAudioBtn = null;
             }
-            this.finishActiveMediaSession(audioObj);
+            if (!this.playNextChatMedia(m.id)) this.finishActiveMediaSession(audioObj);
           });
         };
 
@@ -2672,7 +2743,7 @@ class TelegramApp {
           }
         };
 
-        const toggleVoicePlay = async () => {
+        const toggleVoicePlay = async (autoAdvance = false) => {
           if (!audio) {
             if (!voiceSrc && voiceMediaId) {
               let url = this._mediaBlobUrlCache.get(voiceMediaId);
@@ -2715,6 +2786,7 @@ class TelegramApp {
               toggle: toggleVoicePlay,
               onClose: closeVoicePlayback
             });
+            if (autoAdvance) this.centerMediaMessage(m.id);
 
             audio.play().then(() => {
               if (playIcon) playIcon.classList.add('hidden');
@@ -2740,6 +2812,7 @@ class TelegramApp {
           e.stopPropagation();
           toggleVoicePlay();
         });
+        this.chatMediaPlaybackQueue.push({ messageId: m.id, type: 'voice', start: toggleVoicePlay });
 
         // Клик по волнограмме для мгновенной перемотки (seek)
         waveformEl.addEventListener('click', async (e) => {

@@ -119,3 +119,55 @@ test('download MIME inference covers APK and common media', () => {
   assert.equal(app.inferMimeType('photo.JPG'), 'image/jpeg');
   assert.equal(app.inferMimeType('unknown.mina'), 'application/octet-stream');
 });
+
+test('media queue advances to the next voice or circle below', async () => {
+  const previousWindow = global.window;
+  global.window = { setTimeout: callback => { callback(); return 1; } };
+  const started = [];
+  const app = Object.create(TelegramApp.prototype);
+  app.chatMediaPlaybackQueue = [
+    {messageId:'first', type:'voice', start:() => started.push('first')},
+    {messageId:'second', type:'circle', start:auto => started.push(auto ? 'second-auto' : 'second')},
+    {messageId:'third', type:'voice', start:auto => started.push(auto ? 'third-auto' : 'third')}
+  ];
+  assert.equal(app.playNextChatMedia('first'), true);
+  await Promise.resolve();
+  assert.deepEqual(started, ['second-auto']);
+  assert.equal(app.playNextChatMedia('third'), false);
+  global.window = previousWindow;
+});
+
+test('active media receives enough scroll space to reach the chat center', () => {
+  const previousWindow = global.window;
+  const previousCss = global.CSS;
+  const previousRaf = global.requestAnimationFrame;
+  global.window = { setTimeout: () => 1 };
+  global.CSS = { escape: value => value };
+  global.requestAnimationFrame = callback => { callback(); return 1; };
+  const target = {
+    offsetHeight: 200,
+    closest: () => target,
+    getBoundingClientRect: () => ({top:400,height:200})
+  };
+  const feed = {
+    clientHeight: 600,
+    scrollTop: 100,
+    style: {paddingTop:'',paddingBottom:''},
+    querySelector: () => target,
+    getBoundingClientRect: () => ({top:100,height:600}),
+    scrollTo({top}) { this.scrollTop = top; }
+  };
+  const app = Object.create(TelegramApp.prototype);
+  app.el = {messagesFeed:feed};
+  app.mediaFocusPaddingState = null;
+  app.centerMediaMessage('circle-id');
+  assert.equal(feed.style.paddingTop, '200px');
+  assert.equal(feed.style.paddingBottom, '200px');
+  assert.equal(feed.scrollTop, 200);
+  app.clearMediaMessageFocus();
+  assert.equal(feed.style.paddingTop, '');
+  assert.equal(feed.style.paddingBottom, '');
+  global.window = previousWindow;
+  global.CSS = previousCss;
+  global.requestAnimationFrame = previousRaf;
+});
