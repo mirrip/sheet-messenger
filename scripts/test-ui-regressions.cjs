@@ -125,6 +125,8 @@ test('media queue advances to the next voice or circle below', async () => {
   global.window = { setTimeout: callback => { callback(); return 1; } };
   const started = [];
   const app = Object.create(TelegramApp.prototype);
+  app.currentChatId = 'general';
+  app.activeMediaSession = {messageId:'first',chatId:'general'};
   app.chatMediaPlaybackQueue = [
     {messageId:'first', type:'voice', start:() => started.push('first')},
     {messageId:'second', type:'circle', start:auto => started.push(auto ? 'second-auto' : 'second')},
@@ -137,7 +139,7 @@ test('media queue advances to the next voice or circle below', async () => {
   global.window = previousWindow;
 });
 
-test('active media receives enough scroll space to reach the chat center', () => {
+test('active media aligns above the composer, including the first message', () => {
   const previousWindow = global.window;
   const previousCss = global.CSS;
   const previousRaf = global.requestAnimationFrame;
@@ -160,10 +162,10 @@ test('active media receives enough scroll space to reach the chat center', () =>
   const app = Object.create(TelegramApp.prototype);
   app.el = {messagesFeed:feed};
   app.mediaFocusPaddingState = null;
-  app.centerMediaMessage('circle-id');
-  assert.equal(feed.style.paddingTop, '200px');
-  assert.equal(feed.style.paddingBottom, '200px');
-  assert.equal(feed.scrollTop, 200);
+  app.alignMediaMessageToInput('circle-id');
+  assert.equal(feed.style.paddingTop, '388px');
+  assert.equal(feed.style.paddingBottom, '');
+  assert.equal(feed.scrollTop, 12);
   app.clearMediaMessageFocus();
   assert.equal(feed.style.paddingTop, '');
   assert.equal(feed.style.paddingBottom, '');

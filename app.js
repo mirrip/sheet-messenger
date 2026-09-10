@@ -998,6 +998,7 @@ class TelegramApp {
   }
 
   clearMediaMessageFocus() {
+    this.mediaFocusRequest = (this.mediaFocusRequest || 0) + 1;
     const feed = this.el && this.el.messagesFeed;
     if (!feed || !this.mediaFocusPaddingState) return;
     feed.style.paddingTop = this.mediaFocusPaddingState.paddingTop;
@@ -1005,11 +1006,13 @@ class TelegramApp {
     this.mediaFocusPaddingState = null;
   }
 
-  centerMediaMessage(messageId, highlight = false) {
+  alignMediaMessageToInput(messageId, highlight = false) {
     const feed = this.el && this.el.messagesFeed;
     if (!feed || !messageId) return;
+    const request = this.mediaFocusRequest = (this.mediaFocusRequest || 0) + 1;
 
     const center = (behavior = 'smooth') => {
+      if (request !== this.mediaFocusRequest) return;
       const message = feed.querySelector('[data-msg-id="' + CSS.escape(messageId) + '"]');
       if (!message) return;
       const target = message.closest('.tg-bubble-wrap') || message;
@@ -1021,16 +1024,17 @@ class TelegramApp {
         };
       }
 
-      // Дополнительное пространство позволяет центрировать даже первое или
-      // последнее сообщение, где обычный scrollIntoView упирается в край чата.
-      const focusSpace = Math.max(24, Math.floor((feed.clientHeight - target.offsetHeight) / 2));
+      // Первое сообщение тоже должно опускаться к строке ввода.
+      // Нижний край области сообщений уже расположен над композером.
+      const focusSpace = Math.max(0, feed.clientHeight - target.offsetHeight - 12);
       feed.style.paddingTop = focusSpace + 'px';
-      feed.style.paddingBottom = focusSpace + 'px';
+      feed.style.paddingBottom = this.mediaFocusPaddingState.paddingBottom;
 
       requestAnimationFrame(() => {
+        if (request !== this.mediaFocusRequest) return;
         const feedRect = feed.getBoundingClientRect();
         const targetRect = target.getBoundingClientRect();
-        const delta = (targetRect.top + targetRect.height / 2) - (feedRect.top + feedRect.height / 2);
+        const delta = (targetRect.top + targetRect.height) - (feedRect.top + feed.clientHeight - 12);
         feed.scrollTo({ top: Math.max(0, feed.scrollTop + delta), behavior });
       });
 
@@ -1042,9 +1046,8 @@ class TelegramApp {
     };
 
     center();
-    // Кружок увеличивается с анимацией, поэтому после изменения размера
-    // выполняется точная повторная центровка.
-    window.setTimeout(() => center('smooth'), 280);
+    // Размер кружка меняется 350 мс: уточняем положение после анимации.
+    window.setTimeout(() => center('smooth'), 400);
   }
 
   playNextChatMedia(messageId) {
@@ -1052,8 +1055,11 @@ class TelegramApp {
     const currentIndex = queue.findIndex(item => item.messageId === messageId);
     const next = currentIndex >= 0 ? queue[currentIndex + 1] : null;
     if (!next || typeof next.start !== 'function') return false;
+    const session = this.activeMediaSession;
+    if (!session || session.messageId !== messageId || session.chatId !== this.currentChatId) return false;
 
     window.setTimeout(() => {
+      if (this.activeMediaSession !== session || this.currentChatId !== session.chatId) return;
       Promise.resolve(next.start(true)).catch(err => {
         console.warn('Next media playback error:', err);
         if (this.activeMediaSession && this.activeMediaSession.messageId === messageId) {
@@ -1083,7 +1089,7 @@ class TelegramApp {
         this.showToast('Сообщение уже не находится в этом чате');
         return;
       }
-      this.centerMediaMessage(session.messageId, true);
+      this.alignMediaMessageToInput(session.messageId, true);
     }, 80);
   }
 
@@ -2644,7 +2650,7 @@ class TelegramApp {
               toggle: startCirclePlay,
               onClose: closeCirclePlayback
             });
-            this.centerMediaMessage(m.id);
+            this.alignMediaMessageToInput(m.id);
             vid.muted = false;
 
             const playPromise = vid.play();
@@ -2786,7 +2792,7 @@ class TelegramApp {
               toggle: toggleVoicePlay,
               onClose: closeVoicePlayback
             });
-            if (autoAdvance) this.centerMediaMessage(m.id);
+            if (autoAdvance) this.alignMediaMessageToInput(m.id);
 
             audio.play().then(() => {
               if (playIcon) playIcon.classList.add('hidden');
