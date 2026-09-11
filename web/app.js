@@ -87,31 +87,13 @@ class StorageService {
     if (typeof localStorage === 'undefined') return;
     if (!localStorage.getItem('gm_users')) {
       const demoUsers = [
-        { id: 'usr_general', username: 'general', name: 'Общий чат' },
         { id: 'usr_durov', username: 'durov', name: 'Павел Дуров' },
         { id: 'usr_maria', username: 'maria', name: 'Мария' }
       ];
       localStorage.setItem('gm_users', JSON.stringify(demoUsers));
     }
     if (!localStorage.getItem('gm_messages')) {
-      const demoMessages = [
-        {
-          id: 'msg_1',
-          chatId: 'general',
-          sender: 'durov',
-          text: 'Добро пожаловать в Telegram Web! Скорость, простота и приватность.',
-          time: '12:00',
-          createdAt: Date.now() - 3600000
-        },
-        {
-          id: 'msg_2',
-          chatId: 'general',
-          sender: 'maria',
-          text: 'Интерфейс выглядит великолепно! Можно общаться и отправлять фото 🚀',
-          time: '12:05',
-          createdAt: Date.now() - 1800000
-        }
-      ];
+      const demoMessages = [];
       localStorage.setItem('gm_messages', JSON.stringify(demoMessages));
     }
   }
@@ -166,7 +148,12 @@ class StorageService {
     const user = users.find(u => u.username.toLowerCase() === oldName);
     if (!user) throw new Error('Профиль не найден');
     const remap = value => value === oldName ? next : value;
-    const chatId = id => typeof id === 'string' && id.startsWith('dm:') ? 'dm:' + id.slice(3).split(':').map(remap).sort().join(':') : id;
+    const chatId = id => {
+      if (typeof id !== 'string') return id;
+      if (id.startsWith('dm:')) return 'dm:' + id.slice(3).split(':').map(remap).sort().join(':');
+      if (id === 'saved:' + oldName) return 'saved:' + next;
+      return id;
+    };
     const before = new Map(), after = new Map();
     const put = (key, value) => { if (!before.has(key)) before.set(key, localStorage.getItem(key)); after.set(key, value === null ? null : JSON.stringify(value)); };
     user.username = next;
@@ -182,18 +169,19 @@ class StorageService {
     put('gm_muted_chats', JSON.parse(localStorage.getItem('gm_muted_chats') || '[]').map(chatId));
     const keys = Array.from({length:localStorage.length}, (_,i) => localStorage.key(i));
     for (const key of keys) {
-      const match = /^(gm_contacts_|gm_blacklist_|gm_recent_search_)(.+)$/.exec(key);
+      const match = /^(gm_contacts_|gm_blacklist_|gm_recent_search_|gm_appearance_)(.+)$/.exec(key);
       if (!match) continue;
       const destination = match[1] + remap(match[2]);
       if (destination !== key && localStorage.getItem(destination) !== null) throw new Error('Для этого имени уже есть локальные данные. Выберите другое имя.');
-      const values = JSON.parse(localStorage.getItem(key) || '[]').map(v => {
+      const storedValue = JSON.parse(localStorage.getItem(key) || (match[1] === 'gm_appearance_' ? '{}' : '[]'));
+      const values = Array.isArray(storedValue) ? storedValue.map(v => {
         if (typeof v === 'string') return remap(v);
         const item = {...v};
         if (item.username) item.username = remap(item.username);
         if (item.peer) item.peer = remap(item.peer);
         if (item.id) item.id = chatId(item.id);
         return item;
-      });
+      }) : storedValue;
       put(destination, values);
       if (destination !== key) put(key, null);
     }
@@ -619,7 +607,7 @@ class StorageService {
     const userMsgs = all.filter(m => {
       const sender = (m.sender || '').toLowerCase();
       const chatId = (m.chatId || '').toLowerCase();
-      return sender === myName || chatId.includes(myName) || chatId === 'general';
+      return sender === myName || chatId.includes(myName) || chatId === this.getSavedChatId(myName);
     });
 
     const media = [];
@@ -663,6 +651,10 @@ class StorageService {
   async getMessages(chatId) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
+  }
+
+  getSavedChatId(username) {
+    return 'saved:' + String(username || '').toLowerCase().replace(/^@/, '');
   }
 
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
@@ -709,15 +701,17 @@ class StorageService {
     const myName = currentUsername.toLowerCase();
     const chatMap = new Map();
 
-    const generalMsgs = all.filter(m => m.chatId === 'general');
-    const lastGen = generalMsgs[generalMsgs.length - 1];
-    chatMap.set('general', {
-      id: 'general',
-      title: 'Общий чат',
-      isGeneral: true,
-      lastMsg: lastGen ? (lastGen.text || (lastGen.file ? 'Фото или файл' : '')) : 'Нажмите, чтобы открыть',
-      lastTime: lastGen ? lastGen.time : '',
-      timestamp: lastGen ? lastGen.createdAt : 0,
+    const savedChatId = this.getSavedChatId(myName);
+    const savedMessages = all.filter(m => m.chatId === savedChatId);
+    const lastSaved = savedMessages[savedMessages.length - 1];
+    chatMap.set(savedChatId, {
+      id: savedChatId,
+      title: 'Избранное',
+      isSaved: true,
+      isGeneral: false,
+      lastMsg: lastSaved ? (lastSaved.text || (lastSaved.voice ? 'Голосовое сообщение' : (lastSaved.circleVideo ? 'Видеокружок' : (lastSaved.file ? 'Файл' : 'Сообщение')))) : 'Личное облако для сообщений и файлов',
+      lastTime: lastSaved ? lastSaved.time : '',
+      timestamp: lastSaved ? lastSaved.createdAt : 0,
       unreadCount: 0
     });
 
@@ -752,6 +746,8 @@ class StorageService {
     });
 
     return Array.from(chatMap.values()).sort((a, b) => {
+      if (a.isSaved) return -1;
+      if (b.isSaved) return 1;
       if (a.isGeneral) return -1;
       if (b.isGeneral) return 1;
       return b.timestamp - a.timestamp;
@@ -766,8 +762,8 @@ class TelegramApp {
   constructor() {
     this.storage = new StorageService(typeof window !== 'undefined' ? window.APP_CONFIG : null);
     this.currentUser = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
-    this.currentChatId = 'general';
-    this.currentChatTitle = 'Общий чат';
+    this.currentChatId = this.currentUser ? this.storage.getSavedChatId(this.currentUser.username) : 'saved:guest';
+    this.currentChatTitle = 'Избранное';
     this.activeFolder = 'all'; // 'all' | 'dm' | 'channels'
     this.authMode = 'login';
     this.recordMode = 'mic'; // 'mic' | 'video'
@@ -1025,7 +1021,7 @@ class TelegramApp {
     this.closeUserProfile();
     if (this.el.modalMyFiles) this.el.modalMyFiles.classList.add('hidden');
     if (session.chatId && session.chatId !== this.currentChatId) {
-      let title = session.chatId === 'general' ? 'Общий чат' : '@' + this.getPeerUsernameFromChatId(session.chatId);
+      let title = String(session.chatId || '').startsWith('saved:') ? 'Избранное' : (session.chatId === 'general' ? 'Общий чат' : '@' + this.getPeerUsernameFromChatId(session.chatId));
       const peer = this.getPeerUsernameFromChatId(session.chatId);
       const profile = await this.storage.getUserProfile(peer);
       if (profile?.name) title = profile.name;
@@ -1622,7 +1618,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.33.0\nНовый выбор медиа и любых файлов');
+        this.showToast('Sheet Messenger v3.34.0\nЛичное Избранное, темы и удобные вложения');
       });
     }
 
@@ -2186,7 +2182,7 @@ class TelegramApp {
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
       this.showMainScreen();
-      this.openChat('general', 'Общий чат');
+      this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
@@ -2214,8 +2210,11 @@ class TelegramApp {
     this.applyAppearanceSettings(false);
 
     const openState = sessionStorage.getItem('gm_active_chat_open');
-    const savedChatId = sessionStorage.getItem('gm_active_chat_id') || 'general';
-    const savedChatTitle = sessionStorage.getItem('gm_active_chat_title') || 'Общий чат';
+    const storedChatId = sessionStorage.getItem('gm_active_chat_id') || '';
+    const ownSavedChatId = this.storage.getSavedChatId(this.currentUser.username);
+    const savedChatId = (!storedChatId || storedChatId === 'general' || storedChatId.startsWith('saved:')) ? ownSavedChatId : storedChatId;
+    const storedChatTitle = sessionStorage.getItem('gm_active_chat_title') || '';
+    const savedChatTitle = savedChatId === ownSavedChatId ? 'Избранное' : (storedChatTitle || 'Диалог');
 
     this.currentChatId = savedChatId;
     if (this.el.activeChatTitle) {
@@ -2254,6 +2253,7 @@ class TelegramApp {
 
   getPeerUsernameFromChatId(chatId) {
     const normalizedChatId = String(chatId || '').trim().toLowerCase();
+    if (normalizedChatId.startsWith('saved:')) return String(this.currentUser && this.currentUser.username || '').toLowerCase();
     if (!normalizedChatId.startsWith('dm:')) return 'general';
 
     const participants = normalizedChatId.split(':').slice(1).filter(Boolean);
@@ -2288,12 +2288,13 @@ class TelegramApp {
       }
     }
 
+    const isSaved = chatId === this.storage.getSavedChatId(this.currentUser.username);
     const isGeneral = chatId === 'general';
     this.el.activeChatTitle.innerText = title;
-    this.el.activeChatStatus.innerText = isGeneral ? 'канал общения' : 'в сети';
+    this.el.activeChatStatus.innerText = isSaved ? 'личное облако' : (isGeneral ? 'канал общения' : 'в сети');
 
-    if (isGeneral) {
-      this.el.activeChatAvatar.innerHTML = this.uiIcon('globe');
+    if (isSaved || isGeneral) {
+      this.el.activeChatAvatar.innerHTML = this.uiIcon(isSaved ? 'star' : 'globe');
       this.el.activeChatAvatar.style.cursor = 'default';
       this.el.activeChatAvatar.onclick = null;
     } else {
@@ -2338,7 +2339,7 @@ class TelegramApp {
 
     // Фильтрация по папкам
     if (this.activeFolder === 'dm') {
-      chats = chats.filter(c => !c.isGeneral);
+      chats = chats.filter(c => !c.isGeneral && !c.isSaved);
     } else if (this.activeFolder === 'channels') {
       chats = chats.filter(c => c.isGeneral);
     }
@@ -2350,10 +2351,12 @@ class TelegramApp {
       const item = document.createElement('div');
       item.className = 'tg-chat-item' + (isActive ? ' active' : '');
 
-      const avatarClass = chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user';
-      const avatarContent = chat.isGeneral
+      const avatarClass = chat.isSaved ? 'tg-avatar-saved' : (chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user');
+      const avatarContent = chat.isSaved
+        ? this.uiIcon('star')
+        : (chat.isGeneral
         ? this.uiIcon('globe')
-        : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?'));
+        : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?')));
 
       item.innerHTML = [
         '<div class="tg-avatar ' + avatarClass + '">',
@@ -2385,7 +2388,8 @@ class TelegramApp {
     this.chatMediaPlaybackQueue = [];
 
     if (msgs.length === 0) {
-      this.el.messagesFeed.innerHTML = '<div class="tg-premium-empty">' + this.uiIcon('message', 'tg-ui-icon-xl') + '<strong>Сообщений пока нет</strong><span>Начните диалог первым</span></div>';
+      const saved = this.currentChatId === this.storage.getSavedChatId(this.currentUser.username);
+      this.el.messagesFeed.innerHTML = '<div class="tg-premium-empty">' + this.uiIcon(saved ? 'star' : 'message', 'tg-ui-icon-xl') + '<strong>' + (saved ? 'Ваше Избранное' : 'Сообщений пока нет') + '</strong><span>' + (saved ? 'Храните здесь сообщения, медиа и документы — их видите только вы' : 'Начните диалог первым') + '</span></div>';
       this.updateMessageSearch(false);
       return;
     }
@@ -4727,7 +4731,7 @@ class TelegramApp {
     if (filter === 'chats') {
       const selected = q ? chats.filter(c => (c.title + ' ' + (c.peer || '')).toLowerCase().includes(q)) :
         JSON.parse(localStorage.getItem('gm_recent_search_' + me) || '[]');
-      selected.forEach(c => addRow(c.title, c.id === 'general' ? 'Общий чат' : 'Личный диалог', 'message', () => go(c)));
+      selected.forEach(c => addRow(c.title, c.isSaved ? 'Личное облако' : (c.id === 'general' ? 'Общий чат' : 'Личный диалог'), c.isSaved ? 'star' : 'message', () => go(c)));
       users.filter(u => !selected.some(c => c.peer === u.username)).forEach(u => {
         const chat = { id: this.getDmChatId(me, u.username), title: u.name || '@' + u.username, peer: u.username };
         addRow(chat.title, '@' + u.username, 'message', () => go(chat));
@@ -4913,14 +4917,17 @@ class TelegramApp {
     if (!this.el.chatActionsMenu) return;
     const peer = this.getPeerUsernameFromChatId(this.currentChatId);
     const general = this.currentChatId === 'general';
+    const saved = this.currentChatId === this.storage.getSavedChatId(this.currentUser.username);
     const contacts = this.storage.getContacts(this.currentUser.username);
     const isContact = contacts.some(contact => contact.username.toLowerCase() === peer.toLowerCase());
     const isMuted = this.isChatMuted(this.currentChatId);
     const isBlocked = this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
     const contactButton = this.el.chatActionsMenu.querySelector('[data-chat-action="contact"]');
     const blockButton = this.el.chatActionsMenu.querySelector('[data-chat-action="block"]');
-    contactButton.classList.toggle('hidden', general);
-    blockButton.classList.toggle('hidden', general);
+    contactButton.classList.toggle('hidden', general || saved);
+    blockButton.classList.toggle('hidden', general || saved);
+    const deleteButton = this.el.chatActionsMenu.querySelector('[data-chat-action="delete"]');
+    if (deleteButton) deleteButton.classList.toggle('hidden', saved);
     contactButton.querySelector('span').textContent = isContact ? 'Изменить контакт' : 'Добавить контакт';
     blockButton.querySelector('span').textContent = isBlocked ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
     this.el.chatActionsMenu.querySelector('[data-chat-action="mute"] span').textContent = isMuted ? 'Включить звук' : 'Выключить звук';
@@ -4978,7 +4985,7 @@ class TelegramApp {
       this.closeActiveMediaSession(true);
       const removed = this.storage.deleteChat(this.currentUser.username, chatId);
       await this.removeMessagesMedia(removed);
-      this.openChat('general', 'Общий чат');
+      this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
       if (window.innerWidth <= 768) this.el.chatView.classList.remove('active');
       await this.renderChatList();
       this.showToast('Чат удалён');
@@ -5383,7 +5390,7 @@ class TelegramApp {
             } else if (url) {
               this.openLightbox(url, file ? (file.name || 'Медиа') : 'Медиа', m.isVideo ? 'video' : 'image');
             } else if (m.chatId) {
-              this.openChat(m.chatId, m.chatId === 'general' ? 'Общий чат' : 'Диалог');
+              this.openChat(m.chatId, m.chatId.startsWith('saved:') ? 'Избранное' : (m.chatId === 'general' ? 'Общий чат' : 'Диалог'));
             }
           });
           grid.appendChild(item);
@@ -5439,7 +5446,9 @@ class TelegramApp {
         const old = this.currentUser.username;
         const renamed = this.storage.renameUsername(old, requested);
         this.currentUser.username = renamed;
-        this.currentChatId = this.currentChatId.startsWith('dm:') ? 'dm:' + this.currentChatId.slice(3).split(':').map(u => u === old ? renamed : u).sort().join(':') : this.currentChatId;
+        this.currentChatId = this.currentChatId.startsWith('dm:')
+          ? 'dm:' + this.currentChatId.slice(3).split(':').map(u => u === old ? renamed : u).sort().join(':')
+          : (this.currentChatId === 'saved:' + old ? 'saved:' + renamed : this.currentChatId);
         sessionStorage.setItem('gm_active_chat_id', this.currentChatId);
         window.history.replaceState({chatId:this.currentChatId, title:sessionStorage.getItem('gm_active_chat_title')}, '', window.location.pathname + window.location.search);
         this.closeActiveMediaSession(true);
@@ -5759,7 +5768,7 @@ class TelegramApp {
         const row = document.createElement('div');
         row.className = 'tg-myfile-row';
         const title = item.file ? (item.file.name || (item.isVideo ? 'Видео' : 'Фото')) : 'Медиа';
-        const sub = (item.time || '') + ' · диалог: ' + (item.chatId === 'general' ? 'общий чат' : (item.chatId || 'личный'));
+        const sub = (item.time || '') + ' · диалог: ' + (String(item.chatId || '').startsWith('saved:') ? 'избранное' : (item.chatId === 'general' ? 'общий чат' : (item.chatId || 'личный')));
         row.innerHTML = [
           '<div class="tg-myfile-kind-icon">' + this.uiIcon(item.isVideo ? 'video' : 'image') + '</div>',
           '<div style="flex:1;min-width:0;">',

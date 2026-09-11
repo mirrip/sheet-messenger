@@ -17,12 +17,16 @@ function fixture() {
   const storage = new StorageService({ STORAGE_MODE: 'local' });
   save('gm_users', [{id:'stable-id', username:'alice', password:'test-only', avatar:'unchanged'}, {username:'bobby'}]);
   save('gm_current_user', {id:'stable-id', username:'alice'});
-  save('gm_messages', [{id:'message-id', sender:'alice', chatId:'dm:alice:bobby', text:'alice should stay in text', files:[{mediaId:'blob-id'}], reactions:{like:['alice','bobby']}}]);
+  save('gm_messages', [
+    {id:'message-id', sender:'alice', chatId:'dm:alice:bobby', text:'alice should stay in text', files:[{mediaId:'blob-id'}], reactions:{like:['alice','bobby']}},
+    {id:'saved-id', sender:'alice', chatId:'saved:alice', text:'private note'}
+  ]);
   save('gm_contacts_alice', [{username:'bobby'}]);
   save('gm_contacts_bobby', [{username:'alice'}]);
   save('gm_blacklist_bobby', ['alice']);
   save('gm_muted_chats', ['dm:alice:bobby']);
   save('gm_recent_search_alice', [{id:'dm:alice:bobby', peer:'bobby', title:'Bobby'}]);
+  save('gm_appearance_alice', {theme:'light', background:'mesh', dim:18});
   return storage;
 }
 test('rename preserves IDs, attachments, content, login and relationship references', async () => {
@@ -41,7 +45,10 @@ test('rename preserves IDs, attachments, content, login and relationship referen
   assert.deepEqual(read('gm_blacklist_bobby'), ['zoe_new']);
   assert.deepEqual(read('gm_muted_chats'), ['dm:bobby:zoe_new']);
   assert.equal(read('gm_recent_search_zoe_new')[0].id, 'dm:bobby:zoe_new');
+  assert.equal(read('gm_messages')[1].chatId, 'saved:zoe_new');
+  assert.equal(read('gm_appearance_zoe_new').theme, 'light');
   assert.equal(localStorage.getItem('gm_contacts_alice'), null);
+  assert.equal(localStorage.getItem('gm_appearance_alice'), null);
   assert.equal((await storage.login('zoe_new', 'test-only')).user.id, 'stable-id');
 });
 test('invalid or occupied names never modify storage', () => {
@@ -162,4 +169,21 @@ test('appearance preferences stay isolated per account and normalize invalid val
   assert.equal(app.getAppearanceSettings().theme, 'medium');
   assert.equal(app.getAppearanceSettings().background, 'default');
   assert.equal(app.getAppearanceSettings().dim, 0);
+});
+
+test('saved messages are private and pinned only for their owner', async () => {
+  const storage = fixture();
+  save('gm_messages', [
+    {id:'alice-note', sender:'alice', chatId:'saved:alice', text:'Alice private', time:'10:00', createdAt:10},
+    {id:'bob-note', sender:'bobby', chatId:'saved:bobby', text:'Bob private', time:'10:01', createdAt:11},
+    {id:'dm-note', sender:'bobby', chatId:'dm:alice:bobby', text:'Shared', time:'10:02', createdAt:12}
+  ]);
+  const aliceChats = await storage.getUserChats('alice');
+  assert.equal(aliceChats[0].id, 'saved:alice');
+  assert.equal(aliceChats[0].title, 'Избранное');
+  assert.equal(aliceChats[0].lastMsg, 'Alice private');
+  assert.equal(aliceChats.some(chat => chat.id === 'saved:bobby'), false);
+  const bobChats = await storage.getUserChats('bobby');
+  assert.equal(bobChats[0].id, 'saved:bobby');
+  assert.equal(bobChats[0].lastMsg, 'Bob private');
 });
