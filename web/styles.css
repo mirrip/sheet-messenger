@@ -5722,3 +5722,24 @@ html[data-theme="light"] .tg-main-wrap::after,body.tg-theme-light .tg-main-wrap:
 /* SAVED MESSAGES v3.34 */
 .tg-avatar-saved { color:#fff; background:linear-gradient(145deg,#2fa8ec,#4c70d8); box-shadow:0 7px 20px rgba(51,144,236,.25); }
 .tg-avatar-saved .tg-ui-icon { width:21px; height:21px; }
+
+/* BLACKLIST ENFORCEMENT v3.35 */
+.tg-blocked-composer {
+  position:relative; z-index:1005; min-height:64px; padding:10px max(16px,calc((100% - 820px)/2)); display:flex; align-items:center; gap:11px;
+  border-top:1px solid var(--tg-header-border); color:var(--tg-text-main); background:color-mix(in srgb,var(--tg-bg-chat) 94%,var(--tg-bg-header)); backdrop-filter:blur(16px);
+}
+.tg-blocked-composer-icon { width:38px; height:38px; flex:0 0 auto; display:grid; place-items:center; border-radius:50%; color:var(--tg-danger); background:color-mix(in srgb,var(--tg-danger) 12%,transparent); }
+.tg-blocked-composer-copy { min-width:0; flex:1; overflow:hidden; color:var(--tg-text-sub); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.tg-blocked-composer-action { min-height:40px; padding:0 15px; border:0; border-radius:12px; color:#fff; background:var(--tg-primary); font-weight:700; cursor:pointer; box-shadow:0 6px 16px color-mix(in srgb,var(--tg-primary) 24%,transparent); }
+.tg-blocked-composer-action:hover { filter:brightness(1.06); }
+.tg-blacklist-row { padding:10px 8px; border-radius:13px; cursor:pointer; }
+.tg-blacklist-row:hover { background:var(--tg-hover); }
+.tg-blacklist-row .tg-avatar img { width:100%; height:100%; object-fit:cover; }
+.tg-blacklist-unblock { min-height:34px; padding:0 10px; border:1px solid color-mix(in srgb,var(--tg-danger) 25%,var(--tg-border)); border-radius:10px; color:var(--tg-danger); background:color-mix(in srgb,var(--tg-danger) 7%,transparent); font-size:11.5px; font-weight:680; cursor:pointer; }
+.tg-blacklist-unblock:hover { background:color-mix(in srgb,var(--tg-danger) 13%,transparent); }
+@media (max-width:420px) {
+  .tg-blocked-composer { padding:9px 12px max(9px,env(safe-area-inset-bottom)); }
+  .tg-blocked-composer-copy { font-size:12px; }
+  .tg-blocked-composer-action { padding-inline:11px; font-size:12px; }
+  .tg-blacklist-unblock { padding-inline:8px; font-size:10.5px; }
+}

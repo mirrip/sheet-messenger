@@ -583,6 +583,18 @@ class StorageService {
     return JSON.parse(localStorage.getItem(key) || '[]');
   }
 
+  getChatBlockState(currentUsername, chatId) {
+    const me = String(currentUsername || '').toLowerCase().replace(/^@/, '');
+    const parts = String(chatId || '').toLowerCase().split(':');
+    if (!me || parts[0] !== 'dm' || parts.length !== 3 || !parts.includes(me)) {
+      return { blocked: false, blockedByMe: false, blockedByPeer: false, peer: '' };
+    }
+    const peer = parts[1] === me ? parts[2] : parts[1];
+    const blockedByMe = this.getBlacklist(me).includes(peer);
+    const blockedByPeer = this.getBlacklist(peer).includes(me);
+    return { blocked: blockedByMe || blockedByPeer, blockedByMe, blockedByPeer, peer };
+  }
+
   toggleBlacklist(currentUsername, targetUsername) {
     if (!currentUsername || !targetUsername) return false;
     const key = 'gm_blacklist_' + currentUsername.toLowerCase();
@@ -658,6 +670,8 @@ class StorageService {
   }
 
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
+    const blockState = this.getChatBlockState(sender, chatId);
+    if (blockState.blocked) throw new Error(blockState.blockedByMe ? 'Сначала разблокируйте пользователя' : 'Пользователь ограничил переписку');
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1148,6 +1162,10 @@ class TelegramApp {
       messagesFeed: document.getElementById('messages-feed'),
       messageInput: document.getElementById('message-input'),
       btnAttach: document.getElementById('btn-attach'),
+      messageComposer: document.getElementById('message-composer'),
+      blockedComposer: document.getElementById('blocked-composer'),
+      blockedComposerText: document.getElementById('blocked-composer-text'),
+      btnComposerUnblock: document.getElementById('btn-composer-unblock'),
       fileInput: document.getElementById('file-input'),
       mediaInput: document.getElementById('media-input'),
       attachmentPicker: document.getElementById('attachment-picker'),
@@ -1618,7 +1636,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.34.0\nЛичное Избранное, темы и удобные вложения');
+        this.showToast('Sheet Messenger v3.35.0\nРабочий чёрный список и защищённые диалоги');
       });
     }
 
@@ -2005,6 +2023,9 @@ class TelegramApp {
         while (this.pendingFiles && this.pendingFiles.length) await this.removePendingFileAt(this.pendingFiles.length - 1);
       });
     }
+    if (this.el.btnComposerUnblock) {
+      this.el.btnComposerUnblock.addEventListener('click', () => this.unblockCurrentChatUser());
+    }
 
     // Вставка изображений из буфера обмена (Ctrl+V)
     document.addEventListener('paste', (e) => {
@@ -2237,6 +2258,7 @@ class TelegramApp {
     this.renderAvatars();
     this.switchSidebarView(this.activeSidebarView || 'chats');
     this.renderProfileFeed();
+    this.updateComposerBlockState();
 
     this.refreshData();
   }
@@ -2329,6 +2351,7 @@ class TelegramApp {
       this.el.chatView.classList.add('active');
     }
 
+    this.updateComposerBlockState();
     this.updateMainActionButtonState();
     this.renderChatList();
     this.renderMessages();
@@ -2944,6 +2967,12 @@ class TelegramApp {
   }
 
   async sendMessage() {
+    const blockState = this.storage.getChatBlockState(this.currentUser.username, this.currentChatId);
+    if (blockState.blocked) {
+      this.updateComposerBlockState();
+      this.showToast(blockState.blockedByMe ? 'Сначала разблокируйте @' + blockState.peer : 'Пользователь ограничил переписку');
+      return;
+    }
     const text = this.el.messageInput.value.trim();
     const hasFiles = this.pendingFiles && this.pendingFiles.length > 0;
 
@@ -4908,6 +4937,39 @@ class TelegramApp {
     this.showToast(this.contactsSortMode === 'name' ? 'Сортировка: по алфавиту (А-Я)' : 'Сортировка: по дате добавления');
   }
 
+  updateComposerBlockState() {
+    if (!this.currentUser || !this.el.messageComposer || !this.el.blockedComposer) return { blocked: false };
+    const state = this.storage.getChatBlockState(this.currentUser.username, this.currentChatId);
+    this.el.messageComposer.classList.toggle('hidden', state.blocked);
+    this.el.blockedComposer.classList.toggle('hidden', !state.blocked);
+    if (state.blocked) {
+      this.closeAttachmentPicker();
+      if (this.el.composerAttachments) this.el.composerAttachments.classList.add('hidden');
+      if (this.el.blockedComposerText) {
+        this.el.blockedComposerText.textContent = state.blockedByMe
+          ? ('@' + state.peer + ' в чёрном списке')
+          : ('@' + state.peer + ' ограничил переписку');
+      }
+      if (this.el.btnComposerUnblock) {
+        this.el.btnComposerUnblock.classList.toggle('hidden', !state.blockedByMe);
+        this.el.btnComposerUnblock.disabled = !state.blockedByMe;
+      }
+    } else {
+      this.renderPendingAttachments();
+    }
+    return state;
+  }
+
+  unblockCurrentChatUser() {
+    const state = this.storage.getChatBlockState(this.currentUser.username, this.currentChatId);
+    if (!state.blockedByMe || !state.peer) return;
+    this.storage.toggleBlacklist(this.currentUser.username, state.peer);
+    this.updateComposerBlockState();
+    this.updateChatActionsMenu();
+    this.renderBlacklist();
+    this.showToast('@' + state.peer + ' разблокирован');
+  }
+
   closeChatActionsMenu() {
     if (this.el.chatActionsMenu) this.el.chatActionsMenu.classList.add('hidden');
     if (this.el.btnChatInfoPanel) this.el.btnChatInfoPanel.setAttribute('aria-expanded', 'false');
@@ -4977,6 +5039,8 @@ class TelegramApp {
       const blocked = this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
       if (!confirm(blocked ? 'Убрать @' + peer + ' из чёрного списка?' : 'Добавить @' + peer + ' в чёрный список?')) return;
       this.storage.toggleBlacklist(this.currentUser.username, peer);
+      this.updateComposerBlockState();
+      this.renderBlacklist();
       this.showToast(blocked ? 'Пользователь разблокирован' : 'Пользователь добавлен в чёрный список');
       return;
     }
@@ -5822,32 +5886,64 @@ class TelegramApp {
       return;
     }
 
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const contacts = this.storage.getContacts(this.currentUser.username);
     list.forEach(u => {
+      const profile = users.find(item => String(item.username || '').toLowerCase() === u) || {};
+      const contact = contacts.find(item => String(item.username || '').toLowerCase() === u) || {};
+      const title = contact.name || profile.name || ('@' + u);
+      const avatar = profile.avatar || '';
       const row = document.createElement('div');
-      row.className = 'tg-contact-item';
+      row.className = 'tg-contact-item tg-blacklist-row';
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', 'Открыть чат с @' + u);
       row.innerHTML = [
-        '<div class="tg-avatar tg-avatar-user tg-avatar-icon tg-avatar-danger">' + this.uiIcon('shield-block') + '</div>',
+        '<div class="tg-avatar tg-avatar-user tg-avatar-danger">' + (avatar ? '<img src="' + this.escapeAttr(avatar) + '" alt="">' : this.escape(u[0].toUpperCase())) + '</div>',
         '<div class="tg-contact-info">',
-        '  <div class="tg-contact-name">@' + this.escape(u) + '</div>',
-        '  <div class="tg-contact-sub">Заблокирован</div>',
+        '  <div class="tg-contact-name">' + this.escape(title) + '</div>',
+        '  <div class="tg-contact-sub">@' + this.escape(u) + ' · заблокирован</div>',
         '</div>',
-        '<button class="tg-btn tg-btn-secondary" style="font-size:12px;padding:4px 10px;">Разблокировать</button>'
+        '<button type="button" class="tg-blacklist-unblock">Разблокировать</button>'
       ].join('');
 
       const btn = row.querySelector('button');
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
         this.unblockUser(u);
+      });
+      const openChat = () => {
+        this.closeBlacklistModal();
+        this.switchSidebarView('chats');
+        this.openDirectChat(u);
+      };
+      row.addEventListener('click', openChat);
+      row.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openChat(); }
       });
 
       this.el.blacklistItemsList.appendChild(row);
     });
   }
 
-  handleBlacklistAdd() {
+  async handleBlacklistAdd() {
     const input = this.el.blacklistInputUsername;
     const username = (input ? input.value : '').trim().replace(/^@/, '');
     if (!username) {
       this.showToast('Введите @username для блокировки');
+      return;
+    }
+    if (username.toLowerCase() === this.currentUser.username.toLowerCase()) {
+      this.showToast('Нельзя заблокировать собственный профиль');
+      return;
+    }
+    const profile = await this.storage.getUserProfile(username);
+    if (!profile || profile.username === 'general') {
+      this.showToast('Пользователь @' + username + ' не найден');
+      return;
+    }
+    if (this.storage.getBlacklist(this.currentUser.username).includes(username.toLowerCase())) {
+      this.showToast('@' + username + ' уже в чёрном списке');
       return;
     }
     this.storage.toggleBlacklist(this.currentUser.username, username);
@@ -5859,6 +5955,8 @@ class TelegramApp {
   unblockUser(targetUsername) {
     this.storage.toggleBlacklist(this.currentUser.username, targetUsername);
     this.renderBlacklist();
+    this.updateComposerBlockState();
+    this.updateChatActionsMenu();
     this.showToast('Пользователь @' + targetUsername + ' разблокирован');
   }
 

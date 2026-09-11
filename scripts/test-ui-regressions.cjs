@@ -187,3 +187,22 @@ test('saved messages are private and pinned only for their owner', async () => {
   assert.equal(bobChats[0].id, 'saved:bobby');
   assert.equal(bobChats[0].lastMsg, 'Bob private');
 });
+
+test('blacklist blocks both sides of a direct conversation until unblocked', async () => {
+  const storage = fixture();
+  const chatId = 'dm:alice:bobby';
+  let state = storage.getChatBlockState('alice', chatId);
+  assert.equal(state.blockedByPeer, true);
+  assert.equal(state.blockedByMe, false);
+  await assert.rejects(() => storage.sendMessage(chatId, 'alice', 'must not send'), /ограничил/);
+
+  storage.toggleBlacklist('bobby', 'alice');
+  assert.equal(storage.getChatBlockState('alice', chatId).blocked, false);
+  await assert.doesNotReject(() => storage.sendMessage(chatId, 'alice', 'allowed now'));
+
+  storage.toggleBlacklist('alice', 'bobby');
+  state = storage.getChatBlockState('alice', chatId);
+  assert.equal(state.blockedByMe, true);
+  await assert.rejects(() => storage.sendMessage(chatId, 'alice', 'blocked by me'), /разблокируйте/);
+  await assert.doesNotReject(() => storage.sendMessage('saved:alice', 'alice', 'private note'));
+});

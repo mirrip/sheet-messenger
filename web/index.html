@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.34.0">
+  <link rel="stylesheet" href="styles.css?v=3.35.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -600,7 +600,7 @@
         <div id="composer-attachments" class="tg-composer-attachments hidden"></div>
 
         <!-- TELEGRAM COMPOSER -->
-        <footer class="tg-composer">
+        <footer class="tg-composer" id="message-composer">
           <input type="file" id="file-input" multiple style="display: none">
           <input type="file" id="media-input" accept="image/*,video/*" multiple style="display: none">
 
@@ -643,6 +643,11 @@
               <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
             </svg>
           </button>
+        </footer>
+        <footer class="tg-blocked-composer hidden" id="blocked-composer" aria-live="polite">
+          <span class="tg-blocked-composer-icon"><svg class="tg-ui-icon"><use href="#tg-icon-shield-block"/></svg></span>
+          <span class="tg-blocked-composer-copy" id="blocked-composer-text">Переписка недоступна</span>
+          <button type="button" id="btn-composer-unblock" class="tg-blocked-composer-action">Разблокировать</button>
         </footer>
       </main>
 
@@ -1017,6 +1022,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.34.0"></script>
+  <script src="app.js?v=3.35.0"></script>
 </body>
 </html>
