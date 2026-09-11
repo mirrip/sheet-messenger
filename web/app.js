@@ -1153,6 +1153,17 @@ class TelegramApp {
       messageInput: document.getElementById('message-input'),
       btnAttach: document.getElementById('btn-attach'),
       fileInput: document.getElementById('file-input'),
+      mediaInput: document.getElementById('media-input'),
+      attachmentPicker: document.getElementById('attachment-picker'),
+      attachmentPickerBackdrop: document.getElementById('attachment-picker-backdrop'),
+      attachmentPickerClose: document.getElementById('attachment-picker-close'),
+      attachmentPickerMedia: document.getElementById('attachment-picker-media'),
+      attachmentPickerFile: document.getElementById('attachment-picker-file'),
+      attachmentPickerGrid: document.getElementById('attachment-picker-grid'),
+      attachmentPickerEmpty: document.getElementById('attachment-picker-empty'),
+      attachmentPickerCount: document.getElementById('attachment-picker-count'),
+      attachmentPickerClear: document.getElementById('attachment-picker-clear'),
+      attachmentPickerDone: document.getElementById('attachment-picker-done'),
       composerAttachments: document.getElementById('composer-attachments'),
       btnSend: document.getElementById('btn-send'),
 
@@ -1611,7 +1622,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.32.0\nОбновлённые настройки, темы и навигация');
+        this.showToast('Sheet Messenger v3.33.0\nНовый выбор медиа и любых файлов');
       });
     }
 
@@ -1984,9 +1995,20 @@ class TelegramApp {
       document.addEventListener('click', () => this.hideReactionsPopup());
     }
 
-    // Вставка файлов через кнопку
-    this.el.btnAttach.addEventListener('click', () => this.el.fileInput.click());
+    // Telegram-подобный выбор медиа и файлов
+    this.el.btnAttach.addEventListener('click', () => this.openAttachmentPicker());
     this.el.fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
+    if (this.el.mediaInput) this.el.mediaInput.addEventListener('change', (e) => this.handleFileUpload(e));
+    if (this.el.attachmentPickerBackdrop) this.el.attachmentPickerBackdrop.addEventListener('click', () => this.closeAttachmentPicker());
+    if (this.el.attachmentPickerClose) this.el.attachmentPickerClose.addEventListener('click', () => this.closeAttachmentPicker());
+    if (this.el.attachmentPickerDone) this.el.attachmentPickerDone.addEventListener('click', () => this.closeAttachmentPicker(true));
+    if (this.el.attachmentPickerMedia) this.el.attachmentPickerMedia.addEventListener('click', () => this.el.mediaInput.click());
+    if (this.el.attachmentPickerFile) this.el.attachmentPickerFile.addEventListener('click', () => this.el.fileInput.click());
+    if (this.el.attachmentPickerClear) {
+      this.el.attachmentPickerClear.addEventListener('click', async () => {
+        while (this.pendingFiles && this.pendingFiles.length) await this.removePendingFileAt(this.pendingFiles.length - 1);
+      });
+    }
 
     // Вставка изображений из буфера обмена (Ctrl+V)
     document.addEventListener('paste', (e) => {
@@ -2064,7 +2086,9 @@ class TelegramApp {
 
     // Клавиатурная навигация (Escape, ArrowLeft, ArrowRight)
     document.addEventListener('keydown', (e) => {
-      if (this.el.lightboxModal && !this.el.lightboxModal.classList.contains('hidden')) {
+      if (this.el.attachmentPicker && !this.el.attachmentPicker.classList.contains('hidden')) {
+        if (e.key === 'Escape') this.closeAttachmentPicker();
+      } else if (this.el.lightboxModal && !this.el.lightboxModal.classList.contains('hidden')) {
         if (e.key === 'Escape') {
           this.closeLightbox();
         } else if (e.key === 'ArrowLeft') {
@@ -2966,7 +2990,8 @@ class TelegramApp {
       });
     }
     this.renderPendingAttachments();
-    this.el.fileInput.value = '';
+    this.renderAttachmentPicker();
+    e.target.value = '';
     if (failed) {
       window.alert('Не удалось прикрепить ' + failed + ' файл(а). Проверьте свободное место на устройстве и повторите попытку.');
     }
@@ -3423,18 +3448,69 @@ class TelegramApp {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const idx = parseInt(btn.getAttribute('data-idx'), 10);
-        const removed = this.pendingFiles.splice(idx, 1)[0];
-        if (removed && removed.mediaId) {
-          const cachedUrl = this._mediaBlobUrlCache.get(removed.mediaId);
-          if (cachedUrl) URL.revokeObjectURL(cachedUrl);
-          this._mediaBlobUrlCache.delete(removed.mediaId);
-          await this.storage.deleteMediaBlob(removed.mediaId);
-        }
-        this.renderPendingAttachments();
+        await this.removePendingFileAt(idx);
       });
     });
 
     this.updateMainActionButtonState();
+  }
+
+  openAttachmentPicker() {
+    if (!this.el.attachmentPicker) return this.el.fileInput.click();
+    this.renderAttachmentPicker();
+    this.el.attachmentPicker.classList.remove('hidden');
+    this.el.attachmentPicker.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('tg-overlay-open');
+  }
+
+  closeAttachmentPicker(focusComposer = false) {
+    if (!this.el.attachmentPicker) return;
+    this.el.attachmentPicker.classList.add('hidden');
+    this.el.attachmentPicker.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('tg-overlay-open');
+    if (focusComposer && this.el.messageInput) this.el.messageInput.focus({ preventScroll: true });
+  }
+
+  async removePendingFileAt(index) {
+    if (!this.pendingFiles || index < 0 || index >= this.pendingFiles.length) return;
+    const removed = this.pendingFiles.splice(index, 1)[0];
+    if (removed && removed.mediaId) {
+      const cachedUrl = this._mediaBlobUrlCache.get(removed.mediaId);
+      if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+      this._mediaBlobUrlCache.delete(removed.mediaId);
+      await this.storage.deleteMediaBlob(removed.mediaId);
+    }
+    this.renderPendingAttachments();
+    this.renderAttachmentPicker();
+  }
+
+  renderAttachmentPicker() {
+    if (!this.el.attachmentPickerGrid) return;
+    const files = this.pendingFiles || [];
+    this.el.attachmentPickerGrid.replaceChildren();
+    if (this.el.attachmentPickerEmpty) this.el.attachmentPickerEmpty.classList.toggle('hidden', files.length > 0);
+    if (this.el.attachmentPickerClear) this.el.attachmentPickerClear.classList.toggle('hidden', files.length === 0);
+    if (this.el.attachmentPickerCount) {
+      this.el.attachmentPickerCount.textContent = files.length
+        ? ('Выбрано: ' + files.length)
+        : 'Выберите фото, видео или файл';
+    }
+    if (this.el.attachmentPickerDone) {
+      this.el.attachmentPickerDone.textContent = files.length ? ('Добавить · ' + files.length) : 'Готово';
+    }
+
+    files.forEach((file, index) => {
+      const tile = document.createElement('article');
+      tile.className = 'tg-attachment-preview-tile';
+      const kind = this.getAttachmentKind(file);
+      const previewUrl = file.mediaId ? this._mediaBlobUrlCache.get(file.mediaId) : '';
+      let preview = '<span class="tg-attachment-file-preview">' + this.uiIcon(kind === 'video' ? 'video' : 'file') + '<b>' + this.escape(this.getFileExtension(file.name || 'FILE')) + '</b></span>';
+      if (kind === 'image' && previewUrl) preview = '<img src="' + this.escapeAttr(previewUrl) + '" alt="">';
+      if (kind === 'video' && previewUrl) preview = '<video src="' + this.escapeAttr(previewUrl) + '" muted playsinline preload="metadata"></video><span class="tg-attachment-video-mark">' + this.uiIcon('video', 'tg-ui-icon-sm') + '</span>';
+      tile.innerHTML = preview + '<span class="tg-attachment-preview-name" title="' + this.escapeAttr(file.name || 'document') + '">' + this.escape(this.truncateFileName(file.name || 'document')) + '</span><button type="button" class="tg-attachment-preview-remove" aria-label="Убрать ' + this.escapeAttr(file.name || 'файл') + '">' + this.uiIcon('close', 'tg-ui-icon-sm') + '</button>';
+      tile.querySelector('.tg-attachment-preview-remove').addEventListener('click', () => this.removePendingFileAt(index));
+      this.el.attachmentPickerGrid.appendChild(tile);
+    });
   }
 
   toggleRecordMode() {

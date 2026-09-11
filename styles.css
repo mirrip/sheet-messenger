@@ -5668,3 +5668,53 @@ html[data-theme="light"] .tg-main-wrap::after,body.tg-theme-light .tg-main-wrap:
 @keyframes tg-view-enter { from { opacity:.72; transform:translateY(3px); } to { opacity:1; transform:none; } }
 @media (prefers-reduced-motion:reduce) { .tg-sidebar-view:not(.hidden) { animation:none; } }
 @media (max-width:420px) { .tg-settings-profile-action { font-size:0; } }
+
+/* ATTACHMENT PICKER v3.33 */
+.tg-attachment-picker { position:fixed; inset:0; z-index:2800; display:grid; align-items:end; justify-items:center; }
+.tg-attachment-picker-backdrop { position:absolute; inset:0; width:100%; border:0; background:rgba(3,8,14,.64); backdrop-filter:blur(5px); cursor:default; }
+.tg-attachment-sheet {
+  position:relative; width:min(470px,calc(100vw - 28px)); max-height:min(720px,calc(100dvh - 28px)); margin-bottom:14px; overflow:hidden;
+  display:flex; flex-direction:column; border:1px solid var(--tg-border); border-radius:23px; color:var(--tg-text-main); background:color-mix(in srgb,var(--tg-bg-sidebar) 96%,transparent);
+  box-shadow:0 26px 80px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.06); animation:tg-attachment-sheet-in 190ms var(--tg-ease);
+}
+@keyframes tg-attachment-sheet-in { from { opacity:0; transform:translateY(16px) scale(.985); } to { opacity:1; transform:none; } }
+.tg-attachment-sheet-header { min-height:70px; padding:14px 15px 12px 18px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--tg-border); }
+.tg-attachment-sheet-header > div { min-width:0; display:grid; gap:3px; }
+.tg-attachment-sheet-header h3 { margin:0; font-size:18px; letter-spacing:-.02em; }
+.tg-attachment-sheet-header span { color:var(--tg-text-sub); font-size:12.5px; }
+.tg-attachment-source-grid { padding:14px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tg-attachment-source { min-width:0; min-height:72px; padding:10px 11px; display:flex; align-items:center; gap:10px; border:1px solid var(--tg-border); border-radius:15px; color:var(--tg-text-main); background:var(--tg-surface-soft); text-align:left; cursor:pointer; transition:transform 150ms var(--tg-ease),border-color 150ms var(--tg-ease),background 150ms var(--tg-ease); }
+.tg-attachment-source:hover { transform:translateY(-1px); border-color:color-mix(in srgb,var(--tg-primary) 42%,var(--tg-border)); background:var(--tg-hover); }
+.tg-attachment-source:active { transform:scale(.985); }
+.tg-attachment-source-icon { width:42px; height:42px; flex:0 0 auto; display:grid; place-items:center; border-radius:13px; color:#fff; box-shadow:0 7px 18px rgba(0,0,0,.18); }
+.tg-attachment-source-icon.is-media { background:linear-gradient(145deg,#32b67a,#2687da); }
+.tg-attachment-source-icon.is-file { background:linear-gradient(145deg,var(--tg-primary),#7359d1); }
+.tg-attachment-source > span:last-child { min-width:0; display:grid; gap:3px; }
+.tg-attachment-source strong,.tg-attachment-source small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tg-attachment-source strong { font-size:13.5px; }
+.tg-attachment-source small { color:var(--tg-text-sub); font-size:11px; }
+.tg-attachment-picker-empty { margin:2px 14px 14px; min-height:104px; display:grid; place-items:center; border:1px dashed var(--tg-border); border-radius:15px; color:var(--tg-text-sub); font-size:12.5px; text-align:center; }
+.tg-attachment-preview-grid { min-height:0; padding:2px 14px 14px; overflow-y:auto; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+.tg-attachment-preview-tile { position:relative; min-width:0; aspect-ratio:1; overflow:hidden; border:1px solid var(--tg-border); border-radius:12px; background:var(--tg-surface-soft); }
+.tg-attachment-preview-tile > img,.tg-attachment-preview-tile > video { width:100%; height:100%; display:block; object-fit:cover; }
+.tg-attachment-file-preview { width:100%; height:100%; display:grid; place-content:center; justify-items:center; gap:4px; color:var(--tg-primary); background:linear-gradient(145deg,color-mix(in srgb,var(--tg-primary) 12%,var(--tg-surface-soft)),var(--tg-surface-soft)); }
+.tg-attachment-file-preview .tg-ui-icon { width:25px; height:25px; }
+.tg-attachment-file-preview b { max-width:64px; overflow:hidden; text-overflow:ellipsis; color:var(--tg-text-sub); font-size:10px; }
+.tg-attachment-preview-name { position:absolute; inset:auto 0 0; padding:17px 6px 5px; overflow:hidden; color:#fff; background:linear-gradient(transparent,rgba(0,0,0,.78)); font-size:9.5px; text-overflow:ellipsis; white-space:nowrap; }
+.tg-attachment-preview-remove { position:absolute; top:5px; right:5px; width:25px; height:25px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.28); border-radius:50%; color:#fff; background:rgba(8,14,22,.72); backdrop-filter:blur(8px); cursor:pointer; }
+.tg-attachment-video-mark { position:absolute; left:6px; top:6px; width:25px; height:25px; display:grid; place-items:center; border-radius:50%; color:#fff; background:rgba(8,14,22,.65); }
+.tg-attachment-sheet-footer { min-height:67px; padding:10px 14px max(10px,env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:flex-end; gap:10px; border-top:1px solid var(--tg-border); }
+.tg-attachment-sheet-footer .tg-primary-btn { width:auto; min-width:152px; min-height:43px; padding:0 18px; border-radius:13px; }
+.tg-attachment-clear { min-height:40px; padding:0 11px; border:0; border-radius:11px; color:var(--tg-danger); background:transparent; font-weight:650; cursor:pointer; }
+.tg-attachment-clear:hover { background:color-mix(in srgb,var(--tg-danger) 10%,transparent); }
+@media (max-width:768px) {
+  .tg-attachment-sheet { width:100%; max-height:min(78dvh,720px); margin:0; border-width:1px 0 0; border-radius:24px 24px 0 0; }
+  .tg-attachment-source-grid { padding:13px 12px; }
+  .tg-attachment-preview-grid { padding-inline:12px; gap:6px; }
+}
+@media (max-width:390px) {
+  .tg-attachment-source { min-height:66px; padding:9px; }
+  .tg-attachment-source-icon { width:38px; height:38px; }
+  .tg-attachment-source small { display:none; }
+}
+@media (prefers-reduced-motion:reduce) { .tg-attachment-sheet { animation:none; } }

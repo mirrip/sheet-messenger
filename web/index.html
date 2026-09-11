@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.32.0">
+  <link rel="stylesheet" href="styles.css?v=3.33.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -602,6 +602,7 @@
         <!-- TELEGRAM COMPOSER -->
         <footer class="tg-composer">
           <input type="file" id="file-input" multiple style="display: none">
+          <input type="file" id="media-input" accept="image/*,video/*" multiple style="display: none">
 
           <button id="btn-attach" class="tg-clip-btn" title="Прикрепить файл">
             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
@@ -644,6 +645,36 @@
           </button>
         </footer>
       </main>
+
+      <!-- TELEGRAM-LIKE ATTACHMENT PICKER -->
+      <div id="attachment-picker" class="tg-attachment-picker hidden" aria-hidden="true">
+        <button type="button" id="attachment-picker-backdrop" class="tg-attachment-picker-backdrop" aria-label="Закрыть выбор вложений"></button>
+        <section class="tg-attachment-sheet" role="dialog" aria-modal="true" aria-labelledby="attachment-picker-title">
+          <header class="tg-attachment-sheet-header">
+            <div>
+              <h3 id="attachment-picker-title">Вложение</h3>
+              <span id="attachment-picker-count">Выберите фото, видео или файл</span>
+            </div>
+            <button type="button" id="attachment-picker-close" class="tg-icon-btn" aria-label="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
+          </header>
+          <div class="tg-attachment-source-grid">
+            <button type="button" id="attachment-picker-media" class="tg-attachment-source">
+              <span class="tg-attachment-source-icon is-media"><svg class="tg-ui-icon"><use href="#tg-icon-image"/></svg></span>
+              <span><strong>Фото и видео</strong><small>Можно выбрать несколько</small></span>
+            </button>
+            <button type="button" id="attachment-picker-file" class="tg-attachment-source">
+              <span class="tg-attachment-source-icon is-file"><svg class="tg-ui-icon"><use href="#tg-icon-file"/></svg></span>
+              <span><strong>Любой файл</strong><small>Документы любого формата</small></span>
+            </button>
+          </div>
+          <div id="attachment-picker-empty" class="tg-attachment-picker-empty">Выбранные материалы появятся здесь</div>
+          <div id="attachment-picker-grid" class="tg-attachment-preview-grid"></div>
+          <footer class="tg-attachment-sheet-footer">
+            <button type="button" id="attachment-picker-clear" class="tg-attachment-clear hidden">Очистить</button>
+            <button type="button" id="attachment-picker-done" class="tg-primary-btn">Добавить в сообщение</button>
+          </footer>
+        </section>
+      </div>
 
       <!-- PROFILE / SETTINGS MODAL (CENTERED ON DESKTOP, TELEGRAM STYLE) -->
       <div id="profile-modal-overlay" class="tg-profile-modal-overlay hidden">
@@ -986,6 +1017,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.32.0"></script>
+  <script src="app.js?v=3.33.0"></script>
 </body>
 </html>
