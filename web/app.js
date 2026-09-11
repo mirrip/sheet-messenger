@@ -1308,6 +1308,10 @@ class TelegramApp {
 
       // НАСТРОЙКИ
       btnSettingsOpenMyFiles: document.getElementById('btn-settings-open-myfiles'),
+      btnSettingsProfile: document.getElementById('btn-settings-profile'),
+      settingsProfileAvatar: document.getElementById('settings-profile-avatar'),
+      settingsProfileName: document.getElementById('settings-profile-name'),
+      settingsProfileHandle: document.getElementById('settings-profile-handle'),
       settingsStorageUsage: document.getElementById('settings-storage-usage'),
       btnSettingsClearCache: document.getElementById('btn-settings-clear-cache'),
       btnSettingsBlacklist: document.getElementById('btn-settings-blacklist'),
@@ -1559,6 +1563,9 @@ class TelegramApp {
     this.el.themeChoices.forEach(button => {
       button.addEventListener('click', () => this.setAppearanceTheme(button.dataset.themeChoice));
     });
+    if (this.el.btnSettingsProfile) {
+      this.el.btnSettingsProfile.addEventListener('click', () => this.switchSidebarView('profile'));
+    }
     this.el.backgroundChoices.forEach(button => {
       button.addEventListener('click', () => {
         const background = button.dataset.chatBackgroundChoice;
@@ -1604,7 +1611,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.31.0\nТемы, фоны, чаты, медиа и профили');
+        this.showToast('Sheet Messenger v3.32.0\nОбновлённые настройки, темы и навигация');
       });
     }
 
@@ -5537,6 +5544,15 @@ class TelegramApp {
   async renderSettingsView() {
     if (!this.currentUser) return;
     this.syncAppearanceControls();
+    const avatar = this.currentUser.avatar || '';
+    const displayName = this.currentUser.name || ('@' + this.currentUser.username);
+    if (this.el.settingsProfileName) this.el.settingsProfileName.textContent = displayName;
+    if (this.el.settingsProfileHandle) this.el.settingsProfileHandle.textContent = '@' + this.currentUser.username;
+    if (this.el.settingsProfileAvatar) {
+      this.el.settingsProfileAvatar.innerHTML = avatar
+        ? '<img src="' + this.escapeAttr(avatar) + '" alt="">'
+        : this.escape((this.currentUser.username || '?')[0].toUpperCase());
+    }
     let bytes = 0;
     try {
       for (let key in localStorage) {

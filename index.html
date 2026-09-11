@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.31.0">
+  <link rel="stylesheet" href="styles.css?v=3.32.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -384,6 +384,18 @@
           </header>
 
           <div class="tg-settings-scroll-wrap">
+            <div class="tg-settings-group tg-settings-account-group">
+              <div class="tg-settings-group-title">Аккаунт</div>
+              <button type="button" class="tg-settings-profile-card" id="btn-settings-profile">
+                <span class="tg-settings-profile-avatar" id="settings-profile-avatar">?</span>
+                <span class="tg-settings-profile-copy">
+                  <strong id="settings-profile-name">Мой профиль</strong>
+                  <span id="settings-profile-handle">@username</span>
+                </span>
+                <span class="tg-settings-profile-action">Открыть <svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></span>
+              </button>
+            </div>
+
             <div class="tg-settings-group tg-appearance-settings">
               <div class="tg-settings-group-title">Оформление</div>
               <div class="tg-appearance-block">
@@ -974,6 +986,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.31.0"></script>
+  <script src="app.js?v=3.32.0"></script>
 </body>
 </html>
