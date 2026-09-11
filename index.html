@@ -4,7 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Telegram Web</title>
-  <link rel="stylesheet" href="styles.css?v=3.30.3">
+  <script>
+    (function () {
+      try {
+        var current = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
+        var key = current && current.username ? 'gm_appearance_' + current.username.toLowerCase() : '';
+        var saved = key ? JSON.parse(localStorage.getItem(key) || '{}') : {};
+        var theme = saved.theme || (!key && localStorage.getItem('tg_theme')) || 'medium';
+        if (['dark', 'medium', 'light'].indexOf(theme) === -1) theme = 'medium';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=3.31.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -15,7 +28,7 @@
     }
   </script>
 </head>
-<body class="tg-theme-dark">
+<body class="tg-theme-medium" data-chat-background="default">
   <svg class="tg-icon-sprite" aria-hidden="true">
     <symbol id="tg-icon-close" viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z"/></symbol>
     <symbol id="tg-icon-chevron-left" viewBox="0 0 24 24"><path d="m14.8 5.6-6.4 6.4 6.4 6.4 1.4-1.4-5-5 5-5-1.4-1.4Z"/></symbol>
@@ -371,6 +384,65 @@
           </header>
 
           <div class="tg-settings-scroll-wrap">
+            <div class="tg-settings-group tg-appearance-settings">
+              <div class="tg-settings-group-title">Оформление</div>
+              <div class="tg-appearance-block">
+                <div class="tg-appearance-heading">
+                  <div>
+                    <strong>Тема приложения</strong>
+                    <span id="settings-theme-label">Средняя</span>
+                  </div>
+                </div>
+                <div class="tg-theme-picker" role="radiogroup" aria-label="Тема приложения">
+                  <button type="button" class="tg-theme-choice" data-theme-choice="dark" role="radio" aria-checked="false">
+                    <span class="tg-theme-preview tg-theme-preview-dark"><i></i><b></b><em></em></span>
+                    <span>Тёмная</span>
+                  </button>
+                  <button type="button" class="tg-theme-choice" data-theme-choice="medium" role="radio" aria-checked="false">
+                    <span class="tg-theme-preview tg-theme-preview-medium"><i></i><b></b><em></em></span>
+                    <span>Средняя</span>
+                  </button>
+                  <button type="button" class="tg-theme-choice" data-theme-choice="light" role="radio" aria-checked="false">
+                    <span class="tg-theme-preview tg-theme-preview-light"><i></i><b></b><em></em></span>
+                    <span>Светлая</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="tg-appearance-block">
+                <div class="tg-appearance-heading">
+                  <div>
+                    <strong>Фон переписки</strong>
+                    <span>Общий для всех чатов</span>
+                  </div>
+                  <button type="button" id="btn-reset-chat-background" class="tg-appearance-reset">Сбросить</button>
+                </div>
+                <div class="tg-background-picker" role="radiogroup" aria-label="Фон переписки">
+                  <button type="button" class="tg-background-choice" data-chat-background-choice="default" role="radio" aria-checked="false">
+                    <span class="tg-background-preview tg-background-default"></span><span>База</span>
+                  </button>
+                  <button type="button" class="tg-background-choice" data-chat-background-choice="mesh" role="radio" aria-checked="false">
+                    <span class="tg-background-preview tg-background-mesh"></span><span>Мягкий</span>
+                  </button>
+                  <button type="button" class="tg-background-choice" data-chat-background-choice="lines" role="radio" aria-checked="false">
+                    <span class="tg-background-preview tg-background-lines"></span><span>Линии</span>
+                  </button>
+                  <button type="button" class="tg-background-choice" data-chat-background-choice="dusk" role="radio" aria-checked="false">
+                    <span class="tg-background-preview tg-background-dusk"></span><span>Сумерки</span>
+                  </button>
+                  <button type="button" class="tg-background-choice" id="btn-custom-chat-background" data-chat-background-choice="custom" role="radio" aria-checked="false">
+                    <span class="tg-background-preview tg-background-custom"><svg class="tg-ui-icon"><use href="#tg-icon-image"/></svg></span><span>Своя</span>
+                  </button>
+                </div>
+                <input type="file" id="chat-background-file" accept="image/*" hidden>
+                <label class="tg-background-dim">
+                  <span>Затемнение фона</span>
+                  <span id="chat-background-dim-value">22%</span>
+                  <input type="range" id="chat-background-dim" min="0" max="70" step="1" value="22">
+                </label>
+              </div>
+            </div>
+
             <div class="tg-settings-group">
               <div class="tg-settings-group-title">Файлы и память</div>
               <div class="tg-settings-item" id="btn-settings-open-myfiles">
@@ -902,6 +974,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.30.3"></script>
+  <script src="app.js?v=3.31.0"></script>
 </body>
 </html>

@@ -138,3 +138,28 @@ test('media queue advances to the next voice or circle below', async () => {
   assert.equal(app.playNextChatMedia('third'), false);
   global.window = previousWindow;
 });
+
+test('appearance preferences stay isolated per account and normalize invalid values', () => {
+  global.localStorage = new MemoryStorage();
+  const app = Object.create(TelegramApp.prototype);
+  app.currentUser = {username:'alice'};
+  localStorage.setItem('tg_theme', 'dark');
+
+  assert.deepEqual(app.getAppearanceSettings(), {
+    theme:'medium', background:'default', dim:22, customMediaId:''
+  });
+
+  app.saveAppearanceSettings({theme:'light', background:'lines', dim:99});
+  assert.equal(app.getAppearanceSettings().theme, 'light');
+  assert.equal(app.getAppearanceSettings().background, 'lines');
+  assert.equal(app.getAppearanceSettings().dim, 70);
+
+  app.currentUser = {username:'bob'};
+  assert.equal(app.getAppearanceSettings().theme, 'medium');
+  assert.equal(app.getAppearanceSettings().background, 'default');
+
+  localStorage.setItem('gm_appearance_bob', JSON.stringify({theme:'broken', background:'unknown', dim:-4}));
+  assert.equal(app.getAppearanceSettings().theme, 'medium');
+  assert.equal(app.getAppearanceSettings().background, 'default');
+  assert.equal(app.getAppearanceSettings().dim, 0);
+});

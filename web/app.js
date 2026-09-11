@@ -803,6 +803,8 @@ class TelegramApp {
     this.downloadTasks = new Map();
     this.messageSearchResults = [];
     this.messageSearchIndex = -1;
+    this.chatBackgroundObjectUrl = '';
+    this.appearanceLoadRequest = 0;
 
     // 4-Tab Navigation & Sidebar States
     this.activeSidebarView = 'chats';
@@ -816,6 +818,7 @@ class TelegramApp {
     this.storage.initMediaDB();
 
     this.initElements();
+    this.applyAppearanceSettings(false);
     this.bindEvents();
     this.updateMainActionButtonState();
 
@@ -1308,6 +1311,14 @@ class TelegramApp {
       settingsStorageUsage: document.getElementById('settings-storage-usage'),
       btnSettingsClearCache: document.getElementById('btn-settings-clear-cache'),
       btnSettingsBlacklist: document.getElementById('btn-settings-blacklist'),
+      themeChoices: document.querySelectorAll('[data-theme-choice]'),
+      settingsThemeLabel: document.getElementById('settings-theme-label'),
+      backgroundChoices: document.querySelectorAll('[data-chat-background-choice]'),
+      chatBackgroundFile: document.getElementById('chat-background-file'),
+      chatBackgroundDim: document.getElementById('chat-background-dim'),
+      chatBackgroundDimValue: document.getElementById('chat-background-dim-value'),
+      btnResetChatBackground: document.getElementById('btn-reset-chat-background'),
+      customChatBackgroundPreview: document.querySelector('.tg-background-custom'),
 
       // МОДАЛЬНЫЕ ОКНА
       modalAddContact: document.getElementById('modal-add-contact'),
@@ -1539,14 +1550,46 @@ class TelegramApp {
     document.getElementById('btn-settings-logout').addEventListener('click', () => this.logout());
     this.bindProfilePhotoControls();
 
-    // Переключатель темы (Ночной режим)
+    // Старый переключатель в меню оставлен как быстрый выбор тёмной/светлой темы.
     if (this.el.toggleNightMode) {
       this.el.toggleNightMode.addEventListener('change', (e) => {
-        const isDark = e.target.checked;
-        document.body.className = isDark ? 'tg-theme-dark' : 'tg-theme-light';
-        localStorage.setItem('tg_theme', isDark ? 'dark' : 'light');
-        this.showToast(isDark ? 'Ночной режим включен' : 'Дневной режим включен');
+        this.setAppearanceTheme(e.target.checked ? 'dark' : 'light');
       });
+    }
+    this.el.themeChoices.forEach(button => {
+      button.addEventListener('click', () => this.setAppearanceTheme(button.dataset.themeChoice));
+    });
+    this.el.backgroundChoices.forEach(button => {
+      button.addEventListener('click', () => {
+        const background = button.dataset.chatBackgroundChoice;
+        const settings = this.getAppearanceSettings();
+        if (background === 'custom' && !settings.customMediaId) {
+          this.el.chatBackgroundFile.click();
+          return;
+        }
+        this.setChatBackground(background);
+      });
+    });
+    if (this.el.chatBackgroundFile) {
+      this.el.chatBackgroundFile.addEventListener('change', e => {
+        const file = e.target.files && e.target.files[0];
+        if (file) this.setCustomChatBackground(file);
+        e.target.value = '';
+      });
+    }
+    if (this.el.chatBackgroundDim) {
+      this.el.chatBackgroundDim.addEventListener('input', e => {
+        const dim = Math.max(0, Math.min(70, Number(e.target.value) || 0));
+        if (this.el.chatBackgroundDimValue) this.el.chatBackgroundDimValue.textContent = dim + '%';
+        document.body.style.setProperty('--tg-wallpaper-overlay', 'rgba(0,0,0,' + (dim / 100).toFixed(2) + ')');
+      });
+      this.el.chatBackgroundDim.addEventListener('change', e => {
+        this.saveAppearanceSettings({ dim: Math.max(0, Math.min(70, Number(e.target.value) || 0)) });
+        this.syncAppearanceControls();
+      });
+    }
+    if (this.el.btnResetChatBackground) {
+      this.el.btnResetChatBackground.addEventListener('click', () => this.setChatBackground('default'));
     }
 
     // Уведомления в меню
@@ -1561,7 +1604,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.30.0\nЧаты, кружочки, голосовые, файлы и профили');
+        this.showToast('Sheet Messenger v3.31.0\nТемы, фоны, чаты, медиа и профили');
       });
     }
 
@@ -2137,6 +2180,7 @@ class TelegramApp {
   showMainScreen() {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
+    this.applyAppearanceSettings(false);
 
     const openState = sessionStorage.getItem('gm_active_chat_open');
     const savedChatId = sessionStorage.getItem('gm_active_chat_id') || 'general';
@@ -5343,8 +5387,156 @@ class TelegramApp {
   // НАСТРОЙКИ И УПРАВЛЕНИЕ ПАМЯТЬЮ
   // ==========================================
 
+  getAppearanceStorageKey() {
+    const username = this.currentUser && this.currentUser.username;
+    return username ? 'gm_appearance_' + username.toLowerCase() : 'gm_appearance_guest';
+  }
+
+  getAppearanceSettings() {
+    const defaults = { theme: 'medium', background: 'default', dim: 22, customMediaId: '' };
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(this.getAppearanceStorageKey()) || '{}'); } catch (_) {}
+    const legacyTheme = this.currentUser ? '' : localStorage.getItem('tg_theme');
+    const theme = ['dark', 'medium', 'light'].includes(stored.theme)
+      ? stored.theme
+      : (['dark', 'medium', 'light'].includes(legacyTheme) ? legacyTheme : defaults.theme);
+    const background = ['default', 'mesh', 'lines', 'dusk', 'custom'].includes(stored.background)
+      ? stored.background
+      : defaults.background;
+    const dim = Math.max(0, Math.min(70, Number.isFinite(Number(stored.dim)) ? Number(stored.dim) : defaults.dim));
+    return { ...defaults, ...stored, theme, background, dim };
+  }
+
+  saveAppearanceSettings(patch) {
+    const settings = { ...this.getAppearanceSettings(), ...(patch || {}) };
+    localStorage.setItem(this.getAppearanceStorageKey(), JSON.stringify(settings));
+    localStorage.setItem('tg_theme', settings.theme);
+    return settings;
+  }
+
+  setAppearanceTheme(theme) {
+    if (!['dark', 'medium', 'light'].includes(theme)) return;
+    this.saveAppearanceSettings({ theme });
+    this.applyAppearanceSettings(true);
+  }
+
+  setChatBackground(background) {
+    if (!['default', 'mesh', 'lines', 'dusk', 'custom'].includes(background)) return;
+    const current = this.getAppearanceSettings();
+    if (background === 'custom' && !current.customMediaId) {
+      if (this.el.chatBackgroundFile) this.el.chatBackgroundFile.click();
+      return;
+    }
+    this.saveAppearanceSettings({ background });
+    this.applyAppearanceSettings(false);
+    this.showToast(background === 'default' ? 'Стандартный фон восстановлен' : 'Фон переписки изменён');
+  }
+
+  async setCustomChatBackground(file) {
+    if (!file || !String(file.type || '').startsWith('image/')) {
+      this.showToast('Выберите изображение для фона');
+      return;
+    }
+    const username = this.currentUser && this.currentUser.username ? this.currentUser.username.toLowerCase() : 'guest';
+    const mediaId = 'appearance_wallpaper_' + username;
+    const wallpaperBlob = await this.prepareChatBackgroundBlob(file);
+    const saved = await this.storage.saveMediaBlob(mediaId, wallpaperBlob);
+    if (!saved) {
+      this.showToast('Не удалось сохранить фон на устройстве');
+      return;
+    }
+    this.saveAppearanceSettings({ background: 'custom', customMediaId: mediaId });
+    await this.applyAppearanceSettings(false);
+    this.showToast('Собственный фон установлен');
+  }
+
+  prepareChatBackgroundBlob(file) {
+    if (!file || !String(file.type || '').startsWith('image/')) return Promise.resolve(file);
+    return new Promise(resolve => {
+      const sourceUrl = URL.createObjectURL(file);
+      const img = new Image();
+      const finish = value => {
+        URL.revokeObjectURL(sourceUrl);
+        resolve(value || file);
+      };
+      img.onload = () => {
+        const maxSide = 1920;
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+        if (scale === 1 && file.size <= 2.5 * 1024 * 1024) return finish(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (!context) return finish(file);
+        context.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(finish, 'image/jpeg', 0.86);
+      };
+      img.onerror = () => finish(file);
+      img.src = sourceUrl;
+    });
+  }
+
+  syncAppearanceControls(settings = this.getAppearanceSettings()) {
+    const labels = { dark: 'Тёмная', medium: 'Средняя', light: 'Светлая' };
+    if (this.el.settingsThemeLabel) this.el.settingsThemeLabel.textContent = labels[settings.theme] || labels.medium;
+    this.el.themeChoices.forEach(button => {
+      const active = button.dataset.themeChoice === settings.theme;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+    this.el.backgroundChoices.forEach(button => {
+      const active = button.dataset.chatBackgroundChoice === settings.background;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+    if (this.el.chatBackgroundDim) this.el.chatBackgroundDim.value = String(settings.dim);
+    if (this.el.chatBackgroundDimValue) this.el.chatBackgroundDimValue.textContent = settings.dim + '%';
+    if (this.el.toggleNightMode) this.el.toggleNightMode.checked = settings.theme !== 'light';
+  }
+
+  async applyAppearanceSettings(announce = false) {
+    const settings = this.getAppearanceSettings();
+    const themeClasses = ['tg-theme-dark', 'tg-theme-medium', 'tg-theme-light'];
+    document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.style.colorScheme = settings.theme === 'light' ? 'light' : 'dark';
+    document.body.classList.remove(...themeClasses);
+    document.body.classList.add('tg-theme-' + settings.theme);
+    document.body.dataset.chatBackground = settings.background;
+    document.body.style.setProperty('--tg-wallpaper-overlay', 'rgba(0,0,0,' + (settings.dim / 100).toFixed(2) + ')');
+    this.syncAppearanceControls(settings);
+
+    const loadRequest = ++this.appearanceLoadRequest;
+    if (settings.background === 'custom' && settings.customMediaId) {
+      const blob = await this.storage.getMediaBlob(settings.customMediaId);
+      if (loadRequest !== this.appearanceLoadRequest) return;
+      if (blob) {
+        if (this.chatBackgroundObjectUrl) URL.revokeObjectURL(this.chatBackgroundObjectUrl);
+        this.chatBackgroundObjectUrl = URL.createObjectURL(blob);
+        document.body.style.setProperty('--tg-chat-custom-image', 'url("' + this.chatBackgroundObjectUrl + '")');
+        if (this.el.customChatBackgroundPreview) this.el.customChatBackgroundPreview.style.backgroundImage = 'url("' + this.chatBackgroundObjectUrl + '")';
+      } else {
+        this.saveAppearanceSettings({ background: 'default', customMediaId: '' });
+        document.body.dataset.chatBackground = 'default';
+        this.syncAppearanceControls(this.getAppearanceSettings());
+      }
+    } else {
+      if (this.chatBackgroundObjectUrl) {
+        URL.revokeObjectURL(this.chatBackgroundObjectUrl);
+        this.chatBackgroundObjectUrl = '';
+      }
+      document.body.style.removeProperty('--tg-chat-custom-image');
+      if (this.el.customChatBackgroundPreview) this.el.customChatBackgroundPreview.style.backgroundImage = '';
+    }
+
+    if (announce) {
+      const labels = { dark: 'Тёмная тема включена', medium: 'Средняя тема включена', light: 'Светлая тема включена' };
+      this.showToast(labels[settings.theme]);
+    }
+  }
+
   async renderSettingsView() {
     if (!this.currentUser) return;
+    this.syncAppearanceControls();
     let bytes = 0;
     try {
       for (let key in localStorage) {
@@ -5369,6 +5561,10 @@ class TelegramApp {
         tx.objectStore('blobs').clear();
       }
       this._mediaBlobUrlCache.clear();
+      if (this.getAppearanceSettings().background === 'custom') {
+        this.saveAppearanceSettings({ background: 'default', customMediaId: '' });
+        await this.applyAppearanceSettings(false);
+      }
       this.showToast('Кэш медиа успешно очищен');
       this.renderSettingsView();
     } catch (e) {
