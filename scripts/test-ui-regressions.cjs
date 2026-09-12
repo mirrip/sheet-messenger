@@ -238,3 +238,22 @@ test('community usernames are validated, unique and migrate with the owner accou
   assert.deepEqual(migrated.admins, ['alice_new']);
   assert.deepEqual(migrated.members.sort(), ['alice_new','bobby']);
 });
+
+test('community profile editing and administrator roles enforce permissions', () => {
+  const storage = fixture();
+  const space = storage.createSpace({type:'group', title:'Old title', username:'old_team', owner:'alice', members:['bobby','charlie']});
+  assert.throws(() => storage.updateSpace(space.id, 'bobby', {title:'No access'}), /администраторы/);
+  const updated = storage.updateSpace(space.id, 'alice', {title:'New title', username:'new_team'});
+  assert.equal(updated.title, 'New title');
+  assert.equal(updated.username, 'new_team');
+  assert.throws(() => storage.updateSpace(space.id, 'alice', {username:'bobby'}), /занят/);
+
+  storage.setSpaceAdmin(space.id, 'alice', 'bobby', true);
+  assert.equal(storage.getSpace(space.id).admins.includes('bobby'), true);
+  assert.equal(storage.updateSpace(space.id, 'bobby', {title:'Edited by admin'}).title, 'Edited by admin');
+  assert.throws(() => storage.setSpaceAdmin(space.id, 'bobby', 'alice', false), /Создателя/);
+
+  storage.leaveSpace(space.id, 'charlie');
+  assert.equal(storage.getSpace(space.id).members.includes('charlie'), false);
+  assert.throws(() => storage.leaveSpace(space.id, 'alice'), /передать права/);
+});
