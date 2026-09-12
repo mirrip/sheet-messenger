@@ -1,5 +1,5 @@
 // ===================================================
-// TELEGRAM WEB — POLISHED ENGINE & UI CONTROLLER v3.0.0
+// «КУМИР» — MESSENGER ENGINE & UI CONTROLLER
 // ===================================================
 
 /**
@@ -1004,6 +1004,7 @@ class TelegramApp {
     this.initElements();
     this.applyAppearanceSettings(false);
     this.bindEvents();
+    this.bindMobileBackNavigation();
     this.updateMainActionButtonState();
 
     if (this.currentUser) {
@@ -1890,7 +1891,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('кумир v3.40.0\nНовый образ, чистый кэш и надёжное переключение камеры');
+        this.showToast('кумир v3.41.0\nПредсказуемая мобильная навигация и быстрые окна');
       });
     }
 
@@ -2329,30 +2330,8 @@ class TelegramApp {
       this.handleSearch('', 'chats');
     });
 
-    // Мобильная кнопка Назад
-    this.el.btnBack.addEventListener('click', () => {
-      this.closeActiveMediaSession(true);
-      this.closeMessageSearch(false);
-      sessionStorage.setItem('gm_active_chat_open', '0');
-      if (this.el.chatView) this.el.chatView.classList.remove('active');
-      if (window.history && window.history.state && window.history.state.chatId) {
-        window.history.back();
-      }
-    });
-
-    // Обработка кнопки «Назад» на смартфонах Android/iOS
-    window.addEventListener('popstate', (e) => {
-      if (this.el.chatView && this.el.chatView.classList.contains('active')) {
-        if (!e.state || !e.state.chatId) {
-          this.closeActiveMediaSession(true);
-          this.closeMessageSearch(false);
-          sessionStorage.setItem('gm_active_chat_open', '0');
-          this.el.chatView.classList.remove('active');
-        } else if (e.state.chatId !== this.currentChatId) {
-          this.openChat(e.state.chatId, e.state.title || '');
-        }
-      }
-    });
+    // Экранная стрелка и системная кнопка Android используют одну навигационную логику.
+    this.el.btnBack.addEventListener('click', () => this.returnToChatList(true));
 
     // Полноэкранный просмотр фото и видео (галерея Lightbox)
     if (this.el.lightboxClose) this.el.lightboxClose.addEventListener('click', () => this.closeLightbox());
@@ -2432,6 +2411,108 @@ class TelegramApp {
     });
   }
 
+  isMobileLayout() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768;
+  }
+
+  blurMobileKeyboard() {
+    const active = document.activeElement;
+    if (active && typeof active.blur === 'function' && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName || '')) active.blur();
+  }
+
+  armMobileHistoryGuard(reset = false) {
+    if (!this.isMobileLayout() || !this.currentUser || !window.history?.pushState) return;
+    const cleanUrl = window.location.pathname + window.location.search;
+    if (reset) {
+      window.history.replaceState({ kumirRoot: true }, '', cleanUrl);
+      window.history.pushState({ kumirShell: true }, '', cleanUrl);
+      return;
+    }
+    if (!window.history.state?.kumirShell && !window.history.state?.chatId) {
+      window.history.pushState({ kumirShell: true }, '', cleanUrl);
+    }
+  }
+
+  bindMobileBackNavigation() {
+    if (this.mobileBackNavigationBound || typeof window === 'undefined') return;
+    this.mobileBackNavigationBound = true;
+    window.addEventListener('popstate', () => {
+      if (!this.isMobileLayout() || !this.currentUser) return;
+      if (this.ignoreNextMobilePopstate) {
+        this.ignoreNextMobilePopstate = false;
+      } else {
+        this.handleMobileBack();
+      }
+      this.armMobileHistoryGuard(false);
+    });
+
+    const nativeApp = window.Capacitor?.Plugins?.App;
+    if (nativeApp?.addListener) {
+      Promise.resolve(nativeApp.addListener('backButton', () => {
+        if (!this.currentUser || !this.isMobileLayout()) return;
+        // At the root list deliberately do nothing: Android must not close the messenger.
+        this.handleMobileBack();
+      })).catch(() => {});
+    }
+  }
+
+  closeGlobalSearchToChats() {
+    this.blurMobileKeyboard();
+    this.globalSearchOpen = false;
+    this.activeSearchFilter = 'chats';
+    if (this.el.chatSearch) this.el.chatSearch.value = '';
+    if (this.el.filterChips) this.el.filterChips.forEach(chip => chip.classList.toggle('active', chip.dataset.filter === 'chats'));
+    this.handleSearch('', 'chats');
+    this.switchSidebarView('chats');
+  }
+
+  returnToChatList(syncBrowserHistory = false) {
+    this.blurMobileKeyboard();
+    this.closeActiveMediaSession(true);
+    this.closeMessageSearch(false);
+    sessionStorage.setItem('gm_active_chat_open', '0');
+    if (this.el.chatView) this.el.chatView.classList.remove('active');
+    this.switchSidebarView('chats');
+    if (syncBrowserHistory && window.history?.state?.chatId) {
+      this.ignoreNextMobilePopstate = true;
+      window.history.back();
+    }
+  }
+
+  handleMobileBack() {
+    if (!this.isMobileLayout()) return false;
+    this.blurMobileKeyboard();
+
+    if (this.isRecordingAudio || this.isRecordingVideo) {
+      this.stopRecording(false);
+      return true;
+    }
+    if (this.chatContextMenu) { this.closeChatContextMenu(); return true; }
+    if (this.el.chatActionsMenu && !this.el.chatActionsMenu.classList.contains('hidden')) { this.closeChatActionsMenu(); return true; }
+    if (this.el.reactionsPopup && !this.el.reactionsPopup.classList.contains('hidden')) { this.hideReactionsPopup(); return true; }
+    if (this.el.lightboxModal && !this.el.lightboxModal.classList.contains('hidden')) {
+      this.lightboxReturnFocus = null;
+      this.closeLightbox();
+      return true;
+    }
+    if (this.el.attachmentPicker && !this.el.attachmentPicker.classList.contains('hidden')) { this.closeAttachmentPicker(false); return true; }
+    if (this.el.spaceCreator && !this.el.spaceCreator.classList.contains('hidden')) {
+      if (this.spaceWizardStep === 2) this.setSpaceCreatorStep(1); else this.closeSpaceCreator();
+      return true;
+    }
+    if (this.el.spaceProfile && !this.el.spaceProfile.classList.contains('hidden')) { this.closeSpaceProfile(); return true; }
+    if (this.el.modalEditProfile && !this.el.modalEditProfile.classList.contains('hidden')) { this.closeEditProfileModal(); return true; }
+    if (this.el.modalAddContact && !this.el.modalAddContact.classList.contains('hidden')) { this.closeAddContactModal(); return true; }
+    if (this.el.modalMyFiles && !this.el.modalMyFiles.classList.contains('hidden')) { this.closeMyFilesModal(); return true; }
+    if (this.el.modalBlacklist && !this.el.modalBlacklist.classList.contains('hidden')) { this.closeBlacklistModal(); return true; }
+    if (this.el.profileModalOverlay && !this.el.profileModalOverlay.classList.contains('hidden')) { this.closeUserProfile(); return true; }
+    if (this.el.messageSearchPanel && !this.el.messageSearchPanel.classList.contains('hidden')) { this.closeMessageSearch(false); return true; }
+    if (this.globalSearchOpen || (this.el.chatSearch && this.el.chatSearch.value)) { this.closeGlobalSearchToChats(); return true; }
+    if (this.el.chatView && this.el.chatView.classList.contains('active')) { this.returnToChatList(false); return true; }
+    if (this.activeSidebarView && this.activeSidebarView !== 'chats') { this.switchSidebarView('chats'); return true; }
+    return false;
+  }
+
   setAuthMode(mode) {
     this.authMode = mode;
     this.el.tabLogin.classList.toggle('active', mode === 'login');
@@ -2448,7 +2529,7 @@ class TelegramApp {
 
     this.el.authSubmitBtn.disabled = true;
     this.el.authStatus.className = 'tg-status-msg';
-    this.el.authStatus.innerText = 'Подключение к Telegram...';
+    this.el.authStatus.innerText = 'Вход в «кумир»...';
 
     try {
       let res;
@@ -2462,7 +2543,7 @@ class TelegramApp {
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
       this.showMainScreen();
-      this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
+      if (!this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
@@ -2488,6 +2569,7 @@ class TelegramApp {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
     this.applyAppearanceSettings(false);
+    if (this.isMobileLayout()) this.armMobileHistoryGuard(true);
 
     const openState = sessionStorage.getItem('gm_active_chat_open');
     const storedChatId = sessionStorage.getItem('gm_active_chat_id') || '';
@@ -2511,16 +2593,11 @@ class TelegramApp {
       }
     }
 
-    // Если на смартфоне зашли первый раз или чат был открыт — сразу показываем чат
+    // На смартфоне базовый уровень приложения — список чатов, а не последний открытый диалог.
     if (this.el.chatView && window.innerWidth <= 768) {
-      if (openState === null || openState === '1') {
-        sessionStorage.setItem('gm_active_chat_open', '1');
-        sessionStorage.setItem('gm_active_chat_id', savedChatId);
-        sessionStorage.setItem('gm_active_chat_title', savedChatTitle);
-        this.el.chatView.classList.add('active');
-      } else {
-        this.el.chatView.classList.remove('active');
-      }
+      sessionStorage.setItem('gm_active_chat_open', '0');
+      this.el.chatView.classList.remove('active');
+      this.activeSidebarView = 'chats';
     }
 
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
@@ -5244,7 +5321,7 @@ class TelegramApp {
     }
 
     this.el.modalEditProfile.classList.remove('hidden');
-    if (this.el.editProfileDisplayName) this.el.editProfileDisplayName.focus();
+    if (this.el.editProfileDisplayName && !this.isMobileLayout()) this.el.editProfileDisplayName.focus();
   }
 
   closeEditProfileModal() {
@@ -5549,7 +5626,8 @@ class TelegramApp {
     this.el.spaceCreator.classList.remove('hidden');
     this.el.spaceCreator.setAttribute('aria-hidden', 'false');
     document.body.classList.add('space-creator-open');
-    window.setTimeout(() => this.el.spaceTitleInput && this.el.spaceTitleInput.focus(), 120);
+    if (this.isMobileLayout()) this.blurMobileKeyboard();
+    else window.setTimeout(() => this.el.spaceTitleInput && this.el.spaceTitleInput.focus(), 120);
   }
 
   closeSpaceCreator() {
@@ -6083,8 +6161,9 @@ class TelegramApp {
       this.el.modalAddContact.classList.remove('hidden');
       if (this.el.addContactUsername) {
         this.el.addContactUsername.value = prefillUsername || '';
-        this.el.addContactUsername.focus();
+        if (!this.isMobileLayout()) this.el.addContactUsername.focus();
       }
+      if (this.isMobileLayout()) this.blurMobileKeyboard();
       const saved = this.storage.getContacts(this.currentUser.username).find(contact => contact.username.toLowerCase() === String(prefillUsername).toLowerCase());
       const data = saved || profile || {};
       const editing = Boolean(saved);

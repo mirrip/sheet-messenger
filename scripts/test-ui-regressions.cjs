@@ -352,3 +352,18 @@ test('kumir branding is wired to the web manifest and Android launcher build', (
   assert.match(workflow, /npx cap init "кумир"/);
   assert.match(workflow, /ic_launcher_round\.png/);
 });
+
+test('mobile creation windows open without forcing the software keyboard', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /openSpaceCreator\(type = 'group'\)[\s\S]*if \(this\.isMobileLayout\(\)\) this\.blurMobileKeyboard\(\);[\s\S]*else window\.setTimeout/);
+  assert.match(source, /openAddContactModal\([\s\S]*if \(!this\.isMobileLayout\(\)\) this\.el\.addContactUsername\.focus\(\)/);
+});
+
+test('Android back navigation keeps the chat list as the application root', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'build-apk.yml'), 'utf8');
+  assert.match(source, /bindMobileBackNavigation\(\)[\s\S]*nativeApp\.addListener\('backButton'/);
+  assert.match(source, /handleMobileBack\(\)[\s\S]*closeLightbox\(\)[\s\S]*closeSpaceCreator\(\)[\s\S]*closeUserProfile\(\)[\s\S]*returnToChatList\(false\)/);
+  assert.match(source, /showMainScreen\(\)[\s\S]*sessionStorage\.setItem\('gm_active_chat_open', '0'\)[\s\S]*this\.activeSidebarView = 'chats'/);
+  assert.match(workflow, /@capacitor\/app/);
+});
