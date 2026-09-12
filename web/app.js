@@ -430,7 +430,8 @@ class StorageService {
     const files = [];
     const voice = [];
 
-    chatMsgs.forEach(m => {
+    chatMsgs.forEach((m, messageIndex) => {
+      const createdAt = Number(m.createdAt) || messageIndex;
       // Фото и видео
       if (m.files && Array.isArray(m.files) && m.files.length > 0) {
         m.files.forEach(f => {
@@ -440,9 +441,9 @@ class StorageService {
           const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico)$/i.test(name);
           const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(name);
           if (isPhoto || isVideo) {
-            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
           } else {
-            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId });
+            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
           }
         });
       } else if (m.file) {
@@ -452,22 +453,23 @@ class StorageService {
         const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico)$/i.test(name);
         const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(name);
         if (isPhoto || isVideo) {
-          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
         } else {
-          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId });
+          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
         }
       }
 
       // Голосовые и кружочки
       if (m.voice) {
-        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId });
+        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
       }
       if (m.circleVideo) {
-        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId });
+        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
       }
     });
 
-    return { media, files, voice };
+    const newestFirst = (a, b) => b.createdAt - a.createdAt;
+    return { media: media.sort(newestFirst), files: files.sort(newestFirst), voice: voice.sort(newestFirst) };
   }
 
   async getChatMedia(chatId) {
@@ -477,7 +479,8 @@ class StorageService {
     const files = [];
     const voice = [];
 
-    chatMsgs.forEach(m => {
+    chatMsgs.forEach((m, messageIndex) => {
+      const createdAt = Number(m.createdAt) || messageIndex;
       // Фото и видео
       if (m.files && Array.isArray(m.files)) {
         m.files.forEach(f => {
@@ -485,9 +488,9 @@ class StorageService {
           const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
           const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
           if (isPhoto || isVideo) {
-            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo });
+            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, createdAt });
           } else {
-            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender });
+            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, createdAt });
           }
         });
       } else if (m.file) {
@@ -495,22 +498,23 @@ class StorageService {
         const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
         const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
         if (isPhoto || isVideo) {
-          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo });
+          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, createdAt });
         } else {
-          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender });
+          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, createdAt });
         }
       }
 
       // Голосовые и кружочки
       if (m.voice) {
-        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender });
+        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, createdAt });
       }
       if (m.circleVideo) {
-        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender });
+        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, createdAt });
       }
     });
 
-    return { media, files, voice };
+    const newestFirst = (a, b) => b.createdAt - a.createdAt;
+    return { media: media.sort(newestFirst), files: files.sort(newestFirst), voice: voice.sort(newestFirst) };
   }
 
   getContacts(username) {
@@ -743,16 +747,17 @@ class StorageService {
     const files = [];
     const voice = [];
 
-    userMsgs.forEach(m => {
+    userMsgs.forEach((m, messageIndex) => {
+      const createdAt = Number(m.createdAt) || messageIndex;
       if (m.files && Array.isArray(m.files)) {
         m.files.forEach(f => {
           const type = (f.type || '').toLowerCase();
           const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
           const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
           if (isPhoto || isVideo) {
-            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+            media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
           } else {
-            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId });
+            files.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
           }
         });
       } else if (m.file) {
@@ -760,21 +765,22 @@ class StorageService {
         const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
         const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
         if (isPhoto || isVideo) {
-          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId });
+          media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
         } else {
-          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId });
+          files.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
         }
       }
 
       if (m.voice) {
-        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId });
+        voice.push({ msgId: m.id, type: 'voice', voice: m.voice, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
       }
       if (m.circleVideo) {
-        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId });
+        voice.push({ msgId: m.id, type: 'circle', circleVideo: m.circleVideo, time: m.time, sender: m.sender, chatId: m.chatId, createdAt });
       }
     });
 
-    return { media, files, voice };
+    const newestFirst = (a, b) => b.createdAt - a.createdAt;
+    return { media: media.sort(newestFirst), files: files.sort(newestFirst), voice: voice.sort(newestFirst) };
   }
 
   async getMessages(chatId) {
@@ -1864,7 +1870,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.37.1\nИсправление профиля и быстрый выход из сообществ');
+        this.showToast('Sheet Messenger v3.37.2\nНовые материалы сверху и кадры-превью для видео');
       });
     }
 
@@ -3435,20 +3441,60 @@ class TelegramApp {
         }
       }
       if (!src || !element.isConnected) return;
-      const media = document.createElement(isVideo ? 'video' : 'img');
-      media.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-      if (isVideo) {
-        media.muted = true;
-        media.playsInline = true;
-        media.preload = 'metadata';
-        media.addEventListener('loadedmetadata', () => {
-          if (Number.isFinite(media.duration) && media.duration > 0.1) media.currentTime = 0.1;
-        }, {once:true});
-      } else { media.alt = file.name || 'Фото'; media.loading = 'lazy'; }
-      media.src = src;
-      element.querySelector('img, video')?.remove();
-      element.prepend(media);
-      element.querySelector('.tg-media-placeholder-icon')?.remove();
+      const existing = element.querySelector('img, video');
+      if (existing) existing.remove();
+
+      if (!isVideo) {
+        const image = document.createElement('img');
+        image.alt = file.name || 'Фото';
+        image.loading = 'lazy';
+        image.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        image.addEventListener('load', () => element.querySelector('.tg-media-placeholder-icon')?.remove(), { once: true });
+        image.src = src;
+        element.prepend(image);
+        return;
+      }
+
+      const thumbnailKey = (file.mediaId || src) + '_thumbnail';
+      const cachedThumbnail = this._mediaBlobUrlCache.get(thumbnailKey);
+      if (cachedThumbnail) {
+        const image = document.createElement('img');
+        image.alt = file.name ? 'Превью ' + file.name : 'Превью видео';
+        image.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        image.addEventListener('load', () => element.querySelector('.tg-media-placeholder-icon')?.remove(), { once: true });
+        image.src = cachedThumbnail;
+        element.prepend(image);
+        return;
+      }
+
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+      video.setAttribute('aria-hidden', 'true');
+      video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;opacity:0;';
+      video.src = src;
+      element.prepend(video);
+
+      const posterBlob = await this.captureVideoPosterBlob(video, true);
+      if (!element.isConnected) return;
+      if (posterBlob) {
+        const posterUrl = URL.createObjectURL(posterBlob);
+        this._mediaBlobUrlCache.set(thumbnailKey, posterUrl);
+        const image = document.createElement('img');
+        image.alt = file.name ? 'Превью ' + file.name : 'Превью видео';
+        image.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        image.addEventListener('load', () => {
+          video.remove();
+          element.querySelector('.tg-media-placeholder-icon')?.remove();
+          element.classList.add('thumbnail-ready');
+        }, { once: true });
+        image.src = posterUrl;
+        element.prepend(image);
+      } else if (video.readyState >= 2) {
+        video.style.opacity = '1';
+        element.querySelector('.tg-media-placeholder-icon')?.remove();
+      }
     } catch (_) { /* Keep the existing placeholder when a stored file is unavailable. */ }
   }
 
@@ -6402,6 +6448,7 @@ class TelegramApp {
     if (filter === 'all' || filter === 'voice') {
       data.voice.forEach(v => allItems.push({ ...v, itemType: 'voice' }));
     }
+    allItems.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
 
     if (q) {
       allItems = allItems.filter(item => {

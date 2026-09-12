@@ -271,3 +271,21 @@ test('profile photo picker and direct community exit have dedicated controls', (
   assert.match(html, /id="feed-avatar-file-input"[^>]*accept="image\/\*"/);
   assert.match(html, /id="btn-chat-leave-space"[^>]*title="Выйти из сообщества"/);
 });
+
+test('profile collections put the newest saved material first', async () => {
+  const storage = fixture();
+  save('gm_messages', [
+    {id:'old-photo', sender:'alice', chatId:'saved:alice', createdAt:100, files:[{name:'old.jpg', type:'image/jpeg'}]},
+    {id:'new-photo', sender:'alice', chatId:'saved:alice', createdAt:300, files:[{name:'new.jpg', type:'image/jpeg'}]},
+    {id:'middle-file', sender:'alice', chatId:'saved:alice', createdAt:200, files:[{name:'notes.txt', type:'text/plain'}]}
+  ]);
+  const result = await storage.getAllUserMedia('alice');
+  assert.deepEqual(result.media.map(item => item.msgId), ['new-photo', 'old-photo']);
+  assert.deepEqual(result.files.map(item => item.msgId), ['middle-file']);
+});
+
+test('video thumbnails are generated from a real frame', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /hydrateMediaThumbnail[\s\S]*captureVideoPosterBlob\(video, true\)/);
+  assert.match(source, /image\.alt = file\.name \? 'Превью '/);
+});
