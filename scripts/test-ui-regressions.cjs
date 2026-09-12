@@ -289,3 +289,28 @@ test('video thumbnails are generated from a real frame', () => {
   assert.match(source, /hydrateMediaThumbnail[\s\S]*captureVideoPosterBlob\(video, true\)/);
   assert.match(source, /image\.alt = file\.name \? 'Превью '/);
 });
+
+test('attachment library is profile-bound, persistent and newest-first', () => {
+  const storage = fixture();
+  storage.rememberAttachment('alice', {mediaId:'old', name:'old.txt', type:'text/plain', savedAt:100});
+  storage.rememberAttachment('alice', {mediaId:'new', thumbnailId:'new_thumbnail', name:'new.mp4', type:'video/mp4', savedAt:300});
+  storage.rememberAttachment('bobby', {mediaId:'other', name:'other.jpg', type:'image/jpeg', savedAt:500});
+  assert.deepEqual(storage.getAttachmentLibrary('alice').map(item => item.mediaId), ['new', 'old']);
+  assert.equal(storage.getAttachmentLibrary('alice')[0].thumbnailId, 'new_thumbnail');
+  assert.deepEqual(storage.getAttachmentLibrary('bobby').map(item => item.mediaId), ['other']);
+});
+
+test('community profile exposes media, files, voice and members tabs', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  for (const tab of ['media', 'files', 'voice', 'members']) {
+    assert.match(html, new RegExp('data-space-profile-tab="' + tab + '"'));
+  }
+  assert.match(html, /id="space-profile-pane-members"/);
+});
+
+test('video thumbnail blobs are saved and reused by attachment id', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /createAndStoreVideoThumbnail\(mediaId, fileUrl\)/);
+  assert.match(source, /saveMediaBlob\(thumbnailId, posterBlob\)/);
+  assert.match(source, /getMediaBlob\(thumbnailKey\)/);
+});

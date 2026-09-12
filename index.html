@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.37.2">
+  <link rel="stylesheet" href="styles.css?v=3.38.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -696,7 +696,7 @@
               <span><strong>Любой файл</strong><small>Документы любого формата</small></span>
             </button>
           </div>
-          <div id="attachment-picker-empty" class="tg-attachment-picker-empty">Выбранные материалы появятся здесь</div>
+          <div id="attachment-picker-empty" class="tg-attachment-picker-empty">Загруженные материалы сохранятся здесь и будут доступны во всех чатах</div>
           <div id="attachment-picker-grid" class="tg-attachment-preview-grid"></div>
           <footer class="tg-attachment-sheet-footer">
             <button type="button" id="attachment-picker-clear" class="tg-attachment-clear hidden">Очистить</button>
@@ -761,13 +761,24 @@
               <label class="tg-space-field"><span>Публичный адрес</span><div class="tg-space-username"><b>@</b><input id="space-profile-username-input" type="text" maxlength="32" autocapitalize="none" spellcheck="false"></div></label>
               <div class="tg-space-profile-edit-actions"><button type="button" id="space-profile-edit-cancel" class="tg-space-secondary">Отмена</button><button type="button" id="space-profile-save" class="tg-space-primary"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-check"/></svg>Сохранить</button></div>
             </section>
-            <section class="tg-space-profile-card">
-              <div class="tg-space-profile-section-title"><div><strong>Администраторы</strong><span>Управляют сообществом</span></div><b id="space-profile-admin-count">1</b></div>
-              <div id="space-profile-admins" class="tg-space-profile-list"></div>
-            </section>
-            <section id="space-profile-members-section" class="tg-space-profile-card hidden">
-              <div class="tg-space-profile-section-title"><div><strong>Участники</strong><span>Видны администраторам</span></div><b id="space-profile-member-count">1</b></div>
-              <div id="space-profile-members" class="tg-space-profile-list"></div>
+            <nav class="tg-space-profile-tabs" aria-label="Разделы сообщества">
+              <button type="button" class="active" data-space-profile-tab="media">Медиа</button>
+              <button type="button" data-space-profile-tab="files">Файлы</button>
+              <button type="button" data-space-profile-tab="voice">Голосовые</button>
+              <button type="button" data-space-profile-tab="members">Участники</button>
+            </nav>
+            <section id="space-profile-pane-media" class="tg-space-profile-pane"></section>
+            <section id="space-profile-pane-files" class="tg-space-profile-pane hidden"></section>
+            <section id="space-profile-pane-voice" class="tg-space-profile-pane hidden"></section>
+            <section id="space-profile-pane-members" class="tg-space-profile-pane hidden">
+              <div class="tg-space-profile-card">
+                <div class="tg-space-profile-section-title"><div><strong>Администраторы</strong><span>Управляют сообществом</span></div><b id="space-profile-admin-count">1</b></div>
+                <div id="space-profile-admins" class="tg-space-profile-list"></div>
+              </div>
+              <div id="space-profile-members-section" class="tg-space-profile-card hidden">
+                <div class="tg-space-profile-section-title"><div><strong>Участники</strong><span>Видны администраторам</span></div><b id="space-profile-member-count">1</b></div>
+                <div id="space-profile-members" class="tg-space-profile-list"></div>
+              </div>
             </section>
             <button type="button" id="space-profile-leave" class="tg-space-profile-leave"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-close"/></svg><span>Покинуть сообщество</span></button>
           </div>
@@ -1115,6 +1126,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.37.2"></script>
+  <script src="app.js?v=3.38.0"></script>
 </body>
 </html>

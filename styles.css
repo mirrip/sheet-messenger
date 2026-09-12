@@ -5648,6 +5648,169 @@ html[data-theme="light"] .tg-main-wrap::after,body.tg-theme-light .tg-main-wrap:
   .tg-theme-preview { height:43px; padding:6px; }
 }
 
+/* v3.38 — persistent attachment library, reliable previews and space tabs */
+.tg-library-tile {
+  cursor: pointer;
+  transition: transform 150ms var(--tg-ease), border-color 150ms var(--tg-ease), box-shadow 150ms var(--tg-ease);
+}
+
+.tg-library-tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--tg-primary) 55%, var(--tg-border));
+}
+
+.tg-library-tile.selected {
+  border-color: var(--tg-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tg-primary) 24%, transparent);
+}
+
+.tg-attachment-preview-select {
+  position: absolute;
+  z-index: 4;
+  top: 5px;
+  right: 5px;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #fff !important;
+  border: 1px solid rgba(255,255,255,.42);
+  border-radius: 50%;
+  background: rgba(8,14,22,.72) !important;
+  backdrop-filter: blur(9px);
+  cursor: pointer;
+}
+
+.tg-library-tile.selected .tg-attachment-preview-select {
+  border-color: color-mix(in srgb, var(--tg-primary) 75%, #fff);
+  background: var(--tg-primary) !important;
+}
+
+.tg-library-tile .tg-media-placeholder-icon {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.tg-library-tile > img,
+.tg-library-tile > video {
+  position: absolute;
+  inset: 0;
+}
+
+.tg-library-tile .tg-attachment-video-mark,
+.tg-library-tile .tg-attachment-preview-name {
+  z-index: 3;
+  pointer-events: none;
+}
+
+.tg-space-profile-tabs {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 -1px 13px;
+  border-bottom: 1px solid var(--tg-border);
+  background: color-mix(in srgb, var(--tg-bg-sidebar) 96%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.tg-space-profile-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 45px;
+  padding: 0 5px;
+  overflow: hidden;
+  color: var(--tg-text-sub);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tg-space-profile-tabs button::after {
+  content: '';
+  position: absolute;
+  right: 9px;
+  bottom: 0;
+  left: 9px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--tg-primary);
+  opacity: 0;
+  transform: scaleX(.45);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.tg-space-profile-tabs button.active {
+  color: var(--tg-primary);
+}
+
+.tg-space-profile-tabs button.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.tg-space-profile-pane {
+  min-height: 150px;
+  margin-bottom: 13px;
+}
+
+.tg-space-profile-pane.hidden {
+  display: none !important;
+}
+
+.tg-space-profile-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  overflow: hidden;
+  border-radius: 15px;
+}
+
+.tg-space-profile-media-tile {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+}
+
+.tg-space-profile-empty {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--tg-text-sub);
+  border: 1px dashed var(--tg-border);
+  border-radius: 17px;
+  background: var(--tg-surface-soft);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .tg-create-space-fab {
+    right: 14px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    width: 50px;
+    height: 50px;
+  }
+
+  .tg-space-profile-tabs {
+    margin-inline: -13px;
+    padding-inline: 5px;
+  }
+
+  .tg-space-profile-tabs button {
+    font-size: 11px;
+  }
+}
+
 /* COMMUNITY PROFILES & CROSS-THEME CONTRAST v3.37 */
 .tg-chat-actions-menu,
 .tg-menu-dropdown,
@@ -6059,4 +6222,14 @@ html[data-theme="light"] .tg-premium-empty {
   .tg-blocked-composer-copy { font-size:12px; }
   .tg-blocked-composer-action { padding-inline:11px; font-size:12px; }
   .tg-blacklist-unblock { padding-inline:8px; font-size:10.5px; }
+}
+
+@media (max-width: 768px) {
+  #btn-create-space-chats.tg-create-space-fab,
+  #btn-create-space-contacts.tg-create-space-fab {
+    right: 14px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    width: 50px;
+    height: 50px;
+  }
 }
