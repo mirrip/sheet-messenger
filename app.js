@@ -485,8 +485,8 @@ class StorageService {
       if (m.files && Array.isArray(m.files)) {
         m.files.forEach(f => {
           const type = (f.type || '').toLowerCase();
-          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
-          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
+          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(f.name || '');
+          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/i.test(f.name || '');
           if (isPhoto || isVideo) {
             media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, createdAt });
           } else {
@@ -495,8 +495,8 @@ class StorageService {
         });
       } else if (m.file) {
         const type = (m.file.type || '').toLowerCase();
-        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
-        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
+        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(m.file.name || '');
+        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/i.test(m.file.name || '');
         if (isPhoto || isVideo) {
           media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, createdAt });
         } else {
@@ -778,8 +778,8 @@ class StorageService {
       if (m.files && Array.isArray(m.files)) {
         m.files.forEach(f => {
           const type = (f.type || '').toLowerCase();
-          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name || '');
-          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(f.name || '');
+          const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(f.name || '');
+          const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/i.test(f.name || '');
           if (isPhoto || isVideo) {
             media.push({ msgId: m.id, file: f, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
           } else {
@@ -788,8 +788,8 @@ class StorageService {
         });
       } else if (m.file) {
         const type = (m.file.type || '').toLowerCase();
-        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(m.file.name || '');
-        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(m.file.name || '');
+        const isPhoto = type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(m.file.name || '');
+        const isVideo = type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/i.test(m.file.name || '');
         if (isPhoto || isVideo) {
           media.push({ msgId: m.id, file: m.file, time: m.time, sender: m.sender, isVideo, chatId: m.chatId, createdAt });
         } else {
@@ -1441,7 +1441,6 @@ class TelegramApp {
       btnMenuProfile: document.getElementById('btn-menu-profile'),
       btnOpenChatProfile: document.getElementById('btn-open-chat-profile'),
       btnChatInfoPanel: document.getElementById('btn-chat-info-panel'),
-      btnChatLeaveSpace: document.getElementById('btn-chat-leave-space'),
       chatActionsMenu: document.getElementById('chat-actions-menu'),
 
       btnChangeAvatar: document.getElementById('btn-change-avatar'),
@@ -1601,7 +1600,6 @@ class TelegramApp {
       ,spaceProfileMembersSection: document.getElementById('space-profile-members-section')
       ,spaceProfileMemberCount: document.getElementById('space-profile-member-count')
       ,spaceProfileMembers: document.getElementById('space-profile-members')
-      ,spaceProfileLeave: document.getElementById('space-profile-leave')
     };
   }
 
@@ -1787,11 +1785,6 @@ class TelegramApp {
       if (!this.el.spaceProfileEditForm.classList.contains('hidden')) this.el.spaceProfileAvatarInput.click();
     });
     if (this.el.spaceProfileAvatarInput) this.el.spaceProfileAvatarInput.addEventListener('change', event => this.handleSpaceProfileAvatar(event));
-    if (this.el.spaceProfileLeave) this.el.spaceProfileLeave.addEventListener('click', () => this.leaveCurrentSpace());
-    if (this.el.btnChatLeaveSpace) this.el.btnChatLeaveSpace.addEventListener('click', async () => {
-      this.activeSpaceId = this.currentChatId;
-      await this.leaveCurrentSpace();
-    });
     if (this.el.btnCloseBlacklist) {
       this.el.btnCloseBlacklist.addEventListener('click', () => this.closeBlacklistModal());
     }
@@ -1903,7 +1896,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.38.0\nЛокальная библиотека вложений и вкладки сообществ');
+        this.showToast('Sheet Messenger v3.38.1\nИсправленные медиа сообществ и единый выход через меню');
       });
     }
 
@@ -2523,7 +2516,6 @@ class TelegramApp {
           : this.uiIcon(restoredSpace.type === 'channel' ? 'broadcast' : 'users');
       }
     }
-    this.updateSpaceHeaderAction();
 
     // Если на смартфоне зашли первый раз или чат был открыт — сразу показываем чат
     if (this.el.chatView && window.innerWidth <= 768) {
@@ -2629,7 +2621,6 @@ class TelegramApp {
         }
       });
     }
-    this.updateSpaceHeaderAction();
 
     if (this.isRecordingAudio || this.isRecordingVideo) {
       this.stopRecording(false);
@@ -3528,7 +3519,9 @@ class TelegramApp {
           this._mediaBlobUrlCache.set(file.mediaId, src);
         }
       }
-      if (!src || !element.isConnected) return;
+      // Сетка профиля может наполняться до добавления в DOM. Источник уже
+      // доступен, поэтому отключённый на этот момент элемент всё равно нужно гидратировать.
+      if (!src) return;
       const existing = element.querySelector('img, video');
       if (existing) existing.remove();
 
@@ -5565,11 +5558,6 @@ class TelegramApp {
       : this.uiIcon(space.type === 'channel' ? 'broadcast' : 'users', 'tg-ui-icon-xl');
     if (this.el.spaceProfileEdit) this.el.spaceProfileEdit.classList.toggle('hidden', !isAdmin);
     if (this.el.spaceProfileAvatarButton) this.el.spaceProfileAvatarButton.classList.toggle('editable', isAdmin && !this.el.spaceProfileEditForm.classList.contains('hidden'));
-    if (this.el.spaceProfileLeave) {
-      this.el.spaceProfileLeave.classList.remove('hidden');
-      this.el.spaceProfileLeave.disabled = false;
-      this.el.spaceProfileLeave.title = 'Выйти из сообщества';
-    }
     if (this.el.spaceProfileAdminCount) this.el.spaceProfileAdminCount.textContent = String((space.admins || []).length);
     if (this.el.spaceProfileMemberCount) this.el.spaceProfileMemberCount.textContent = String((space.members || []).length);
     if (this.el.spaceProfileMembersSection) this.el.spaceProfileMembersSection.classList.toggle('hidden', !isAdmin);
@@ -5816,16 +5804,6 @@ class TelegramApp {
     contactButton.querySelector('span').textContent = isContact ? 'Изменить контакт' : 'Добавить контакт';
     blockButton.querySelector('span').textContent = isBlocked ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
     this.el.chatActionsMenu.querySelector('[data-chat-action="mute"] span').textContent = isMuted ? 'Включить звук' : 'Выключить звук';
-  }
-
-  updateSpaceHeaderAction() {
-    if (!this.el.btnChatLeaveSpace) return;
-    const space = this.currentUser ? this.storage.getSpace(this.currentChatId) : null;
-    this.el.btnChatLeaveSpace.classList.toggle('hidden', !space);
-    if (space) {
-      this.el.btnChatLeaveSpace.title = 'Выйти из сообщества';
-      this.el.btnChatLeaveSpace.setAttribute('aria-label', 'Выйти из сообщества');
-    }
   }
 
   async removeMessagesMedia(messages) {

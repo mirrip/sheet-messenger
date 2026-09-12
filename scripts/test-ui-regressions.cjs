@@ -266,10 +266,12 @@ test('profile media tiles stay inside their grid and cannot cover profile contro
   assert.match(css, /\.tg-feed-grid-item \.tg-media-placeholder-icon,[^{]*\{[^}]*pointer-events:\s*none;/s);
 });
 
-test('profile photo picker and direct community exit have dedicated controls', () => {
+test('profile photo picker is dedicated and community exit stays only in the three-dot menu', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(html, /id="feed-avatar-file-input"[^>]*accept="image\/\*"/);
-  assert.match(html, /id="btn-chat-leave-space"[^>]*title="Выйти из сообщества"/);
+  assert.doesNotMatch(html, /id="btn-chat-leave-space"/);
+  assert.doesNotMatch(html, /id="space-profile-leave"/);
+  assert.match(html, /data-chat-action="space-leave"/);
 });
 
 test('profile collections put the newest saved material first', async () => {
@@ -313,4 +315,15 @@ test('video thumbnail blobs are saved and reused by attachment id', () => {
   assert.match(source, /createAndStoreVideoThumbnail\(mediaId, fileUrl\)/);
   assert.match(source, /saveMediaBlob\(thumbnailId, posterBlob\)/);
   assert.match(source, /getMediaBlob\(thumbnailKey\)/);
+});
+
+test('detached community and profile grids still hydrate their media', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.doesNotMatch(source, /if \(!src \|\| !element\.isConnected\) return/);
+  assert.match(source, /if \(!src\) return/);
+});
+
+test('leaving a community requires confirmation', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /async leaveCurrentSpace\(\)[\s\S]*confirm\('Покинуть «'/);
 });
