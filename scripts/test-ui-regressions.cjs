@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { StorageService, TelegramApp } = require('../app.js');
 
 class MemoryStorage {
@@ -256,4 +258,16 @@ test('community profile editing and administrator roles enforce permissions', ()
   storage.leaveSpace(space.id, 'charlie');
   assert.equal(storage.getSpace(space.id).members.includes('charlie'), false);
   assert.throws(() => storage.leaveSpace(space.id, 'alice'), /передать права/);
+});
+
+test('profile media tiles stay inside their grid and cannot cover profile controls', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+  assert.match(css, /\.tg-feed-grid-item\s*\{[^}]*position:\s*relative;[^}]*aspect-ratio:\s*1\s*\/\s*1;[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.tg-feed-grid-item \.tg-media-placeholder-icon,[^{]*\{[^}]*pointer-events:\s*none;/s);
+});
+
+test('profile photo picker and direct community exit have dedicated controls', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.match(html, /id="feed-avatar-file-input"[^>]*accept="image\/\*"/);
+  assert.match(html, /id="btn-chat-leave-space"[^>]*title="Выйти из сообщества"/);
 });

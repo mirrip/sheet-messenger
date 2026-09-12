@@ -5721,6 +5721,98 @@ html[data-theme="light"] .tg-premium-empty {
   .tg-space-profile-scroll{padding-bottom:max(22px,env(safe-area-inset-bottom));}
 }
 
+/* v3.37.1 — profile media containment and direct community exit */
+.tg-feed-hero,
+.tg-feed-form,
+.tg-feed-stats-grid {
+  position: relative;
+  z-index: 2;
+}
+
+.tg-feed-media-section,
+.tg-feed-pane,
+.tg-feed-media-grid {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.tg-feed-pane.hidden {
+  display: none !important;
+}
+
+.tg-feed-media-grid {
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.tg-feed-grid-item {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  color: var(--tg-text-sub);
+  background: var(--tg-surface-soft);
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.tg-feed-grid-item > img,
+.tg-feed-grid-item > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tg-feed-grid-item .tg-media-placeholder-icon,
+.tg-feed-grid-item .tg-profile-media-video-badge {
+  pointer-events: none;
+}
+
+.tg-feed-form .tg-field-input {
+  color: var(--tg-text-main);
+  background: var(--tg-input-bg);
+  border-color: var(--tg-border);
+}
+
+.tg-space-header-leave {
+  width: auto;
+  min-width: 40px;
+  padding: 0 11px;
+  gap: 6px;
+  color: var(--tg-danger);
+  border: 1px solid color-mix(in srgb, var(--tg-danger) 24%, var(--tg-border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--tg-danger) 7%, transparent);
+}
+
+.tg-space-header-leave:hover {
+  color: var(--tg-danger);
+  background: color-mix(in srgb, var(--tg-danger) 14%, transparent);
+}
+
+.tg-space-header-leave span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .tg-space-header-leave {
+    width: 40px;
+    padding: 0;
+  }
+
+  .tg-space-header-leave span {
+    display: none;
+  }
+}
+
 /* SETTINGS & NAVIGATION v3.32 */
 .tg-settings-profile-card {
   width:100%; min-height:78px; padding:12px 13px; border:1px solid var(--tg-border); border-radius:17px;

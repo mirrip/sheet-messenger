@@ -1408,6 +1408,7 @@ class TelegramApp {
       btnMenuProfile: document.getElementById('btn-menu-profile'),
       btnOpenChatProfile: document.getElementById('btn-open-chat-profile'),
       btnChatInfoPanel: document.getElementById('btn-chat-info-panel'),
+      btnChatLeaveSpace: document.getElementById('btn-chat-leave-space'),
       chatActionsMenu: document.getElementById('chat-actions-menu'),
 
       btnChangeAvatar: document.getElementById('btn-change-avatar'),
@@ -1461,6 +1462,7 @@ class TelegramApp {
       btnFeedAvatarPrev: document.getElementById('btn-feed-avatar-prev'),
       btnFeedAvatarNext: document.getElementById('btn-feed-avatar-next'),
       btnFeedChangePhoto: document.getElementById('btn-feed-change-photo'),
+      feedAvatarFileInput: document.getElementById('feed-avatar-file-input'),
       btnFeedSetMainPhoto: document.getElementById('btn-feed-set-main-photo'),
       btnFeedRemovePhoto: document.getElementById('btn-feed-remove-photo'),
       feedHeroName: document.getElementById('feed-hero-name'),
@@ -1647,8 +1649,14 @@ class TelegramApp {
         this.stepFeedAvatar(1);
       });
     }
-    if (this.el.btnFeedChangePhoto && this.el.avatarFileInput) {
-      this.el.btnFeedChangePhoto.addEventListener('click', () => this.el.avatarFileInput.click());
+    if (this.el.btnFeedChangePhoto && this.el.feedAvatarFileInput) {
+      this.el.btnFeedChangePhoto.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.el.feedAvatarFileInput.value = '';
+        this.el.feedAvatarFileInput.click();
+      });
+      this.el.feedAvatarFileInput.addEventListener('change', (event) => this.handleAvatarUpload(event));
     }
     if (this.el.btnFeedSetMainPhoto) {
       this.el.btnFeedSetMainPhoto.addEventListener('click', async (e) => {
@@ -1741,6 +1749,10 @@ class TelegramApp {
     });
     if (this.el.spaceProfileAvatarInput) this.el.spaceProfileAvatarInput.addEventListener('change', event => this.handleSpaceProfileAvatar(event));
     if (this.el.spaceProfileLeave) this.el.spaceProfileLeave.addEventListener('click', () => this.leaveCurrentSpace());
+    if (this.el.btnChatLeaveSpace) this.el.btnChatLeaveSpace.addEventListener('click', async () => {
+      this.activeSpaceId = this.currentChatId;
+      await this.leaveCurrentSpace();
+    });
     if (this.el.btnCloseBlacklist) {
       this.el.btnCloseBlacklist.addEventListener('click', () => this.closeBlacklistModal());
     }
@@ -1852,7 +1864,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.37.0\nПрофили сообществ и улучшенный контраст');
+        this.showToast('Sheet Messenger v3.37.1\nИсправление профиля и быстрый выход из сообществ');
       });
     }
 
@@ -2472,6 +2484,7 @@ class TelegramApp {
           : this.uiIcon(restoredSpace.type === 'channel' ? 'broadcast' : 'users');
       }
     }
+    this.updateSpaceHeaderAction();
 
     // Если на смартфоне зашли первый раз или чат был открыт — сразу показываем чат
     if (this.el.chatView && window.innerWidth <= 768) {
@@ -2577,6 +2590,7 @@ class TelegramApp {
         }
       });
     }
+    this.updateSpaceHeaderAction();
 
     if (this.isRecordingAudio || this.isRecordingVideo) {
       this.stopRecording(false);
@@ -5391,8 +5405,9 @@ class TelegramApp {
     if (this.el.spaceProfileEdit) this.el.spaceProfileEdit.classList.toggle('hidden', !isAdmin);
     if (this.el.spaceProfileAvatarButton) this.el.spaceProfileAvatarButton.classList.toggle('editable', isAdmin && !this.el.spaceProfileEditForm.classList.contains('hidden'));
     if (this.el.spaceProfileLeave) {
-      this.el.spaceProfileLeave.classList.toggle('hidden', isOwner);
-      this.el.spaceProfileLeave.disabled = isOwner;
+      this.el.spaceProfileLeave.classList.remove('hidden');
+      this.el.spaceProfileLeave.disabled = false;
+      this.el.spaceProfileLeave.title = 'Выйти из сообщества';
     }
     if (this.el.spaceProfileAdminCount) this.el.spaceProfileAdminCount.textContent = String((space.admins || []).length);
     if (this.el.spaceProfileMemberCount) this.el.spaceProfileMemberCount.textContent = String((space.members || []).length);
@@ -5485,6 +5500,10 @@ class TelegramApp {
     const chatId = this.activeSpaceId || this.currentChatId;
     const space = this.storage.getSpace(chatId);
     if (!space) return;
+    if (space.owner === this.currentUser.username.toLowerCase()) {
+      this.showToast('Создателю нужно сначала передать права владельца другому участнику');
+      return;
+    }
     if (!confirm('Покинуть «' + space.title + '»?')) return;
     try {
       this.storage.leaveSpace(chatId, this.currentUser.username);
@@ -5562,7 +5581,7 @@ class TelegramApp {
     const spaceInfoButton = this.el.chatActionsMenu.querySelector('[data-chat-action="space-info"]');
     const spaceLeaveButton = this.el.chatActionsMenu.querySelector('[data-chat-action="space-leave"]');
     if (spaceInfoButton) spaceInfoButton.classList.toggle('hidden', !space);
-    if (spaceLeaveButton) spaceLeaveButton.classList.toggle('hidden', !space || space.owner === this.currentUser.username.toLowerCase());
+    if (spaceLeaveButton) spaceLeaveButton.classList.toggle('hidden', !space);
     contactButton.classList.toggle('hidden', general || saved || Boolean(space));
     blockButton.classList.toggle('hidden', general || saved || Boolean(space));
     const deleteButton = this.el.chatActionsMenu.querySelector('[data-chat-action="delete"]');
@@ -5572,6 +5591,16 @@ class TelegramApp {
     contactButton.querySelector('span').textContent = isContact ? 'Изменить контакт' : 'Добавить контакт';
     blockButton.querySelector('span').textContent = isBlocked ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
     this.el.chatActionsMenu.querySelector('[data-chat-action="mute"] span').textContent = isMuted ? 'Включить звук' : 'Выключить звук';
+  }
+
+  updateSpaceHeaderAction() {
+    if (!this.el.btnChatLeaveSpace) return;
+    const space = this.currentUser ? this.storage.getSpace(this.currentChatId) : null;
+    this.el.btnChatLeaveSpace.classList.toggle('hidden', !space);
+    if (space) {
+      this.el.btnChatLeaveSpace.title = 'Выйти из сообщества';
+      this.el.btnChatLeaveSpace.setAttribute('aria-label', 'Выйти из сообщества');
+    }
   }
 
   async removeMessagesMedia(messages) {
@@ -5957,10 +5986,12 @@ class TelegramApp {
         this.openUserProfile(this.currentUser.username, true);
       }
       if (this.el.avatarFileInput) this.el.avatarFileInput.value = '';
+      if (this.el.feedAvatarFileInput) this.el.feedAvatarFileInput.value = '';
       this.showToast('Новое фото профиля успешно добавлено ✨');
     } catch (e) {
       console.warn('Avatar upload error:', e);
       if (this.el.avatarFileInput) this.el.avatarFileInput.value = '';
+      if (this.el.feedAvatarFileInput) this.el.feedAvatarFileInput.value = '';
       this.showToast('Ошибка при загрузке фото');
     }
   }
