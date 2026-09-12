@@ -206,3 +206,35 @@ test('blacklist blocks both sides of a direct conversation until unblocked', asy
   await assert.rejects(() => storage.sendMessage(chatId, 'alice', 'blocked by me'), /разблокируйте/);
   await assert.doesNotReject(() => storage.sendMessage('saved:alice', 'alice', 'private note'));
 });
+
+test('groups and channels are visible only to members and enforce publishing rights', async () => {
+  const storage = fixture();
+  save('gm_blacklist_bobby', []);
+  const group = storage.createSpace({type:'group', title:'Design Team', username:'design_team', owner:'alice', members:['bobby']});
+  const channel = storage.createSpace({type:'channel', title:'Product News', username:'product_news', owner:'alice', members:['bobby']});
+
+  const aliceChats = await storage.getUserChats('alice');
+  const bobChats = await storage.getUserChats('bobby');
+  const strangerChats = await storage.getUserChats('charlie');
+  assert.equal(aliceChats.some(chat => chat.id === group.id && chat.isGroup), true);
+  assert.equal(bobChats.some(chat => chat.id === channel.id && chat.isChannel), true);
+  assert.equal(strangerChats.some(chat => chat.id === group.id || chat.id === channel.id), false);
+
+  await assert.doesNotReject(() => storage.sendMessage(group.id, 'bobby', 'Hello group'));
+  await assert.doesNotReject(() => storage.sendMessage(channel.id, 'alice', 'Official post'));
+  await assert.rejects(() => storage.sendMessage(channel.id, 'bobby', 'Not allowed'), /администраторы/);
+  await assert.rejects(() => storage.sendMessage(group.id, 'charlie', 'Not a member'), /не состоите/);
+});
+
+test('community usernames are validated, unique and migrate with the owner account', () => {
+  const storage = fixture();
+  assert.throws(() => storage.createSpace({type:'group', title:'Bad', username:'1bad', owner:'alice'}), /Username/);
+  const space = storage.createSpace({type:'channel', title:'Studio', username:'studio_news', owner:'alice', members:['bobby']});
+  assert.equal(storage.isSpaceUsernameAvailable('studio_news'), false);
+  assert.throws(() => storage.createSpace({type:'group', title:'Duplicate', username:'studio_news', owner:'bobby'}), /занят/);
+  storage.renameUsername('alice', 'alice_new');
+  const migrated = storage.getSpace(space.id);
+  assert.equal(migrated.owner, 'alice_new');
+  assert.deepEqual(migrated.admins, ['alice_new']);
+  assert.deepEqual(migrated.members.sort(), ['alice_new','bobby']);
+});

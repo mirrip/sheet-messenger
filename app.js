@@ -164,6 +164,13 @@ class StorageService {
       if (m.reactions) Object.keys(m.reactions).forEach(r => { m.reactions[r] = m.reactions[r].map(remap); });
     });
     put('gm_messages', messages);
+    const spaces = JSON.parse(localStorage.getItem('gm_spaces') || '[]');
+    spaces.forEach(space => {
+      space.owner = remap(space.owner);
+      space.admins = (space.admins || []).map(remap);
+      space.members = (space.members || []).map(remap);
+    });
+    put('gm_spaces', spaces);
     const current = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
     if (current?.username === oldName) { current.username = next; put('gm_current_user', current); }
     put('gm_muted_chats', JSON.parse(localStorage.getItem('gm_muted_chats') || '[]').map(chatId));
@@ -521,6 +528,49 @@ class StorageService {
     return list;
   }
 
+  getSpaces() {
+    return JSON.parse(localStorage.getItem('gm_spaces') || '[]');
+  }
+
+  getSpace(chatId) {
+    return this.getSpaces().find(space => space.id === chatId) || null;
+  }
+
+  isSpaceUsernameAvailable(username) {
+    const clean = String(username || '').toLowerCase().replace(/^@/, '');
+    if (!clean) return false;
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    return !users.some(user => String(user.username || '').toLowerCase() === clean)
+      && !this.getSpaces().some(space => String(space.username || '').toLowerCase() === clean);
+  }
+
+  createSpace(data) {
+    const type = data && data.type === 'channel' ? 'channel' : 'group';
+    const title = String(data && data.title || '').trim();
+    const username = String(data && data.username || '').trim().toLowerCase().replace(/^@/, '');
+    const owner = String(data && data.owner || '').trim().toLowerCase().replace(/^@/, '');
+    if (!title) throw new Error('Введите название');
+    if (!/^[a-z][a-z0-9_]{4,31}$/.test(username)) throw new Error('Username: 5–32 символа, латинская буква в начале');
+    if (!this.isSpaceUsernameAvailable(username)) throw new Error('Этот username уже занят');
+    if (!owner) throw new Error('Не указан создатель');
+    const members = Array.from(new Set([owner].concat(data.members || []).map(value => String(value || '').toLowerCase().replace(/^@/, '')).filter(Boolean)));
+    const space = {
+      id: 'space_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
+      type,
+      title,
+      username,
+      avatar: data.avatar || '',
+      owner,
+      admins: [owner],
+      members,
+      createdAt: Date.now()
+    };
+    const spaces = this.getSpaces();
+    spaces.push(space);
+    localStorage.setItem('gm_spaces', JSON.stringify(spaces));
+    return space;
+  }
+
   saveContact(currentUsername, contact) {
     if (!currentUsername || !contact || !contact.username) return false;
     const key = 'gm_contacts_' + currentUsername.toLowerCase();
@@ -595,6 +645,19 @@ class StorageService {
     return { blocked: blockedByMe || blockedByPeer, blockedByMe, blockedByPeer, peer };
   }
 
+  getChatPostingState(currentUsername, chatId) {
+    const blockState = this.getChatBlockState(currentUsername, chatId);
+    if (blockState.blocked) return { ...blockState, restricted: true, reason: 'blacklist' };
+    const space = this.getSpace(chatId);
+    if (!space) return { ...blockState, restricted: false, reason: '' };
+    const me = String(currentUsername || '').toLowerCase().replace(/^@/, '');
+    const isMember = (space.members || []).includes(me);
+    const isAdmin = (space.admins || []).includes(me);
+    if (!isMember) return { ...blockState, restricted: true, reason: 'not-member', space, isAdmin };
+    if (space.type === 'channel' && !isAdmin) return { ...blockState, restricted: true, reason: 'channel-readonly', space, isAdmin };
+    return { ...blockState, restricted: false, reason: '', space, isAdmin };
+  }
+
   toggleBlacklist(currentUsername, targetUsername) {
     if (!currentUsername || !targetUsername) return false;
     const key = 'gm_blacklist_' + currentUsername.toLowerCase();
@@ -616,10 +679,11 @@ class StorageService {
   async getAllUserMedia(username) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const myName = (username || '').toLowerCase();
+    const spaceIds = new Set(this.getSpaces().filter(space => (space.members || []).includes(myName)).map(space => space.id));
     const userMsgs = all.filter(m => {
       const sender = (m.sender || '').toLowerCase();
       const chatId = (m.chatId || '').toLowerCase();
-      return sender === myName || chatId.includes(myName) || chatId === this.getSavedChatId(myName);
+      return sender === myName || chatId.includes(myName) || chatId === this.getSavedChatId(myName) || spaceIds.has(m.chatId);
     });
 
     const media = [];
@@ -670,8 +734,12 @@ class StorageService {
   }
 
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
-    const blockState = this.getChatBlockState(sender, chatId);
-    if (blockState.blocked) throw new Error(blockState.blockedByMe ? 'Сначала разблокируйте пользователя' : 'Пользователь ограничил переписку');
+    const postingState = this.getChatPostingState(sender, chatId);
+    if (postingState.restricted) {
+      if (postingState.reason === 'blacklist') throw new Error(postingState.blockedByMe ? 'Сначала разблокируйте пользователя' : 'Пользователь ограничил переписку');
+      if (postingState.reason === 'channel-readonly') throw new Error('В канале публикуют только администраторы');
+      throw new Error('Вы не состоите в этом сообществе');
+    }
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -727,6 +795,26 @@ class StorageService {
       lastTime: lastSaved ? lastSaved.time : '',
       timestamp: lastSaved ? lastSaved.createdAt : 0,
       unreadCount: 0
+    });
+
+    this.getSpaces().filter(space => (space.members || []).includes(myName)).forEach(space => {
+      const spaceMessages = all.filter(message => message.chatId === space.id);
+      const last = spaceMessages[spaceMessages.length - 1];
+      const lastText = last ? (last.text || (last.voice ? 'Голосовое сообщение' : (last.circleVideo ? 'Видеокружок' : (last.file ? 'Файл' : 'Сообщение')))) : (space.type === 'channel' ? 'Новый канал' : 'Новая группа');
+      chatMap.set(space.id, {
+        id: space.id,
+        title: space.title,
+        username: space.username,
+        avatar: space.avatar || '',
+        isCommunity: true,
+        isChannel: space.type === 'channel',
+        isGroup: space.type === 'group',
+        memberCount: (space.members || []).length,
+        lastMsg: lastText,
+        lastTime: last ? last.time : '',
+        timestamp: last ? last.createdAt : space.createdAt,
+        unreadCount: 0
+      });
     });
 
     all.forEach(m => {
@@ -823,6 +911,10 @@ class TelegramApp {
     this.feedActiveTab = 'media';
     this.feedAvatarIndex = 0;
     this.modalAvatarIndex = 0;
+    this.spaceDraftAvatar = '';
+    this.spaceDraftMembers = new Set();
+    this.spaceWizardStep = 1;
+    this.spaceMemberCandidates = [];
 
     // Инициализация IndexedDB для медиа (async, не блокирует UI)
     this.storage.initMediaDB();
@@ -1340,6 +1432,9 @@ class TelegramApp {
       settingsStorageUsage: document.getElementById('settings-storage-usage'),
       btnSettingsClearCache: document.getElementById('btn-settings-clear-cache'),
       btnSettingsBlacklist: document.getElementById('btn-settings-blacklist'),
+      btnSettingsCreateSpace: document.getElementById('btn-settings-create-space'),
+      btnCreateSpaceChats: document.getElementById('btn-create-space-chats'),
+      btnCreateSpaceContacts: document.getElementById('btn-create-space-contacts'),
       themeChoices: document.querySelectorAll('[data-theme-choice]'),
       settingsThemeLabel: document.getElementById('settings-theme-label'),
       backgroundChoices: document.querySelectorAll('[data-chat-background-choice]'),
@@ -1372,6 +1467,25 @@ class TelegramApp {
       blacklistInputUsername: document.getElementById('blacklist-input-username'),
       btnAddToBlacklist: document.getElementById('btn-add-to-blacklist'),
       blacklistItemsList: document.getElementById('blacklist-items-list')
+      ,spaceCreator: document.getElementById('space-creator')
+      ,spaceCreatorClose: document.getElementById('space-creator-close')
+      ,spaceCreatorBack: document.getElementById('space-creator-back')
+      ,spaceCreatorNext: document.getElementById('space-creator-next')
+      ,spaceCreatorSave: document.getElementById('space-creator-save')
+      ,spaceCreatorTitle: document.getElementById('space-creator-heading')
+      ,spaceCreatorStepLabel: document.getElementById('space-creator-step-label')
+      ,spaceCreatorStepOne: document.getElementById('space-creator-step-one')
+      ,spaceCreatorStepTwo: document.getElementById('space-creator-step-two')
+      ,spaceTypeChoices: document.querySelectorAll('[data-space-type]')
+      ,spaceAvatarButton: document.getElementById('space-avatar-button')
+      ,spaceAvatarInput: document.getElementById('space-avatar-input')
+      ,spaceAvatarPreview: document.getElementById('space-avatar-preview')
+      ,spaceTitleInput: document.getElementById('space-title-input')
+      ,spaceUsernameInput: document.getElementById('space-username-input')
+      ,spaceUsernameStatus: document.getElementById('space-username-status')
+      ,spaceMembersSearch: document.getElementById('space-members-search')
+      ,spaceMembersList: document.getElementById('space-members-list')
+      ,spaceMembersCount: document.getElementById('space-members-count')
     };
   }
 
@@ -1525,6 +1639,22 @@ class TelegramApp {
     if (this.el.btnSettingsBlacklist) {
       this.el.btnSettingsBlacklist.addEventListener('click', () => this.openBlacklistModal());
     }
+    [this.el.btnSettingsCreateSpace, this.el.btnCreateSpaceChats, this.el.btnCreateSpaceContacts].forEach(button => {
+      if (button) button.addEventListener('click', () => this.openSpaceCreator());
+    });
+    if (this.el.spaceCreatorClose) this.el.spaceCreatorClose.addEventListener('click', () => this.closeSpaceCreator());
+    if (this.el.spaceCreatorBack) this.el.spaceCreatorBack.addEventListener('click', () => this.setSpaceCreatorStep(1));
+    if (this.el.spaceCreatorNext) this.el.spaceCreatorNext.addEventListener('click', () => this.prepareSpaceMembers());
+    if (this.el.spaceCreatorSave) this.el.spaceCreatorSave.addEventListener('click', () => this.createSpaceFromWizard());
+    if (this.el.spaceAvatarButton && this.el.spaceAvatarInput) this.el.spaceAvatarButton.addEventListener('click', () => this.el.spaceAvatarInput.click());
+    if (this.el.spaceAvatarInput) this.el.spaceAvatarInput.addEventListener('change', event => this.handleSpaceAvatar(event));
+    if (this.el.spaceMembersSearch) this.el.spaceMembersSearch.addEventListener('input', () => this.renderSpaceMemberChoices());
+    if (this.el.spaceUsernameInput) this.el.spaceUsernameInput.addEventListener('input', () => this.updateSpaceUsernameStatus());
+    this.el.spaceTypeChoices.forEach(button => button.addEventListener('click', () => {
+      this.el.spaceTypeChoices.forEach(choice => choice.classList.toggle('active', choice === button));
+      this.el.spaceTypeChoices.forEach(choice => choice.setAttribute('aria-checked', String(choice === button)));
+      this.updateSpaceAvatarPreview();
+    }));
     if (this.el.btnCloseBlacklist) {
       this.el.btnCloseBlacklist.addEventListener('click', () => this.closeBlacklistModal());
     }
@@ -1636,7 +1766,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.35.0\nРабочий чёрный список и защищённые диалоги');
+        this.showToast('Sheet Messenger v3.36.0\nГруппы, каналы и выбор участников');
       });
     }
 
@@ -1655,6 +1785,7 @@ class TelegramApp {
     }
     if (this.el.btnOpenChatProfile) {
       this.el.btnOpenChatProfile.addEventListener('click', () => {
+        if (this.storage.getSpace(this.currentChatId) || this.currentChatId.startsWith('saved:') || this.currentChatId === 'general') return;
         const peer = this.getPeerUsernameFromChatId(this.currentChatId);
         this.openUserProfile(peer, peer.toLowerCase() === this.currentUser.username.toLowerCase());
       });
@@ -2024,7 +2155,7 @@ class TelegramApp {
       });
     }
     if (this.el.btnComposerUnblock) {
-      this.el.btnComposerUnblock.addEventListener('click', () => this.unblockCurrentChatUser());
+      this.el.btnComposerUnblock.addEventListener('click', () => this.handleComposerRestrictionAction());
     }
 
     // Вставка изображений из буфера обмена (Ctrl+V)
@@ -2235,11 +2366,21 @@ class TelegramApp {
     const ownSavedChatId = this.storage.getSavedChatId(this.currentUser.username);
     const savedChatId = (!storedChatId || storedChatId === 'general' || storedChatId.startsWith('saved:')) ? ownSavedChatId : storedChatId;
     const storedChatTitle = sessionStorage.getItem('gm_active_chat_title') || '';
-    const savedChatTitle = savedChatId === ownSavedChatId ? 'Избранное' : (storedChatTitle || 'Диалог');
+    const restoredSpace = this.storage.getSpace(savedChatId);
+    const savedChatTitle = restoredSpace ? restoredSpace.title : (savedChatId === ownSavedChatId ? 'Избранное' : (storedChatTitle || 'Диалог'));
 
     this.currentChatId = savedChatId;
+    this.currentChatTitle = savedChatTitle;
     if (this.el.activeChatTitle) {
       this.el.activeChatTitle.innerText = savedChatTitle;
+    }
+    if (restoredSpace) {
+      if (this.el.activeChatStatus) this.el.activeChatStatus.innerText = (restoredSpace.members || []).length + (restoredSpace.type === 'channel' ? ' подписчиков' : ' участников');
+      if (this.el.activeChatAvatar) {
+        this.el.activeChatAvatar.innerHTML = restoredSpace.avatar
+          ? '<img src="' + this.escapeAttr(restoredSpace.avatar) + '" alt="Аватар" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">'
+          : this.uiIcon(restoredSpace.type === 'channel' ? 'broadcast' : 'users');
+      }
     }
 
     // Если на смартфоне зашли первый раз или чат был открыт — сразу показываем чат
@@ -2312,11 +2453,18 @@ class TelegramApp {
 
     const isSaved = chatId === this.storage.getSavedChatId(this.currentUser.username);
     const isGeneral = chatId === 'general';
-    this.el.activeChatTitle.innerText = title;
-    this.el.activeChatStatus.innerText = isSaved ? 'личное облако' : (isGeneral ? 'канал общения' : 'в сети');
+    const space = this.storage.getSpace(chatId);
+    const resolvedTitle = space ? space.title : title;
+    this.currentChatTitle = resolvedTitle;
+    this.el.activeChatTitle.innerText = resolvedTitle;
+    this.el.activeChatStatus.innerText = space
+      ? ((space.members || []).length + (space.type === 'channel' ? ' подписчиков' : ' участников'))
+      : (isSaved ? 'личное облако' : (isGeneral ? 'канал общения' : 'в сети'));
 
-    if (isSaved || isGeneral) {
-      this.el.activeChatAvatar.innerHTML = this.uiIcon(isSaved ? 'star' : 'globe');
+    if (space || isSaved || isGeneral) {
+      this.el.activeChatAvatar.innerHTML = space && space.avatar
+        ? '<img src="' + this.escapeAttr(space.avatar) + '" alt="Аватар" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">'
+        : this.uiIcon(space ? (space.type === 'channel' ? 'broadcast' : 'users') : (isSaved ? 'star' : 'globe'));
       this.el.activeChatAvatar.style.cursor = 'default';
       this.el.activeChatAvatar.onclick = null;
     } else {
@@ -2362,9 +2510,9 @@ class TelegramApp {
 
     // Фильтрация по папкам
     if (this.activeFolder === 'dm') {
-      chats = chats.filter(c => !c.isGeneral && !c.isSaved);
+      chats = chats.filter(c => !c.isGeneral && !c.isSaved && !c.isCommunity);
     } else if (this.activeFolder === 'channels') {
-      chats = chats.filter(c => c.isGeneral);
+      chats = chats.filter(c => c.isGeneral || c.isCommunity);
     }
 
     this.el.chatList.innerHTML = '';
@@ -2374,12 +2522,14 @@ class TelegramApp {
       const item = document.createElement('div');
       item.className = 'tg-chat-item' + (isActive ? ' active' : '');
 
-      const avatarClass = chat.isSaved ? 'tg-avatar-saved' : (chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user');
+      const avatarClass = chat.isSaved ? 'tg-avatar-saved' : (chat.isCommunity ? 'tg-avatar-community' : (chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user'));
       const avatarContent = chat.isSaved
         ? this.uiIcon('star')
+        : (chat.isCommunity
+        ? (chat.avatar ? '<img src="' + this.escapeAttr(chat.avatar) + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : this.uiIcon(chat.isChannel ? 'broadcast' : 'users'))
         : (chat.isGeneral
         ? this.uiIcon('globe')
-        : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?')));
+        : (chat.avatar ? '<img src="' + chat.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">' : (chat.peer ? chat.peer[0].toUpperCase() : '?'))));
 
       item.innerHTML = [
         '<div class="tg-avatar ' + avatarClass + '">',
@@ -2967,10 +3117,10 @@ class TelegramApp {
   }
 
   async sendMessage() {
-    const blockState = this.storage.getChatBlockState(this.currentUser.username, this.currentChatId);
-    if (blockState.blocked) {
+    const blockState = this.storage.getChatPostingState(this.currentUser.username, this.currentChatId);
+    if (blockState.restricted) {
       this.updateComposerBlockState();
-      this.showToast(blockState.blockedByMe ? 'Сначала разблокируйте @' + blockState.peer : 'Пользователь ограничил переписку');
+      this.showToast(blockState.reason === 'channel-readonly' ? 'Публиковать в канале могут только администраторы' : (blockState.reason === 'not-member' ? 'Вы не состоите в этом сообществе' : (blockState.blockedByMe ? 'Сначала разблокируйте @' + blockState.peer : 'Пользователь ограничил переписку')));
       return;
     }
     const text = this.el.messageInput.value.trim();
@@ -4937,27 +5087,219 @@ class TelegramApp {
     this.showToast(this.contactsSortMode === 'name' ? 'Сортировка: по алфавиту (А-Я)' : 'Сортировка: по дате добавления');
   }
 
+  async openSpaceCreator(type = 'group') {
+    if (!this.currentUser || !this.el.spaceCreator) return;
+    this.spaceDraftAvatar = '';
+    this.spaceDraftMembers = new Set();
+    this.spaceMemberCandidates = [];
+    if (this.el.spaceTitleInput) this.el.spaceTitleInput.value = '';
+    if (this.el.spaceUsernameInput) this.el.spaceUsernameInput.value = '';
+    if (this.el.spaceMembersSearch) this.el.spaceMembersSearch.value = '';
+    this.el.spaceTypeChoices.forEach(button => {
+      const active = button.dataset.spaceType === type;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-checked', String(active));
+    });
+    this.updateSpaceAvatarPreview();
+    this.updateSpaceUsernameStatus();
+    this.setSpaceCreatorStep(1);
+    this.el.spaceCreator.classList.remove('hidden');
+    this.el.spaceCreator.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('space-creator-open');
+    window.setTimeout(() => this.el.spaceTitleInput && this.el.spaceTitleInput.focus(), 120);
+  }
+
+  closeSpaceCreator() {
+    if (!this.el.spaceCreator) return;
+    this.el.spaceCreator.classList.add('hidden');
+    this.el.spaceCreator.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('space-creator-open');
+    if (this.el.spaceAvatarInput) this.el.spaceAvatarInput.value = '';
+  }
+
+  setSpaceCreatorStep(step) {
+    this.spaceWizardStep = step === 2 ? 2 : 1;
+    const second = this.spaceWizardStep === 2;
+    if (this.el.spaceCreatorStepOne) this.el.spaceCreatorStepOne.classList.toggle('hidden', second);
+    if (this.el.spaceCreatorStepTwo) this.el.spaceCreatorStepTwo.classList.toggle('hidden', !second);
+    if (this.el.spaceCreatorBack) this.el.spaceCreatorBack.classList.toggle('hidden', !second);
+    if (this.el.spaceCreatorNext) this.el.spaceCreatorNext.classList.toggle('hidden', second);
+    if (this.el.spaceCreatorSave) this.el.spaceCreatorSave.classList.toggle('hidden', !second);
+    if (this.el.spaceCreatorStepLabel) this.el.spaceCreatorStepLabel.textContent = second ? 'Шаг 2 из 2 · Участники' : 'Шаг 1 из 2 · Оформление';
+    if (this.el.spaceCreatorTitle) this.el.spaceCreatorTitle.textContent = second ? 'Добавьте участников' : 'Новое сообщество';
+  }
+
+  getSelectedSpaceType() {
+    const active = Array.from(this.el.spaceTypeChoices || []).find(button => button.classList.contains('active'));
+    return active && active.dataset.spaceType === 'channel' ? 'channel' : 'group';
+  }
+
+  updateSpaceUsernameStatus() {
+    if (!this.el.spaceUsernameStatus || !this.el.spaceUsernameInput) return;
+    const username = this.el.spaceUsernameInput.value.trim().toLowerCase().replace(/^@/, '');
+    let text = '5–32 символа, латиница, цифры и подчёркивание';
+    let state = '';
+    if (username) {
+      if (!/^[a-z][a-z0-9_]{4,31}$/.test(username)) {
+        text = 'Начните с латинской буквы, минимум 5 символов';
+        state = 'error';
+      } else if (!this.storage.isSpaceUsernameAvailable(username)) {
+        text = '@' + username + ' уже занят';
+        state = 'error';
+      } else {
+        text = '@' + username + ' свободен';
+        state = 'success';
+      }
+    }
+    this.el.spaceUsernameStatus.textContent = text;
+    this.el.spaceUsernameStatus.className = 'tg-space-field-status' + (state ? ' ' + state : '');
+  }
+
+  async handleSpaceAvatar(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      this.showToast('Выберите изображение для аватара');
+      return;
+    }
+    try {
+      this.spaceDraftAvatar = await this.readAndCompressImage(file, 480, 480, 0.82);
+      this.updateSpaceAvatarPreview();
+    } catch (error) {
+      console.warn('Space avatar error:', error);
+      this.showToast('Не удалось обработать изображение');
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  updateSpaceAvatarPreview() {
+    if (!this.el.spaceAvatarPreview) return;
+    this.el.spaceAvatarPreview.innerHTML = this.spaceDraftAvatar
+      ? '<img src="' + this.spaceDraftAvatar + '" alt="Аватар сообщества">'
+      : this.uiIcon(this.getSelectedSpaceType() === 'channel' ? 'broadcast' : 'users', 'tg-ui-icon-xl');
+  }
+
+  async prepareSpaceMembers() {
+    const title = String(this.el.spaceTitleInput && this.el.spaceTitleInput.value || '').trim();
+    const username = String(this.el.spaceUsernameInput && this.el.spaceUsernameInput.value || '').trim().toLowerCase().replace(/^@/, '');
+    if (!title) {
+      this.showToast('Введите название сообщества');
+      this.el.spaceTitleInput.focus();
+      return;
+    }
+    if (!/^[a-z][a-z0-9_]{4,31}$/.test(username) || !this.storage.isSpaceUsernameAvailable(username)) {
+      this.showToast('Проверьте свободный username');
+      this.el.spaceUsernameInput.focus();
+      return;
+    }
+    const candidateMap = new Map();
+    this.storage.getContacts(this.currentUser.username).forEach(contact => candidateMap.set(contact.username.toLowerCase(), { ...contact }));
+    const chats = await this.storage.getUserChats(this.currentUser.username);
+    chats.filter(chat => !chat.isSaved && !chat.isGeneral && !chat.isCommunity && chat.peer).forEach(chat => {
+      if (!candidateMap.has(chat.peer.toLowerCase())) candidateMap.set(chat.peer.toLowerCase(), { username: chat.peer, name: chat.title, avatar: chat.avatar || '' });
+    });
+    candidateMap.delete(this.currentUser.username.toLowerCase());
+    this.spaceMemberCandidates = await Promise.all(Array.from(candidateMap.values()).map(async candidate => {
+      const profile = await this.storage.getUserProfile(candidate.username);
+      return {
+        username: candidate.username.toLowerCase(),
+        name: candidate.name || (profile && profile.name) || ('@' + candidate.username),
+        avatar: candidate.avatar || (profile && profile.avatar) || ''
+      };
+    }));
+    this.spaceMemberCandidates.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    this.renderSpaceMemberChoices();
+    this.setSpaceCreatorStep(2);
+  }
+
+  renderSpaceMemberChoices() {
+    if (!this.el.spaceMembersList) return;
+    const query = String(this.el.spaceMembersSearch && this.el.spaceMembersSearch.value || '').trim().toLowerCase();
+    const candidates = this.spaceMemberCandidates.filter(candidate => !query || candidate.name.toLowerCase().includes(query) || candidate.username.includes(query));
+    this.el.spaceMembersList.replaceChildren();
+    if (!candidates.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tg-space-members-empty';
+      empty.textContent = query ? 'Ничего не найдено' : 'Контактов пока нет — сообщество можно создать без участников';
+      this.el.spaceMembersList.appendChild(empty);
+    }
+    candidates.forEach(candidate => {
+      const selected = this.spaceDraftMembers.has(candidate.username);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'tg-space-member' + (selected ? ' selected' : '');
+      row.innerHTML = '<span class="tg-space-member-avatar">' + (candidate.avatar ? '<img src="' + this.escapeAttr(candidate.avatar) + '" alt="">' : this.escape(candidate.username[0].toUpperCase())) + '</span><span class="tg-space-member-copy"><strong>' + this.escape(candidate.name) + '</strong><small>@' + this.escape(candidate.username) + '</small></span><span class="tg-space-member-check">' + this.uiIcon('check', 'tg-ui-icon-sm') + '</span>';
+      row.addEventListener('click', () => {
+        if (this.spaceDraftMembers.has(candidate.username)) this.spaceDraftMembers.delete(candidate.username);
+        else this.spaceDraftMembers.add(candidate.username);
+        this.renderSpaceMemberChoices();
+      });
+      this.el.spaceMembersList.appendChild(row);
+    });
+    if (this.el.spaceMembersCount) this.el.spaceMembersCount.textContent = this.spaceDraftMembers.size ? ('Выбрано: ' + this.spaceDraftMembers.size) : 'Участников можно добавить позже';
+  }
+
+  async createSpaceFromWizard() {
+    if (!this.el.spaceCreatorSave || this.el.spaceCreatorSave.disabled) return;
+    this.el.spaceCreatorSave.disabled = true;
+    try {
+      const space = this.storage.createSpace({
+        type: this.getSelectedSpaceType(),
+        title: this.el.spaceTitleInput.value,
+        username: this.el.spaceUsernameInput.value,
+        avatar: this.spaceDraftAvatar,
+        owner: this.currentUser.username,
+        members: Array.from(this.spaceDraftMembers)
+      });
+      this.closeSpaceCreator();
+      this.activeFolder = 'all';
+      if (this.el.foldersBar) this.el.foldersBar.querySelectorAll('.tg-folder-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.folder === 'all'));
+      this.switchSidebarView('chats');
+      await this.renderChatList();
+      this.openChat(space.id, space.title);
+      this.showToast(space.type === 'channel' ? 'Канал создан' : 'Группа создана');
+    } catch (error) {
+      this.showToast(error.message || 'Не удалось создать сообщество');
+    } finally {
+      this.el.spaceCreatorSave.disabled = false;
+    }
+  }
+
   updateComposerBlockState() {
-    if (!this.currentUser || !this.el.messageComposer || !this.el.blockedComposer) return { blocked: false };
-    const state = this.storage.getChatBlockState(this.currentUser.username, this.currentChatId);
-    this.el.messageComposer.classList.toggle('hidden', state.blocked);
-    this.el.blockedComposer.classList.toggle('hidden', !state.blocked);
-    if (state.blocked) {
+    if (!this.currentUser || !this.el.messageComposer || !this.el.blockedComposer) return { restricted: false };
+    const state = this.storage.getChatPostingState(this.currentUser.username, this.currentChatId);
+    this.el.messageComposer.classList.toggle('hidden', state.restricted);
+    this.el.blockedComposer.classList.toggle('hidden', !state.restricted);
+    if (state.restricted) {
       this.closeAttachmentPicker();
       if (this.el.composerAttachments) this.el.composerAttachments.classList.add('hidden');
       if (this.el.blockedComposerText) {
-        this.el.blockedComposerText.textContent = state.blockedByMe
-          ? ('@' + state.peer + ' в чёрном списке')
-          : ('@' + state.peer + ' ограничил переписку');
+        this.el.blockedComposerText.textContent = state.reason === 'channel-readonly'
+          ? 'В этом канале публикуют только администраторы'
+          : (state.reason === 'not-member' ? 'Вы больше не состоите в этом сообществе' : (state.blockedByMe ? ('@' + state.peer + ' в чёрном списке') : ('@' + state.peer + ' ограничил переписку')));
       }
       if (this.el.btnComposerUnblock) {
-        this.el.btnComposerUnblock.classList.toggle('hidden', !state.blockedByMe);
-        this.el.btnComposerUnblock.disabled = !state.blockedByMe;
+        const actionable = state.blockedByMe || state.reason === 'channel-readonly';
+        this.el.btnComposerUnblock.classList.toggle('hidden', !actionable);
+        this.el.btnComposerUnblock.disabled = !actionable;
+        this.el.btnComposerUnblock.textContent = state.reason === 'channel-readonly' ? (this.isChatMuted(this.currentChatId) ? 'Включить уведомления' : 'Выключить уведомления') : 'Разблокировать';
       }
     } else {
       this.renderPendingAttachments();
     }
     return state;
+  }
+
+  handleComposerRestrictionAction() {
+    const state = this.storage.getChatPostingState(this.currentUser.username, this.currentChatId);
+    if (state.reason === 'channel-readonly') {
+      const muted = this.toggleChatMute(this.currentChatId);
+      this.updateComposerBlockState();
+      this.showToast(muted ? 'Уведомления канала отключены' : 'Уведомления канала включены');
+      return;
+    }
+    this.unblockCurrentChatUser();
   }
 
   unblockCurrentChatUser() {
@@ -4980,16 +5322,19 @@ class TelegramApp {
     const peer = this.getPeerUsernameFromChatId(this.currentChatId);
     const general = this.currentChatId === 'general';
     const saved = this.currentChatId === this.storage.getSavedChatId(this.currentUser.username);
+    const space = this.storage.getSpace(this.currentChatId);
     const contacts = this.storage.getContacts(this.currentUser.username);
     const isContact = contacts.some(contact => contact.username.toLowerCase() === peer.toLowerCase());
     const isMuted = this.isChatMuted(this.currentChatId);
     const isBlocked = this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
     const contactButton = this.el.chatActionsMenu.querySelector('[data-chat-action="contact"]');
     const blockButton = this.el.chatActionsMenu.querySelector('[data-chat-action="block"]');
-    contactButton.classList.toggle('hidden', general || saved);
-    blockButton.classList.toggle('hidden', general || saved);
+    contactButton.classList.toggle('hidden', general || saved || Boolean(space));
+    blockButton.classList.toggle('hidden', general || saved || Boolean(space));
     const deleteButton = this.el.chatActionsMenu.querySelector('[data-chat-action="delete"]');
-    if (deleteButton) deleteButton.classList.toggle('hidden', saved);
+    if (deleteButton) deleteButton.classList.toggle('hidden', saved || Boolean(space));
+    const clearButton = this.el.chatActionsMenu.querySelector('[data-chat-action="clear"]');
+    if (clearButton) clearButton.classList.toggle('hidden', Boolean(space) && !(space.admins || []).includes(this.currentUser.username.toLowerCase()));
     contactButton.querySelector('span').textContent = isContact ? 'Изменить контакт' : 'Добавить контакт';
     blockButton.querySelector('span').textContent = isBlocked ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
     this.el.chatActionsMenu.querySelector('[data-chat-action="mute"] span').textContent = isMuted ? 'Включить звук' : 'Выключить звук';
@@ -5015,7 +5360,9 @@ class TelegramApp {
     this.closeChatActionsMenu();
     const chatId = this.currentChatId;
     const peer = this.getPeerUsernameFromChatId(chatId);
+    const space = this.storage.getSpace(chatId);
     if (action === 'contact') {
+      if (space) return;
       const profile = await this.storage.getUserProfile(peer);
       this.openAddContactModal(peer, profile);
       return;
@@ -5027,6 +5374,7 @@ class TelegramApp {
       return;
     }
     if (action === 'clear') {
+      if (space && !(space.admins || []).includes(this.currentUser.username.toLowerCase())) return;
       if (!confirm('Очистить всю историю этого чата? Отменить действие будет нельзя.')) return;
       this.closeActiveMediaSession(true);
       const removed = this.storage.clearChat(chatId);
@@ -5036,6 +5384,7 @@ class TelegramApp {
       return;
     }
     if (action === 'block') {
+      if (space) return;
       const blocked = this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
       if (!confirm(blocked ? 'Убрать @' + peer + ' из чёрного списка?' : 'Добавить @' + peer + ' в чёрный список?')) return;
       this.storage.toggleBlacklist(this.currentUser.username, peer);
@@ -5045,6 +5394,7 @@ class TelegramApp {
       return;
     }
     if (action === 'delete') {
+      if (space) return;
       if (!confirm('Удалить чат и всю его историю? Отменить действие будет нельзя.')) return;
       this.closeActiveMediaSession(true);
       const removed = this.storage.deleteChat(this.currentUser.username, chatId);

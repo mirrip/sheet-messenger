@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.35.0">
+  <link rel="stylesheet" href="styles.css?v=3.36.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -49,6 +49,10 @@
     <symbol id="tg-icon-file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V8h4.5L13 3.5ZM8 12v1.6h8V12H8Zm0 3.6v1.6h8v-1.6H8Z"/></symbol>
     <symbol id="tg-icon-video" viewBox="0 0 24 24"><path d="M5 5h10a2 2 0 0 1 2 2v2.1l4-2.6v11l-4-2.6V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></symbol>
     <symbol id="tg-icon-globe" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.92 6h-3.04a15.8 15.8 0 0 0-1.42-3.42A8.04 8.04 0 0 1 18.92 8ZM12 4c.83 1.2 1.5 2.53 1.86 4h-3.72A13.8 13.8 0 0 1 12 4ZM4.26 14a7.8 7.8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4h-3.4Zm.82 2h3.04c.3 1.22.8 2.37 1.42 3.42A8.04 8.04 0 0 1 5.08 16Zm3.04-8H5.08a8.04 8.04 0 0 1 4.46-3.42A15.8 15.8 0 0 0 8.12 8ZM12 20a13.8 13.8 0 0 1-1.86-4h3.72A13.8 13.8 0 0 1 12 20Zm2.26-6H9.74a14.2 14.2 0 0 1 0-4h4.52a14.2 14.2 0 0 1 0 4Zm.2 5.42A15.8 15.8 0 0 0 15.88 16h3.04a8.04 8.04 0 0 1-4.46 3.42ZM16.34 14a16.5 16.5 0 0 0 0-4h3.4a7.8 7.8 0 0 1 0 4h-3.4Z"/></symbol>
+    <symbol id="tg-icon-users" viewBox="0 0 24 24"><path d="M9.4 11.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm6.15-.9a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM9.4 13C5.82 13 2 14.78 2 17.45V21h14.8v-3.55C16.8 14.78 12.98 13 9.4 13Zm6.45-.82c-.5 0-1.08.06-1.67.16 2.55 1.1 4.42 2.93 4.42 5.11V21H22v-3.12c0-2.82-3.33-5.7-6.15-5.7Z"/></symbol>
+    <symbol id="tg-icon-broadcast" viewBox="0 0 24 24"><path d="M4 9.2v5.6A2.2 2.2 0 0 0 6.2 17H8l1.45 4h2.8l-1.5-4H13l6 3V4l-6 3H6.2A2.2 2.2 0 0 0 4 9.2Zm11-1 2-1v9.6l-2-1V8.2ZM7 9h6v6H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z"/></symbol>
+    <symbol id="tg-icon-pencil" viewBox="0 0 24 24"><path d="m15.7 3.3 5 5L8.2 20.8 3 21l.2-5.2L15.7 3.3Zm0 2.8L5.15 16.65l-.08 2.28 2.28-.08L17.9 8.3l-2.2-2.2Z"/></symbol>
+    <symbol id="tg-icon-check" viewBox="0 0 24 24"><path d="m9.25 17.35-5-5 1.4-1.4 3.6 3.58 9.1-9.08 1.4 1.4-10.5 10.5Z"/></symbol>
   </svg>
   <div id="app">
     <!-- AUTH SCREEN -->
@@ -221,7 +225,7 @@
           <div class="tg-folders-bar" id="folders-bar">
             <div class="tg-folder-tab active" data-folder="all">Все чаты</div>
             <div class="tg-folder-tab" data-folder="dm">Личные</div>
-            <div class="tg-folder-tab" data-folder="channels">Каналы</div>
+            <div class="tg-folder-tab" data-folder="channels">Сообщества</div>
           </div>
 
           <!-- SEARCH RESULTS -->
@@ -232,6 +236,7 @@
 
           <!-- CHAT LIST -->
           <div class="tg-chat-list" id="chat-list"></div>
+          <button type="button" class="tg-create-space-fab" id="btn-create-space-chats" title="Создать группу или канал" aria-label="Создать группу или канал"><svg class="tg-ui-icon"><use href="#tg-icon-pencil"/></svg></button>
         </div>
 
         <!-- 2. VIEW: CONTACTS -->
@@ -260,6 +265,7 @@
           </div>
 
           <div class="tg-contacts-scroll-list" id="contacts-list"></div>
+          <button type="button" class="tg-create-space-fab" id="btn-create-space-contacts" title="Создать группу или канал" aria-label="Создать группу или канал"><svg class="tg-ui-icon"><use href="#tg-icon-pencil"/></svg></button>
         </div>
 
         <!-- 3. VIEW: PROFILE (DIRECT EDITABLE FEED) -->
@@ -384,6 +390,17 @@
           </header>
 
           <div class="tg-settings-scroll-wrap">
+            <div class="tg-settings-group">
+              <div class="tg-settings-group-title">Сообщества</div>
+              <button type="button" class="tg-settings-item tg-settings-item-button" id="btn-settings-create-space">
+                <div class="tg-settings-item-icon tg-settings-item-icon-community"><svg class="tg-ui-icon"><use href="#tg-icon-users"/></svg></div>
+                <div class="tg-settings-item-body">
+                  <div class="tg-settings-item-title">Создать группу или канал</div>
+                  <div class="tg-settings-item-sub">Название, адрес и участники</div>
+                </div>
+                <div class="tg-settings-item-chevron"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></div>
+              </button>
+            </div>
             <div class="tg-settings-group tg-settings-account-group">
               <div class="tg-settings-group-title">Аккаунт</div>
               <button type="button" class="tg-settings-profile-card" id="btn-settings-profile">
@@ -677,6 +694,42 @@
           <footer class="tg-attachment-sheet-footer">
             <button type="button" id="attachment-picker-clear" class="tg-attachment-clear hidden">Очистить</button>
             <button type="button" id="attachment-picker-done" class="tg-primary-btn">Добавить в сообщение</button>
+          </footer>
+        </section>
+      </div>
+
+      <div id="space-creator" class="tg-space-creator hidden" aria-hidden="true">
+        <section class="tg-space-creator-shell" role="dialog" aria-modal="true" aria-labelledby="space-creator-heading">
+          <header class="tg-space-creator-header">
+            <button type="button" id="space-creator-close" class="tg-icon-btn" aria-label="Закрыть"><svg class="tg-ui-icon"><use href="#tg-icon-close"/></svg></button>
+            <div><h2 id="space-creator-heading">Новое сообщество</h2><span id="space-creator-step-label">Шаг 1 из 2 · Оформление</span></div>
+          </header>
+          <div class="tg-space-creator-body">
+            <div id="space-creator-step-one" class="tg-space-step">
+              <div class="tg-space-type-grid" role="radiogroup" aria-label="Тип сообщества">
+                <button type="button" class="tg-space-type active" data-space-type="group" role="radio" aria-checked="true"><span class="tg-space-type-icon"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-users"/></svg></span><span><strong>Группа</strong><small>Все участники могут писать</small></span><i></i></button>
+                <button type="button" class="tg-space-type" data-space-type="channel" role="radio" aria-checked="false"><span class="tg-space-type-icon"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-broadcast"/></svg></span><span><strong>Канал</strong><small>Публикуют администраторы</small></span><i></i></button>
+              </div>
+              <div class="tg-space-identity">
+                <button type="button" id="space-avatar-button" class="tg-space-avatar-button" aria-label="Выбрать фотографию"><span id="space-avatar-preview"><svg class="tg-ui-icon tg-ui-icon-xl"><use href="#tg-icon-users"/></svg></span><small><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-image"/></svg></small></button>
+                <input type="file" id="space-avatar-input" accept="image/*" hidden>
+                <div class="tg-space-fields">
+                  <label class="tg-space-field"><span>Название</span><input id="space-title-input" type="text" maxlength="80" autocomplete="off" placeholder="Например, Команда проекта"></label>
+                  <label class="tg-space-field"><span>Публичный адрес</span><div class="tg-space-username"><b>@</b><input id="space-username-input" type="text" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="project_team"></div><small id="space-username-status" class="tg-space-field-status">5–32 символа, латиница, цифры и подчёркивание</small></label>
+                </div>
+              </div>
+            </div>
+            <div id="space-creator-step-two" class="tg-space-step hidden">
+              <div class="tg-space-members-summary"><strong>Кого добавить?</strong><span id="space-members-count">Участников можно добавить позже</span></div>
+              <div class="tg-space-members-search"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-message"/></svg><input id="space-members-search" type="search" placeholder="Поиск контактов и диалогов" autocomplete="off"></div>
+              <div id="space-members-list" class="tg-space-members-list"></div>
+            </div>
+          </div>
+          <footer class="tg-space-creator-footer">
+            <button type="button" id="space-creator-back" class="tg-space-secondary hidden"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-left"/></svg>Назад</button>
+            <span></span>
+            <button type="button" id="space-creator-next" class="tg-space-primary">Далее<svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></button>
+            <button type="button" id="space-creator-save" class="tg-space-primary hidden"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-check"/></svg>Создать</button>
           </footer>
         </section>
       </div>
@@ -1022,6 +1075,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.35.0"></script>
+  <script src="app.js?v=3.36.0"></script>
 </body>
 </html>
