@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>Telegram Web</title>
+  <title>кумир</title>
+  <meta name="theme-color" content="#12080c">
   <script>
     (function () {
       try {
@@ -17,8 +18,10 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.39.0">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
+  <link rel="stylesheet" href="styles.css?v=3.40.0">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/kumir-icon-192.png">
+  <link rel="apple-touch-icon" href="assets/kumir-icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(r) { for (var i=0; i<r.length; i++) r[i].unregister(); });
@@ -59,18 +62,9 @@
     <div id="auth-screen" class="tg-auth-wrap">
       <div class="tg-auth-box">
         <div class="tg-logo-large">
-          <svg viewBox="0 0 24 24" width="76" height="76">
-            <defs>
-              <linearGradient id="tg-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#2aabee"/>
-                <stop offset="100%" stop-color="#229ed9"/>
-              </linearGradient>
-            </defs>
-            <circle cx="12" cy="12" r="12" fill="url(#tg-logo-grad)"/>
-            <path d="M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z" fill="#ffffff"/>
-          </svg>
+          <img src="assets/kumir-icon-192.png" alt="кумир">
         </div>
-        <h1 class="tg-auth-title">Telegram</h1>
+        <h1 class="tg-auth-title">кумир</h1>
         <p class="tg-auth-sub">Войдите в аккаунт или зарегистрируйтесь</p>
 
         <div class="tg-auth-tabs">
@@ -202,7 +196,7 @@
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
               </svg>
-              <span>О Telegram Web</span>
+              <span>О приложении «кумир»</span>
             </div>
             <div class="tg-menu-divider"></div>
             <div class="tg-menu-item danger" id="btn-menu-logout">
@@ -870,7 +864,7 @@
                 </svg>
               </div>
               <div class="tg-profile-info-content">
-                <div class="tg-profile-info-val" id="profile-bio-val">Пользуюсь Telegram Web ✨</div>
+                <div class="tg-profile-info-val" id="profile-bio-val">Пользуюсь приложением «кумир» ✨</div>
                 <div class="tg-profile-info-lbl">О себе (Bio)</div>
               </div>
             </div>
@@ -1122,6 +1116,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.39.0"></script>
+  <script src="app.js?v=3.40.0"></script>
 </body>
 </html>

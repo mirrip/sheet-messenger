@@ -937,7 +937,7 @@ class StorageService {
 }
 
 /**
- * Контроллер Telegram Web UI
+ * Контроллер интерфейса «кумир»
  */
 class TelegramApp {
   constructor() {
@@ -1890,7 +1890,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.39.0\nМобильные файлы, спокойные поля и быстрые действия с чатами');
+        this.showToast('кумир v3.40.0\nНовый образ, чистый кэш и надёжное переключение камеры');
       });
     }
 
@@ -4335,30 +4335,66 @@ class TelegramApp {
     if (!this.mediaRecorder || this.mediaRecorder.state !== 'recording' || this.switchingCircleCamera) return;
     this.switchingCircleCamera = true;
     const nextFacing = this.circleCameraFacing === 'user' ? 'environment' : 'user';
+    const previousFacing = this.circleCameraFacing;
+    const oldVideoTracks = this.cameraInputStream?.getVideoTracks() || [];
+    const audioTracks = this.cameraInputStream?.getAudioTracks() || [];
+    const currentDeviceId = oldVideoTracks[0]?.getSettings?.().deviceId || '';
     try {
-      if (!this.circleCanvasStream) {
-        const track = this.mediaStream?.getVideoTracks()[0];
-        if (!track?.applyConstraints) throw new Error('Camera switching is unavailable');
-        await track.applyConstraints({ facingMode: { exact: nextFacing } });
-      } else {
-        const nextVideo = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 720 }, height: { ideal: 720 }, facingMode: { exact: nextFacing } },
-          audio: false
-        }).catch(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: nextFacing }, audio: false }));
-        const oldVideoTracks = this.cameraInputStream?.getVideoTracks() || [];
-        const audioTracks = this.cameraInputStream?.getAudioTracks() || [];
-        this.cameraInputStream = new MediaStream([...nextVideo.getVideoTracks(), ...audioTracks]);
-        this.el.videoStreamPreview.srcObject = this.cameraInputStream;
-        await this.el.videoStreamPreview.play().catch(() => {});
-        oldVideoTracks.forEach(track => track.stop());
+      let devices = [];
+      try { devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'videoinput'); } catch (_) {}
+      if (devices.length === 1) throw new Error('Only one camera is available');
+
+      // Android WebView must release the active camera before opening the other lens.
+      oldVideoTracks.forEach(track => { track.enabled = false; track.stop(); });
+      if (this.el.videoStreamPreview) this.el.videoStreamPreview.srcObject = null;
+      await new Promise(resolve => setTimeout(resolve, 120));
+
+      const labelPattern = nextFacing === 'environment'
+        ? /(back|rear|environment|зад|основ)/i
+        : /(front|user|facetime|фронт)/i;
+      const preferredDevice = devices.find(device => device.deviceId && device.deviceId !== currentDeviceId && labelPattern.test(device.label || ''))
+        || devices.find(device => device.deviceId && device.deviceId !== currentDeviceId);
+      const attempts = [];
+      if (preferredDevice) attempts.push({ deviceId: { exact: preferredDevice.deviceId }, width: { ideal: 720 }, height: { ideal: 720 } });
+      attempts.push({ facingMode: { exact: nextFacing }, width: { ideal: 720 }, height: { ideal: 720 } });
+      attempts.push({ facingMode: { ideal: nextFacing }, width: { ideal: 720 }, height: { ideal: 720 } });
+
+      let nextVideo = null;
+      let lastError = null;
+      for (const video of attempts) {
+        try {
+          nextVideo = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+          if (nextVideo?.getVideoTracks().length) break;
+        } catch (error) { lastError = error; }
       }
+      if (!nextVideo?.getVideoTracks().length) throw lastError || new Error('Camera switching is unavailable');
+
+      this.cameraInputStream = new MediaStream([...nextVideo.getVideoTracks(), ...audioTracks]);
+      if (!this.circleCanvasStream && this.mediaStream) {
+        this.mediaStream.getVideoTracks().forEach(track => this.mediaStream.removeTrack(track));
+        nextVideo.getVideoTracks().forEach(track => this.mediaStream.addTrack(track));
+      }
+      this.el.videoStreamPreview.srcObject = this.cameraInputStream;
+      await this.el.videoStreamPreview.play().catch(() => {});
       this.circleCameraFacing = nextFacing;
       this.el.videoStreamPreview.classList.toggle('is-front-camera', nextFacing === 'user');
       if (navigator.vibrate) navigator.vibrate(18);
       this.showToast(nextFacing === 'user' ? 'Фронтальная камера' : 'Основная камера');
     } catch (error) {
       console.warn('Camera switch error:', error);
-      this.showToast('Не удалось переключить камеру');
+      if (!this.cameraInputStream?.getVideoTracks().some(track => track.readyState === 'live')) {
+        try {
+          const recovered = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: previousFacing } }, audio: false });
+          this.cameraInputStream = new MediaStream([...recovered.getVideoTracks(), ...audioTracks]);
+          if (!this.circleCanvasStream && this.mediaStream) {
+            this.mediaStream.getVideoTracks().forEach(track => this.mediaStream.removeTrack(track));
+            recovered.getVideoTracks().forEach(track => this.mediaStream.addTrack(track));
+          }
+          this.el.videoStreamPreview.srcObject = this.cameraInputStream;
+          await this.el.videoStreamPreview.play().catch(() => {});
+        } catch (_) {}
+      }
+      this.showToast(error?.message === 'Only one camera is available' ? 'На устройстве доступна только одна камера' : 'Не удалось переключить камеру');
     } finally {
       this.switchingCircleCamera = false;
     }
@@ -4635,7 +4671,7 @@ class TelegramApp {
       this.el.profileUsernameVal.innerText = '@' + username;
     }
     if (this.el.profileBioVal) {
-      this.el.profileBioVal.innerText = (this.activeProfileUser && this.activeProfileUser.bio) || (isOwn ? 'Пользуюсь Telegram Web ✨' : 'О себе пока ничего не написано');
+      this.el.profileBioVal.innerText = (this.activeProfileUser && this.activeProfileUser.bio) || (isOwn ? 'Пользуюсь приложением «кумир» ✨' : 'О себе пока ничего не написано');
     }
     const savedContact = this.storage.getContacts(this.currentUser.username).find(item => item.username.toLowerCase() === username);
     const phone = (this.activeProfileUser && this.activeProfileUser.phone) || (savedContact && savedContact.phone) || '';
@@ -4759,7 +4795,7 @@ class TelegramApp {
       if (native) {
         const rawBase64 = await this.readBlobForNative(blob, progress => this.updateDownloadTask(task, 12 + Math.round(progress * 58), 'Сохранение…'));
         const safeName = fileName.replace(/[\\/:*?"<>|]/g, '_').slice(-120) || 'document';
-        const path = 'Sheet Messenger/' + Date.now() + '-' + safeName;
+        const path = 'кумир/' + Date.now() + '-' + safeName;
         const result = await plugins.Filesystem.writeFile({ path, data: rawBase64, directory: 'DOCUMENTS', recursive: true });
         task.filePath = result.uri;
         task.native = true;
@@ -6707,18 +6743,31 @@ class TelegramApp {
   }
 
   async clearMediaCache() {
-    if (!confirm('Очистить локальный кэш медиа и освободить место на устройстве?')) return;
+    if (!confirm('Очистить локальный кэш, недавние вложения и освободить место на устройстве?')) return;
+    Object.keys(localStorage).filter(key => key.startsWith('gm_attachment_library_')).forEach(key => localStorage.removeItem(key));
+    this.pendingFiles = [];
+    this.renderPendingAttachments();
+    this.renderAttachmentPicker();
     try {
       if (this.storage.mediaDB) {
-        const tx = this.storage.mediaDB.transaction('blobs', 'readwrite');
-        tx.objectStore('blobs').clear();
+        await new Promise((resolve, reject) => {
+          const tx = this.storage.mediaDB.transaction('blobs', 'readwrite');
+          tx.objectStore('blobs').clear();
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error('Не удалось очистить IndexedDB'));
+          tx.onabort = () => reject(tx.error || new Error('Очистка IndexedDB отменена'));
+        });
       }
+      this._mediaBlobUrlCache.forEach(url => { try { URL.revokeObjectURL(url); } catch (_) {} });
       this._mediaBlobUrlCache.clear();
+      this._activeObjectURLs.forEach(url => { try { URL.revokeObjectURL(url); } catch (_) {} });
+      this._activeObjectURLs = [];
       if (this.getAppearanceSettings().background === 'custom') {
         this.saveAppearanceSettings({ background: 'default', customMediaId: '' });
         await this.applyAppearanceSettings(false);
       }
-      this.showToast('Кэш медиа успешно очищен');
+      if (this.el.myfilesList) this.el.myfilesList.replaceChildren();
+      this.showToast('Кэш и недавние вложения очищены');
       this.renderSettingsView();
     } catch (e) {
       this.showToast('Кэш очищен');

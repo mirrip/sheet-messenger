@@ -1,20 +1,25 @@
 {
-  "name": "Sheet Messenger",
-  "short_name": "Messenger",
-  "description": "Минималистичный мессенджер на Google Apps Script",
+  "name": "кумир",
+  "short_name": "кумир",
+  "description": "Приватный мессенджер «кумир»",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#090b15",
-  "theme_color": "#090b15",
+  "background_color": "#12080c",
+  "theme_color": "#12080c",
   "icons": [
     {
-      "src": "./icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./assets/kumir-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/kumir-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
 }
-

@@ -329,3 +329,26 @@ test('leaving a community requires confirmation', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(source, /async leaveCurrentSpace\(\)[\s\S]*confirm\('Покинуть «'/);
 });
+
+test('cache clearing also empties the persistent attachment picker', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /clearMediaCache\(\)[\s\S]*startsWith\('gm_attachment_library_'\)[\s\S]*this\.pendingFiles = \[\][\s\S]*renderAttachmentPicker\(\)/);
+  assert.match(source, /tx\.oncomplete = \(\) => resolve\(\)/);
+});
+
+test('mobile circle camera switching releases the active lens and tries the other device', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.match(source, /switchCircleCamera\(\)[\s\S]*enumerateDevices\(\)[\s\S]*track\.stop\(\)[\s\S]*deviceId: \{ exact: preferredDevice\.deviceId \}/);
+  assert.match(source, /facingMode: \{ exact: nextFacing \}/);
+});
+
+test('kumir branding is wired to the web manifest and Android launcher build', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.webmanifest'), 'utf8'));
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'build-apk.yml'), 'utf8');
+  assert.match(html, /<title>кумир<\/title>/);
+  assert.match(html, /assets\/kumir-icon-192\.png/);
+  assert.equal(manifest.name, 'кумир');
+  assert.match(workflow, /npx cap init "кумир"/);
+  assert.match(workflow, /ic_launcher_round\.png/);
+});

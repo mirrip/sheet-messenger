@@ -34,8 +34,18 @@ jobs:
 
       - name: Initialize Capacitor Project
         run: |
-          npx cap init "Telegram Messenger" "com.sheetmessenger.app" --web-dir web
+          npx cap init "кумир" "com.sheetmessenger.app" --web-dir web
           npx cap add android
+
+      - name: Apply Kumir app name and launcher icons
+        run: |
+          sed -i 's#<string name="app_name">.*</string>#<string name="app_name">кумир</string>#' android/app/src/main/res/values/strings.xml
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            source="branding/android/kumir-${density}.png"
+            cp "$source" "android/app/src/main/res/mipmap-${density}/ic_launcher.png"
+            cp "$source" "android/app/src/main/res/mipmap-${density}/ic_launcher_round.png"
+          done
 
       - name: Configure Android Permissions, Hardware Access & Gradle Dependencies
         run: |
