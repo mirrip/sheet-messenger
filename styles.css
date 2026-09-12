@@ -6195,8 +6195,75 @@ html[data-theme="light"] .tg-premium-empty {
   #btn-create-space-chats.tg-create-space-fab,
   #btn-create-space-contacts.tg-create-space-fab {
     right: 14px;
-    bottom: calc(62px + env(safe-area-inset-bottom));
+    bottom: calc(61px + env(safe-area-inset-bottom));
     width: 50px;
     height: 50px;
   }
+}
+
+/* v3.39 — mobile polish, calm focus states and chat quick actions */
+#modal-add-contact .tg-field-input:focus {
+  background: color-mix(in srgb, var(--tg-input-bg) 88%, var(--tg-primary) 12%);
+  border-color: color-mix(in srgb, var(--tg-primary) 72%, var(--tg-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tg-primary) 14%, transparent);
+}
+
+.tg-create-space-fab {
+  border-radius: 50%;
+}
+.tg-compose-bubble { position:relative; width:28px; height:28px; display:grid; place-items:center; }
+.tg-compose-bubble .tg-ui-icon { width:27px; height:27px; }
+.tg-compose-bubble b {
+  position:absolute; inset:0; display:grid; place-items:center; padding-bottom:2px;
+  color:var(--tg-primary); font-size:19px; line-height:1; font-weight:800;
+}
+
+.tg-chat-item.is-pinned .tg-chat-name::after {
+  content:'•'; margin-left:7px; color:var(--tg-primary); font-size:16px; vertical-align:1px;
+}
+
+.tg-chat-context-menu {
+  position:fixed; z-index:5200; width:min(268px,calc(100vw - 24px)); padding:7px;
+  border:1px solid var(--tg-border); border-radius:16px;
+  background:color-mix(in srgb,var(--tg-bg-sidebar) 96%,transparent);
+  color:var(--tg-text-main); box-shadow:var(--tg-shadow-float); backdrop-filter:blur(20px) saturate(1.1);
+}
+.tg-chat-context-menu button {
+  width:100%; min-height:43px; display:flex; align-items:center; gap:11px; padding:0 12px;
+  border:0; border-radius:11px; color:inherit; background:transparent; font:inherit;
+  font-size:13.5px; text-align:left; cursor:pointer;
+}
+.tg-chat-context-menu button:hover,.tg-chat-context-menu button:focus-visible { background:var(--tg-hover); outline:0; }
+.tg-chat-context-menu button:first-child { color:var(--tg-danger); }
+.tg-chat-context-menu button[disabled] { opacity:.38; cursor:default; }
+.tg-chat-context-menu .tg-ui-icon { width:19px; height:19px; flex:0 0 auto; }
+
+@media (max-width:768px) {
+  #modal-my-files { padding:0; align-items:stretch; }
+  #modal-my-files .tg-modal-card-large {
+    width:100%; height:100dvh; max-width:none; max-height:none; border:0; border-radius:0;
+  }
+  #modal-my-files .tg-modal-header {
+    min-height:calc(60px + env(safe-area-inset-top)); padding:env(safe-area-inset-top) 18px 0;
+    flex:0 0 auto;
+  }
+  #modal-my-files .tg-myfiles-body { padding:12px 12px max(12px,env(safe-area-inset-bottom)); gap:9px; overflow:hidden; }
+  #modal-my-files .tg-myfiles-search-bar .tg-search-input { width:100%; height:44px; }
+  #modal-my-files .tg-search-filters { margin:0 -12px; padding:2px 12px 6px; flex:0 0 auto; scrollbar-width:none; }
+  #modal-my-files .tg-search-filters::-webkit-scrollbar { display:none; }
+  #modal-my-files .tg-filter-chip { min-height:34px; padding:7px 13px; }
+  #modal-my-files .tg-myfiles-scroll-list { max-height:none; min-height:0; padding-bottom:8px; }
+  #modal-my-files .tg-myfile-row { min-height:72px; padding:10px; gap:10px; flex:0 0 auto; }
+  #modal-my-files .tg-myfile-kind-icon { flex:0 0 auto; }
+  #modal-my-files .tg-file-dl-btn { flex:0 0 auto; max-width:112px; }
+  #btn-create-space-chats.tg-create-space-fab,
+  #btn-create-space-contacts.tg-create-space-fab {
+    right:12px; bottom:4px; width:48px; height:48px;
+    border-radius:50%; box-shadow:0 5px 15px color-mix(in srgb,var(--tg-primary) 27%,transparent),inset 0 1px 0 rgba(255,255,255,.22);
+  }
+}
+
+@media (max-width:390px) {
+  #modal-my-files .tg-file-dl-btn span { display:none; }
+  #modal-my-files .tg-file-dl-btn { width:40px; min-width:40px; padding:0; }
 }

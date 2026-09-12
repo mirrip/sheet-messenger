@@ -17,7 +17,7 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.38.1">
+  <link rel="stylesheet" href="styles.css?v=3.39.0">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='12' fill='%232aabee'/><path d='M17.5 7.5L5.5 12.2l3.4 1.3 1.3 4.1 2.3-2.1 3.5 2.6L18 7.3z' fill='%23ffffff'/></svg>">
   <script>
     if ('serviceWorker' in navigator) {
@@ -226,6 +226,7 @@
             <div class="tg-folder-tab active" data-folder="all">Все чаты</div>
             <div class="tg-folder-tab" data-folder="dm">Личные</div>
             <div class="tg-folder-tab" data-folder="channels">Сообщества</div>
+            <div class="tg-folder-tab" data-folder="archive">Архив</div>
           </div>
 
           <!-- SEARCH RESULTS -->
@@ -236,7 +237,7 @@
 
           <!-- CHAT LIST -->
           <div class="tg-chat-list" id="chat-list"></div>
-          <button type="button" class="tg-create-space-fab" id="btn-create-space-chats" title="Создать группу или канал" aria-label="Создать группу или канал"><svg class="tg-ui-icon"><use href="#tg-icon-pencil"/></svg></button>
+          <button type="button" class="tg-create-space-fab" id="btn-create-space-chats" title="Новый чат или сообщество" aria-label="Новый чат или сообщество"><span class="tg-compose-bubble" aria-hidden="true"><svg class="tg-ui-icon"><use href="#tg-icon-message"/></svg><b>+</b></span></button>
         </div>
 
         <!-- 2. VIEW: CONTACTS -->
@@ -265,7 +266,7 @@
           </div>
 
           <div class="tg-contacts-scroll-list" id="contacts-list"></div>
-          <button type="button" class="tg-create-space-fab" id="btn-create-space-contacts" title="Создать группу или канал" aria-label="Создать группу или канал"><svg class="tg-ui-icon"><use href="#tg-icon-pencil"/></svg></button>
+          <button type="button" class="tg-create-space-fab" id="btn-create-space-contacts" title="Новый чат или сообщество" aria-label="Новый чат или сообщество"><span class="tg-compose-bubble" aria-hidden="true"><svg class="tg-ui-icon"><use href="#tg-icon-message"/></svg><b>+</b></span></button>
         </div>
 
         <!-- 3. VIEW: PROFILE (DIRECT EDITABLE FEED) -->
@@ -402,18 +403,6 @@
                 <div class="tg-settings-item-chevron"><svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></div>
               </button>
             </div>
-            <div class="tg-settings-group tg-settings-account-group">
-              <div class="tg-settings-group-title">Аккаунт</div>
-              <button type="button" class="tg-settings-profile-card" id="btn-settings-profile">
-                <span class="tg-settings-profile-avatar" id="settings-profile-avatar">?</span>
-                <span class="tg-settings-profile-copy">
-                  <strong id="settings-profile-name">Мой профиль</strong>
-                  <span id="settings-profile-handle">@username</span>
-                </span>
-                <span class="tg-settings-profile-action">Открыть <svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></span>
-              </button>
-            </div>
-
             <div class="tg-settings-group tg-appearance-settings">
               <div class="tg-settings-group-title">Оформление</div>
               <div class="tg-appearance-block">
@@ -491,6 +480,18 @@
                 </div>
                 <button type="button" class="tg-btn-clear-cache" id="btn-settings-clear-cache">Очистить кэш</button>
               </div>
+            </div>
+
+            <div class="tg-settings-group tg-settings-account-group">
+              <div class="tg-settings-group-title">Аккаунт</div>
+              <button type="button" class="tg-settings-profile-card" id="btn-settings-profile">
+                <span class="tg-settings-profile-avatar" id="settings-profile-avatar">?</span>
+                <span class="tg-settings-profile-copy">
+                  <strong id="settings-profile-name">Мой профиль</strong>
+                  <span id="settings-profile-handle">@username</span>
+                </span>
+                <span class="tg-settings-profile-action">Открыть <svg class="tg-ui-icon tg-ui-icon-sm"><use href="#tg-icon-chevron-right"/></svg></span>
+              </button>
             </div>
 
             <div class="tg-settings-group">
@@ -1121,6 +1122,6 @@
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.38.1"></script>
+  <script src="app.js?v=3.39.0"></script>
 </body>
 </html>

@@ -173,7 +173,7 @@ test('appearance preferences stay isolated per account and normalize invalid val
   assert.equal(app.getAppearanceSettings().dim, 0);
 });
 
-test('saved messages are private and pinned only for their owner', async () => {
+test('saved messages stay private and chats are ordered by latest activity', async () => {
   const storage = fixture();
   save('gm_messages', [
     {id:'alice-note', sender:'alice', chatId:'saved:alice', text:'Alice private', time:'10:00', createdAt:10},
@@ -181,13 +181,15 @@ test('saved messages are private and pinned only for their owner', async () => {
     {id:'dm-note', sender:'bobby', chatId:'dm:alice:bobby', text:'Shared', time:'10:02', createdAt:12}
   ]);
   const aliceChats = await storage.getUserChats('alice');
-  assert.equal(aliceChats[0].id, 'saved:alice');
-  assert.equal(aliceChats[0].title, 'Избранное');
-  assert.equal(aliceChats[0].lastMsg, 'Alice private');
+  assert.equal(aliceChats[0].id, 'dm:alice:bobby');
+  assert.equal(aliceChats[1].id, 'saved:alice');
+  assert.equal(aliceChats[1].title, 'Избранное');
+  assert.equal(aliceChats[1].lastMsg, 'Alice private');
   assert.equal(aliceChats.some(chat => chat.id === 'saved:bobby'), false);
   const bobChats = await storage.getUserChats('bobby');
-  assert.equal(bobChats[0].id, 'saved:bobby');
-  assert.equal(bobChats[0].lastMsg, 'Bob private');
+  assert.equal(bobChats[0].id, 'dm:alice:bobby');
+  assert.equal(bobChats[1].id, 'saved:bobby');
+  assert.equal(bobChats[1].lastMsg, 'Bob private');
 });
 
 test('blacklist blocks both sides of a direct conversation until unblocked', async () => {

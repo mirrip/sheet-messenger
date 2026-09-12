@@ -176,7 +176,7 @@ class StorageService {
     put('gm_muted_chats', JSON.parse(localStorage.getItem('gm_muted_chats') || '[]').map(chatId));
     const keys = Array.from({length:localStorage.length}, (_,i) => localStorage.key(i));
     for (const key of keys) {
-      const match = /^(gm_contacts_|gm_blacklist_|gm_recent_search_|gm_appearance_|gm_attachment_library_)(.+)$/.exec(key);
+      const match = /^(gm_contacts_|gm_blacklist_|gm_recent_search_|gm_appearance_|gm_attachment_library_|gm_pinned_chats_|gm_archived_chats_)(.+)$/.exec(key);
       if (!match) continue;
       const destination = match[1] + remap(match[2]);
       if (destination !== key && localStorage.getItem(destination) !== null) throw new Error('Для этого имени уже есть локальные данные. Выберите другое имя.');
@@ -932,13 +932,7 @@ class StorageService {
       }
     });
 
-    return Array.from(chatMap.values()).sort((a, b) => {
-      if (a.isSaved) return -1;
-      if (b.isSaved) return 1;
-      if (a.isGeneral) return -1;
-      if (b.isGeneral) return 1;
-      return b.timestamp - a.timestamp;
-    });
+    return Array.from(chatMap.values()).sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
   }
 }
 
@@ -951,7 +945,7 @@ class TelegramApp {
     this.currentUser = JSON.parse(localStorage.getItem('gm_current_user') || 'null');
     this.currentChatId = this.currentUser ? this.storage.getSavedChatId(this.currentUser.username) : 'saved:guest';
     this.currentChatTitle = 'Избранное';
-    this.activeFolder = 'all'; // 'all' | 'dm' | 'channels'
+    this.activeFolder = 'all'; // 'all' | 'dm' | 'channels' | 'archive'
     this.authMode = 'login';
     this.recordMode = 'mic'; // 'mic' | 'video'
 
@@ -1896,7 +1890,7 @@ class TelegramApp {
     if (this.el.btnMenuAbout) {
       this.el.btnMenuAbout.addEventListener('click', () => {
         this.el.menuDropdown.classList.add('hidden');
-        this.showToast('Sheet Messenger v3.38.1\nИсправленные медиа сообществ и единый выход через меню');
+        this.showToast('Sheet Messenger v3.39.0\nМобильные файлы, спокойные поля и быстрые действия с чатами');
       });
     }
 
@@ -2642,6 +2636,15 @@ class TelegramApp {
   async renderChatList() {
     let chats = await this.storage.getUserChats(this.currentUser.username);
 
+    const pinnedChats = new Set(this.getChatListPreference('pinned'));
+    const archivedChats = new Set(this.getChatListPreference('archived'));
+    chats = chats
+      .filter(chat => this.activeFolder === 'archive' ? archivedChats.has(chat.id) : !archivedChats.has(chat.id))
+      .sort((a, b) => {
+        const pinDelta = Number(pinnedChats.has(b.id)) - Number(pinnedChats.has(a.id));
+        return pinDelta || ((Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+      });
+
     // Фильтрация по папкам
     if (this.activeFolder === 'dm') {
       chats = chats.filter(c => !c.isGeneral && !c.isSaved && !c.isCommunity);
@@ -2654,7 +2657,8 @@ class TelegramApp {
     chats.forEach(chat => {
       const isActive = chat.id === this.currentChatId;
       const item = document.createElement('div');
-      item.className = 'tg-chat-item' + (isActive ? ' active' : '');
+      item.className = 'tg-chat-item' + (isActive ? ' active' : '') + (pinnedChats.has(chat.id) ? ' is-pinned' : '');
+      item.dataset.chatId = chat.id;
 
       const avatarClass = chat.isSaved ? 'tg-avatar-saved' : (chat.isCommunity ? 'tg-avatar-community' : (chat.isGeneral ? 'tg-avatar-general' : 'tg-avatar-user'));
       const avatarContent = chat.isSaved
@@ -2681,12 +2685,159 @@ class TelegramApp {
         '</div>'
       ].join('');
 
-      item.addEventListener('click', () => {
+      let longPressTimer = null;
+      let longPressTriggered = false;
+      let pointerStart = null;
+      const cancelLongPress = () => {
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = null;
+        pointerStart = null;
+      };
+      item.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button !== 0) return;
+        longPressTriggered = false;
+        pointerStart = { x: event.clientX, y: event.clientY };
+        longPressTimer = setTimeout(() => {
+          longPressTriggered = true;
+          this.openChatContextMenu(chat, event.clientX, event.clientY);
+          if (navigator.vibrate) try { navigator.vibrate(24); } catch (_) {}
+        }, 520);
+      });
+      item.addEventListener('pointermove', event => {
+        if (!pointerStart) return;
+        if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 10) cancelLongPress();
+      });
+      item.addEventListener('pointerup', cancelLongPress);
+      item.addEventListener('pointercancel', cancelLongPress);
+      item.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        cancelLongPress();
+        this.openChatContextMenu(chat, event.clientX, event.clientY);
+      });
+      item.addEventListener('click', event => {
+        if (longPressTriggered) {
+          longPressTriggered = false;
+          event.preventDefault();
+          return;
+        }
         this.openChat(chat.id, chat.title);
       });
 
       this.el.chatList.appendChild(item);
     });
+  }
+
+  getChatListPreference(type) {
+    if (!this.currentUser) return [];
+    const key = 'gm_' + type + '_chats_' + this.currentUser.username.toLowerCase();
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch (_) { return []; }
+  }
+
+  setChatListPreference(type, chatId, enabled) {
+    const key = 'gm_' + type + '_chats_' + this.currentUser.username.toLowerCase();
+    const values = new Set(this.getChatListPreference(type));
+    if (enabled) values.add(chatId); else values.delete(chatId);
+    localStorage.setItem(key, JSON.stringify(Array.from(values)));
+  }
+
+  closeChatContextMenu() {
+    if (this.chatContextMenu) this.chatContextMenu.remove();
+    this.chatContextMenu = null;
+  }
+
+  openChatContextMenu(chat, clientX, clientY) {
+    this.closeChatContextMenu();
+    const peer = chat.peer || this.getPeerUsernameFromChatId(chat.id);
+    const canBlock = Boolean(peer && !chat.isSaved && !chat.isGeneral && !chat.isCommunity);
+    const isBlocked = canBlock && this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
+    const isMuted = this.isChatMuted(chat.id);
+    const isArchived = this.getChatListPreference('archived').includes(chat.id);
+    const isPinned = this.getChatListPreference('pinned').includes(chat.id);
+    const menu = document.createElement('div');
+    menu.className = 'tg-chat-context-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = [
+      '<button type="button" data-chat-context-action="block"' + (canBlock ? '' : ' disabled') + '>' + this.uiIcon('shield-block') + '<span>' + (isBlocked ? 'Разблокировать' : 'Заблокировать') + '</span></button>',
+      '<button type="button" data-chat-context-action="clear">' + this.uiIcon('trash') + '<span>Очистить чат</span></button>',
+      '<button type="button" data-chat-context-action="mute">' + this.uiIcon('mic') + '<span>' + (isMuted ? 'Включить звук' : 'Выключить звук') + '</span></button>',
+      '<button type="button" data-chat-context-action="archive">' + this.uiIcon('folder') + '<span>' + (isArchived ? 'Вернуть из архива' : 'Добавить в архив') + '</span></button>',
+      '<button type="button" data-chat-context-action="pin">' + this.uiIcon('star') + '<span>' + (isPinned ? 'Открепить чат' : 'Закрепить чат') + '</span></button>'
+    ].join('');
+    document.body.appendChild(menu);
+    this.chatContextMenu = menu;
+
+    const gap = 12;
+    const bounds = menu.getBoundingClientRect();
+    const preferredLeft = clientX || (window.innerWidth - bounds.width - gap);
+    const preferredTop = clientY || (window.innerHeight - bounds.height - gap);
+    menu.style.left = Math.max(gap, Math.min(preferredLeft, window.innerWidth - bounds.width - gap)) + 'px';
+    menu.style.top = Math.max(gap, Math.min(preferredTop, window.innerHeight - bounds.height - gap)) + 'px';
+
+    menu.querySelectorAll('[data-chat-context-action]').forEach(button => {
+      button.addEventListener('click', async event => {
+        event.stopPropagation();
+        await this.handleChatContextAction(button.dataset.chatContextAction, chat, peer);
+      });
+    });
+    requestAnimationFrame(() => {
+      const close = event => {
+        if (this.chatContextMenu && !this.chatContextMenu.contains(event.target)) this.closeChatContextMenu();
+      };
+      document.addEventListener('pointerdown', close, { once: true, capture: true });
+    });
+  }
+
+  async handleChatContextAction(action, chat, peer) {
+    const chatId = chat.id;
+    this.closeChatContextMenu();
+    if (action === 'block') {
+      if (!peer || chat.isSaved || chat.isGeneral || chat.isCommunity) return;
+      const blocked = this.storage.getBlacklist(this.currentUser.username).includes(peer.toLowerCase());
+      if (!confirm(blocked ? 'Разблокировать @' + peer + '?' : 'Заблокировать @' + peer + '?')) return;
+      this.storage.toggleBlacklist(this.currentUser.username, peer);
+      if (chatId === this.currentChatId) this.updateComposerBlockState();
+      this.renderBlacklist();
+      this.showToast(blocked ? 'Пользователь разблокирован' : 'Пользователь заблокирован');
+      return;
+    }
+    if (action === 'clear') {
+      const space = this.storage.getSpace(chatId);
+      if (space && !(space.admins || []).includes(this.currentUser.username.toLowerCase())) {
+        this.showToast('Очищать историю сообщества могут только администраторы');
+        return;
+      }
+      if (!confirm('Очистить всю историю этого чата? Отменить действие будет нельзя.')) return;
+      if (chatId === this.currentChatId) this.closeActiveMediaSession(true);
+      const removed = this.storage.clearChat(chatId);
+      await this.removeMessagesMedia(removed);
+      await this.renderChatList();
+      if (chatId === this.currentChatId) await this.renderMessages();
+      this.showToast('История чата очищена');
+      return;
+    }
+    if (action === 'mute') {
+      const muted = this.toggleChatMute(chatId);
+      if (chatId === this.currentChatId) this.updateMuteUI(muted);
+      this.showToast(muted ? 'Уведомления отключены' : 'Уведомления включены');
+      return;
+    }
+    if (action === 'archive') {
+      const archived = this.getChatListPreference('archived').includes(chatId);
+      this.setChatListPreference('archived', chatId, !archived);
+      this.setChatListPreference('pinned', chatId, false);
+      await this.renderChatList();
+      this.showToast(archived ? 'Чат возвращён из архива' : 'Чат добавлен в архив');
+      return;
+    }
+    if (action === 'pin') {
+      const pinned = this.getChatListPreference('pinned').includes(chatId);
+      this.setChatListPreference('pinned', chatId, !pinned);
+      await this.renderChatList();
+      this.showToast(pinned ? 'Чат откреплён' : 'Чат закреплён');
+    }
   }
 
   async renderMessages() {
