@@ -111,6 +111,38 @@ test('global search excludes other users private dialogs and supports empty rece
   assert.match(app.el.searchResultsList.children[0].textContent, /недавно найденные/);
 });
 
+test('new installations have no seeded users or contacts', () => {
+  global.localStorage = new MemoryStorage();
+  const storage = new StorageService({ STORAGE_MODE: 'local' });
+  assert.deepEqual(read('gm_users'), []);
+  assert.deepEqual(storage.getContacts('new_user'), []);
+});
+
+test('shared media uses exact conversation ids instead of partial username matches', async () => {
+  const storage = fixture();
+  save('gm_users', [{username:'ali'}, {username:'malice'}, {username:'bobby'}]);
+  save('gm_messages', [
+    {id:'mine',sender:'bobby',chatId:'dm:ali:bobby',files:[{mediaId:'allowed',name:'allowed.bin'}]},
+    {id:'other',sender:'bobby',chatId:'dm:bobby:malice',files:[{mediaId:'secret',name:'secret.bin'}]}
+  ]);
+  const shared = await storage.getUserSharedMedia('ali', 'bobby');
+  assert.deepEqual(shared.files.map(item => item.file.mediaId), ['allowed']);
+  const allMine = await storage.getAllUserMedia('ali');
+  assert.deepEqual(allMine.files.map(item => item.file.mediaId), ['allowed']);
+});
+
+test('editing and deleting require the message owner and exact chat id', async () => {
+  const storage = fixture();
+  save('gm_messages', [{id:'owned',sender:'alice',chatId:'dm:alice:bobby',text:'before'}]);
+  await storage.editMessage('dm:alice:bobby', 'owned', 'alice', 'after');
+  assert.equal(read('gm_messages')[0].text, 'after');
+  assert.equal(typeof read('gm_messages')[0].editedAt, 'number');
+  await assert.rejects(() => storage.deleteMessage('dm:alice:bobby', 'owned', 'bobby'), /недоступно/);
+  await assert.rejects(() => storage.deleteMessage('dm:alice:charlie', 'owned', 'alice'), /недоступно/);
+  await storage.deleteMessage('dm:alice:bobby', 'owned', 'alice');
+  assert.deepEqual(read('gm_messages'), []);
+});
+
 test('chat clearing removes only the selected conversation', () => {
   const storage = fixture();
   save('gm_messages', [

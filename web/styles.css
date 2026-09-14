@@ -3803,15 +3803,35 @@ textarea:focus-visible {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 28px;
-  padding: 6px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  width: min(320px, calc(100vw - 20px));
+  border-radius: 20px;
+  padding: 8px;
+  display: grid;
+  gap: 7px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: tgPopupScale 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+
+.tg-message-reactions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 2px 3px 7px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+}
+
+.tg-message-actions-list { display: grid; gap: 2px; }
+.tg-message-actions-list button {
+  width: 100%; min-height: 42px; padding: 0 13px; border: 0; border-radius: 12px;
+  color: var(--tg-text-main); background: transparent; text-align: left; font: inherit;
+  font-weight: 650; cursor: pointer;
+}
+.tg-message-actions-list button:hover,
+.tg-message-actions-list button:focus-visible { background: rgba(255,255,255,.075); outline: none; }
+.tg-message-actions-list button.danger { color: var(--tg-danger); }
+.tg-message-actions-list button.hidden { display: none; }
 
 @keyframes tgPopupScale {
   0% { transform: scale(0.6) translateY(10px); opacity: 0; }
@@ -3830,6 +3850,49 @@ textarea:focus-visible {
 
 .tg-react-emoji:hover {
   transform: scale(1.35);
+}
+
+.tg-msg-edited { margin-right: 4px; opacity: .72; }
+
+.tg-chat-list-section { padding: 12px 16px 6px; color: var(--tg-text-sub); font-size: 11px; font-weight: 760; letter-spacing: .075em; text-transform: uppercase; }
+.tg-chat-list-empty { min-height: 230px; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 28px; color: var(--tg-text-sub); text-align: center; }
+.tg-chat-list-empty strong { color: var(--tg-text-main); font-size: 15px; }
+.tg-chat-list-empty span { max-width: 260px; font-size: 12.5px; line-height: 1.45; }
+.tg-chat-list-empty .tg-ui-icon { opacity: .55; }
+
+.tg-action-sheet-overlay {
+  position: fixed; inset: 0; z-index: 2600; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(0,0,0,.55); backdrop-filter: blur(8px);
+}
+.tg-action-sheet-card {
+  width: min(430px, 100%); max-height: min(620px, calc(100dvh - 32px)); overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0,1fr); border: 1px solid var(--tg-border);
+  border-radius: 24px; color: var(--tg-text-main); background: var(--tg-bg-sidebar); box-shadow: var(--tg-shadow-float);
+}
+.tg-action-sheet-card > header { min-height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 20px; border-bottom: 1px solid var(--tg-border); font-size: 17px; }
+.tg-action-sheet-card > header button { width: 38px; height: 38px; border: 0; border-radius: 50%; color: var(--tg-text-sub); background: transparent; font-size: 28px; cursor: pointer; }
+.tg-action-sheet-card > header button:hover { background: var(--tg-hover); }
+.tg-forward-chat-list { overflow: auto; padding: 7px; }
+.tg-forward-chat { width: 100%; min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 14px; color: var(--tg-text-main); background: transparent; text-align: left; cursor: pointer; }
+.tg-forward-chat:hover { background: var(--tg-hover); }
+.tg-forward-chat .tg-avatar { width: 44px; height: 44px; flex: 0 0 auto; }
+.tg-forward-chat > span:last-child { min-width: 0; display: grid; gap: 3px; }
+.tg-forward-chat strong, .tg-forward-chat small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-forward-chat small, .tg-forward-empty { color: var(--tg-text-sub); }
+.tg-forward-empty { padding: 28px 16px; text-align: center; }
+
+/* Keep the chat attached to the visual viewport when the native mobile keyboard opens. */
+@media (max-width: 768px) {
+  body, #app, .tg-main-wrap, .tg-sidebar, .tg-chat-view, .tg-profile-panel {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .tg-chat-view { max-height: var(--tg-visual-viewport-height, 100dvh); }
+  .tg-msg-textarea { touch-action: manipulation; }
+  .tg-msg-bubble, .tg-msg-content { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .tg-reactions-popup { position: fixed; max-height: min(430px, calc(100dvh - 20px)); overflow: auto; }
+  .tg-action-sheet-overlay { align-items: flex-end; padding: 0; }
+  .tg-action-sheet-card { width: 100%; max-height: min(72dvh, 620px); border-radius: 24px 24px 0 0; padding-bottom: env(safe-area-inset-bottom); }
 }
 
 .tg-msg-reactions {
