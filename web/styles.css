@@ -1014,6 +1014,21 @@ html, body {
   font-weight: 700;
 }
 
+.tg-checks.sent,
+.tg-checks.delivered {
+  opacity: 0.72;
+}
+
+.tg-checks.read {
+  color: #38bdf8;
+  opacity: 1;
+}
+
+.tg-checks.failed {
+  color: #fb7185;
+  font-size: 13px;
+}
+
 /* MEDIA & FILES INSIDE BUBBLES */
 .tg-media-tile {
   position: relative;

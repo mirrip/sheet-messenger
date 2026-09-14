@@ -12,6 +12,7 @@ class StorageService {
     this.sessionToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('gm_session_token') || '') : '';
     this.remoteMedia = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem('gm_remote_media')) || '{}');
     this.mediaDB = null;
+    this.mediaDownloads = new Map();
     this.initLocalStorage();
   }
 
@@ -20,20 +21,25 @@ class StorageService {
     const body = { action, payload: { ...payload } };
     if (this.sessionToken && body.payload.sessionToken === undefined) body.payload.sessionToken = this.sessionToken;
     let response;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
       try {
         response = await fetch(this.config.API_ENDPOINT + (this.config.API_ENDPOINT.includes('?') ? '&' : '?') + '_=' + Date.now() + '_' + attempt, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: JSON.stringify(body),
           redirect: 'follow',
-          cache: 'no-store'
+          cache: 'no-store',
+          signal: controller.signal
         });
         if (response.ok || (response.status !== 404 && response.status < 500)) break;
-      } catch (_) { response = null; }
-      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+      } catch (error) { lastError = error; response = null; }
+      finally { clearTimeout(timeout); }
+      if (attempt < 1) await new Promise(resolve => setTimeout(resolve, 450));
     }
-    if (!response) throw new Error('Сервер временно недоступен. Проверьте интернет и повторите попытку');
+    if (!response) throw new Error(lastError && lastError.name === 'AbortError' ? 'Сервер отвечает слишком долго. Повторите попытку' : 'Сервер временно недоступен. Проверьте интернет и повторите попытку');
     if (!response.ok) throw new Error('Сервер ответил с ошибкой ' + response.status);
     const result = await response.json();
     if (!result.ok) throw new Error(result.error || 'Ошибка сервера');
@@ -66,12 +72,66 @@ class StorageService {
     localStorage.setItem('gm_spaces', JSON.stringify(spaces));
   }
 
+  normalizeRemoteChats(source) {
+    return (source || []).map(chat => ({
+      ...chat,
+      lastMsg: chat.lastMsg || (chat.isSaved ? 'Личное облако' : 'Сообщений пока нет'),
+      lastTime: chat.lastTime || (chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''),
+      unreadCount: Number(chat.unreadCount) || 0
+    }));
+  }
+
+  clearRemoteAccountCache() {
+    ['gm_remote_chats', 'gm_remote_saved_id', 'gm_remote_media', 'gm_spaces'].forEach(key => localStorage.removeItem(key));
+    localStorage.setItem('gm_messages', '[]');
+    this.remoteMedia = {};
+    this.lastReadAck = '';
+  }
+
+  getCachedChats() {
+    return JSON.parse(localStorage.getItem('gm_remote_chats') || '[]');
+  }
+
+  touchCachedChat(chatId, message) {
+    const chats = this.getCachedChats();
+    const chat = chats.find(item => item.id === chatId);
+    if (!chat || !message) return chats;
+    const attachment = message.files && message.files[0];
+    chat.lastMsg = message.text || (message.voice ? 'Голосовое сообщение' : (message.circleVideo ? 'Видеокружок' : (attachment ? (attachment.name || 'Файл') : 'Сообщение')));
+    chat.lastTime = message.time || '';
+    chat.timestamp = Number(message.createdAt) || Date.now();
+    this.cacheRemoteChats(chats);
+    return chats;
+  }
+
   async primeRemote() {
     if (!this.isRemote || !this.sessionToken) return [];
     const result = await this.api('conversations.list');
-    const chats = (result.conversations || result.chats || []).map(chat => ({ ...chat, lastMsg: chat.lastMsg || (chat.isSaved ? 'Личное облако' : 'Сообщений пока нет'), lastTime: chat.lastTime || (chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''), unreadCount: Number(chat.unreadCount) || 0 }));
+    const chats = this.normalizeRemoteChats(result.conversations || result.chats || []);
     this.cacheRemoteChats(chats);
     return chats;
+  }
+
+  cacheRemoteMessages(chatId, source) {
+    const messages = (source || []).map(message => {
+      (message.files || []).forEach(file => { this.remoteMedia[file.mediaId] = file; });
+      if (message.kind === 'voice' && message.files && message.files[0]) message.voice = { mediaId: message.files[0].mediaId };
+      if (message.kind === 'circle' && message.files && message.files[0]) message.circleVideo = { mediaId: message.files[0].mediaId };
+      return message;
+    });
+    localStorage.setItem('gm_remote_media', JSON.stringify(this.remoteMedia));
+    const cached = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const pending = cached.filter(message => message.chatId === chatId && message._optimistic && !messages.some(remote => remote.id === message.id));
+    const all = cached.filter(message => message.chatId !== chatId).concat(messages, pending);
+    try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (_) { /* cache is optional */ }
+    return messages.concat(pending).sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+  }
+
+  async syncBundle(chatId) {
+    const result = await this.api('sync.bundle', { conversationId: chatId, limit: 200 });
+    const chats = this.normalizeRemoteChats(result.conversations || result.chats || []);
+    this.cacheRemoteChats(chats);
+    return { chats, messages: this.cacheRemoteMessages(chatId, result.messages || []) };
   }
 
   // --- IndexedDB для медиа (голос, видеокружки) ---
@@ -131,6 +191,13 @@ class StorageService {
       } catch (e) { resolve(null); }
     });
     if (localBlob || !this.isRemote || !this.sessionToken || !this.remoteMedia[id]) return localBlob;
+    if (this.mediaDownloads.has(id)) return this.mediaDownloads.get(id);
+    const download = this.downloadRemoteMediaBlob(id);
+    this.mediaDownloads.set(id, download);
+    try { return await download; } finally { this.mediaDownloads.delete(id); }
+  }
+
+  async downloadRemoteMediaBlob(id) {
     const meta = this.remoteMedia[id];
     const total = Math.ceil((Number(meta.size) || 0) / (2 * 1024 * 1024));
     const chunks = [];
@@ -195,10 +262,10 @@ class StorageService {
     if (String(password || '').length < 4) throw new Error('Пароль должен быть от 4 символов');
     if (this.isRemote) {
       const result = await this.api('auth.register', { username, password, deviceId: this.deviceId() });
+      this.clearRemoteAccountCache();
       this.sessionToken = result.session.token;
       localStorage.setItem('gm_session_token', this.sessionToken);
       result.user = this.cacheRemoteUser(result.user);
-      await this.primeRemote();
       return result;
     }
     if (!username) throw new Error('Введите имя пользователя');
@@ -229,10 +296,20 @@ class StorageService {
   async login(username, password) {
     if (this.isRemote) {
       const result = await this.api('auth.login', { username, password, deviceId: this.deviceId() });
+      this.clearRemoteAccountCache();
       this.sessionToken = result.session.token;
       localStorage.setItem('gm_session_token', this.sessionToken);
       result.user = this.cacheRemoteUser(result.user);
-      await this.primeRemote();
+      if (result.bootstrap) {
+        const chats = this.normalizeRemoteChats(result.bootstrap.conversations || []);
+        const messages = this.cacheRemoteMessages(result.bootstrap.initialConversationId, result.bootstrap.messages || []);
+        this.cacheRemoteChats(chats);
+        this.bootstrapData = {
+          chats,
+          messages,
+          chatId: result.bootstrap.initialConversationId || ''
+        };
+      }
       return result;
     }
     username = username.trim().toLowerCase().replace(/^@/, '');
@@ -255,6 +332,7 @@ class StorageService {
     }
     this.sessionToken = '';
     localStorage.removeItem('gm_session_token');
+    if (this.isRemote) this.clearRemoteAccountCache();
   }
 
 
@@ -999,19 +1077,48 @@ class StorageService {
   async getMessages(chatId) {
     if (this.isRemote) {
       const result = await this.api('messages.page', { conversationId: chatId, limit: 200 });
-      const messages = (result.messages || []).map(message => {
-        (message.files || []).forEach(file => { this.remoteMedia[file.mediaId] = file; });
-        if (message.kind === 'voice' && message.files && message.files[0]) message.voice = { mediaId: message.files[0].mediaId };
-        if (message.kind === 'circle' && message.files && message.files[0]) message.circleVideo = { mediaId: message.files[0].mediaId };
-        return message;
-      });
-      localStorage.setItem('gm_remote_media', JSON.stringify(this.remoteMedia));
-      const all = JSON.parse(localStorage.getItem('gm_messages') || '[]').filter(message => message.chatId !== chatId).concat(messages);
-      try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (_) { /* cache is optional */ }
-      return messages;
+      return this.cacheRemoteMessages(chatId, result.messages || []);
     }
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
+  }
+
+  getCachedMessages(chatId) {
+    return JSON.parse(localStorage.getItem('gm_messages') || '[]').filter(message => message.chatId === chatId);
+  }
+
+  putOptimisticMessage(message) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]').filter(item => item.id !== message.id);
+    all.push(message);
+    try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (_) { /* cache is optional */ }
+    return message;
+  }
+
+  settleOptimisticMessage(chatId, temporaryId, serverMessage, error = null) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const index = all.findIndex(item => item.chatId === chatId && item.id === temporaryId);
+    if (error) {
+      if (index >= 0) all[index] = { ...all[index], deliveryStatus: 'failed', deliveryError: String(error.message || error) };
+    } else {
+      if (index >= 0) all.splice(index, 1);
+      if (serverMessage && !all.some(item => item.id === serverMessage.id)) all.push(serverMessage);
+    }
+    try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (_) { /* cache is optional */ }
+    return all.filter(item => item.chatId === chatId);
+  }
+
+  async markConversationRead(chatId, seq) {
+    if (!this.isRemote || !this.sessionToken || !chatId || !seq) return;
+    const key = chatId + ':' + seq;
+    if (this.lastReadAck === key) return;
+    this.lastReadAck = key;
+    try {
+      await this.api('conversations.read', { conversationId: chatId, seq });
+      const chats = JSON.parse(localStorage.getItem('gm_remote_chats') || '[]');
+      const chat = chats.find(item => item.id === chatId);
+      if (chat) { chat.unreadCount = 0; this.cacheRemoteChats(chats); }
+    }
+    catch (error) { if (this.lastReadAck === key) this.lastReadAck = ''; throw error; }
   }
 
   getMessage(chatId, msgId) {
@@ -2801,7 +2908,7 @@ class TelegramApp {
       this.currentUser = res.user;
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
-      this.showMainScreen({ loadData: !isRegistration });
+      this.showMainScreen({ loadData: !isRegistration, bootstrap: !isRegistration ? this.storage.bootstrapData : null });
       if (!isRegistration && !this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
@@ -2818,6 +2925,7 @@ class TelegramApp {
     this.storage.logoutRemote();
     localStorage.removeItem('gm_current_user');
     this.currentUser = null;
+    this.stopSyncLoop();
     this.el.menuDropdown.classList.add('hidden');
     this.showAuthScreen();
   }
@@ -2871,7 +2979,15 @@ class TelegramApp {
     if (loadData) {
       this.switchSidebarView(this.activeSidebarView || 'chats');
       this.renderProfileFeed();
-      this.refreshData();
+      const bootstrap = options.bootstrap;
+      if (bootstrap && bootstrap.chatId === this.currentChatId) {
+        this.renderChatList(bootstrap.chats);
+        this.renderMessages(bootstrap.messages);
+        this.storage.bootstrapData = null;
+      } else {
+        this.refreshData();
+      }
+      this.startSyncLoop();
     } else {
       this.activeSidebarView = 'chats';
       ['chats', 'contacts', 'profile', 'settings'].forEach(view => {
@@ -2885,13 +3001,42 @@ class TelegramApp {
   }
 
   async refreshData() {
-    await this.renderChatList();
-    await this.renderMessages();
+    if (this.refreshInFlight || !this.currentUser) return this.refreshInFlight;
+    this.refreshInFlight = (async () => {
+      if (this.storage.isRemote) {
+        const bundle = await this.storage.syncBundle(this.currentChatId);
+        await this.renderChatList(bundle.chats);
+        await this.renderMessages(bundle.messages);
+      } else {
+        await Promise.all([this.renderChatList(), this.renderMessages()]);
+      }
+    })();
+    try { return await this.refreshInFlight; }
+    finally { this.refreshInFlight = null; }
   }
 
   getDmChatId(u1, u2) {
     const sorted = [u1.toLowerCase(), u2.toLowerCase()].sort();
     return 'dm:' + sorted[0] + ':' + sorted[1];
+  }
+
+  startSyncLoop() {
+    this.stopSyncLoop();
+    const schedule = () => {
+      if (!this.currentUser) return;
+      const delay = document.hidden ? 15000 : Math.max(3000, Number(this.storage.config.POLL_INTERVAL_MS) || 4000);
+      this.syncTimer = setTimeout(async () => {
+        try { if (!document.hidden) await this.refreshData(); }
+        catch (error) { console.warn('Background sync delayed:', error); }
+        schedule();
+      }, delay);
+    };
+    schedule();
+  }
+
+  stopSyncLoop() {
+    if (this.syncTimer) clearTimeout(this.syncTimer);
+    this.syncTimer = null;
   }
 
   bindVisualViewport() {
@@ -3025,16 +3170,19 @@ class TelegramApp {
 
     this.updateComposerBlockState();
     this.updateMainActionButtonState();
-    this.renderChatList();
-    this.renderMessages();
+    if (this.storage.isRemote) this.refreshData();
+    else {
+      this.renderChatList();
+      this.renderMessages();
+    }
   }
 
-  async renderChatList() {
+  async renderChatList(chatsOverride = null) {
     if (!this.currentUser) return;
     const requestedUsername = this.currentUser.username;
     const requestedFolder = this.activeFolder;
     const renderEpoch = ++this.chatListRenderEpoch;
-    let chats = await this.storage.getUserChats(requestedUsername);
+    let chats = chatsOverride || await this.storage.getUserChats(requestedUsername);
     if (renderEpoch !== this.chatListRenderEpoch || !this.currentUser || this.currentUser.username !== requestedUsername || this.activeFolder !== requestedFolder) return;
 
     const pinnedChats = new Set(this.getChatListPreference('pinned'));
@@ -3258,11 +3406,11 @@ class TelegramApp {
     }
   }
 
-  async renderMessages() {
+  async renderMessages(messagesOverride = null) {
     const requestedChatId = this.currentChatId;
     const renderEpoch = ++this.messagesRenderEpoch;
     if (!this.canOpenChatId(requestedChatId)) return;
-    const msgs = await this.storage.getMessages(requestedChatId);
+    const msgs = messagesOverride || await this.storage.getMessages(requestedChatId);
     if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId || !this.canOpenChatId(requestedChatId)) return;
     this.el.messagesFeed.innerHTML = '';
     this.chatMediaPlaybackQueue = [];
@@ -3272,47 +3420,6 @@ class TelegramApp {
       this.el.messagesFeed.innerHTML = '<div class="tg-premium-empty">' + this.uiIcon(saved ? 'star' : 'message', 'tg-ui-icon-xl') + '<strong>' + (saved ? 'Ваше Избранное' : 'Сообщений пока нет') + '</strong><span>' + (saved ? 'Храните здесь сообщения, медиа и документы — их видите только вы' : 'Начните диалог первым') + '</span></div>';
       this.updateMessageSearch(false);
       return;
-    }
-
-    // Предзагрузка всех Blob URL для мгновенного и надежного старта видео и аудио
-    for (const m of msgs) {
-      if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
-      if (m.circleVideo && m.circleVideo.mediaId && !this._mediaBlobUrlCache.has(m.circleVideo.mediaId)) {
-        const b = await this.storage.getMediaBlob(m.circleVideo.mediaId);
-        if (b) {
-          this._mediaBlobUrlCache.set(m.circleVideo.mediaId, URL.createObjectURL(b));
-        }
-        const posterId = m.circleVideo.posterId || (m.circleVideo.mediaId + '_poster');
-        if (!this._mediaBlobUrlCache.has(posterId)) {
-          const posterBlob = await this.storage.getMediaBlob(posterId);
-          if (posterBlob) this._mediaBlobUrlCache.set(posterId, URL.createObjectURL(posterBlob));
-        }
-      }
-      if (m.voice && m.voice.mediaId && !this._mediaBlobUrlCache.has(m.voice.mediaId)) {
-        const b = await this.storage.getMediaBlob(m.voice.mediaId);
-        if (b) {
-          this._mediaBlobUrlCache.set(m.voice.mediaId, URL.createObjectURL(b));
-        }
-      }
-      const attachments = m.files && m.files.length ? m.files : (m.file ? [m.file] : []);
-      for (const file of attachments) {
-        if (file.mediaId && !this._mediaBlobUrlCache.has(file.mediaId)) {
-          const blob = await this.storage.getMediaBlob(file.mediaId);
-          if (blob) this._mediaBlobUrlCache.set(file.mediaId, URL.createObjectURL(blob));
-        }
-        if (file.mediaId && this.getAttachmentKind(file) === 'video') {
-          const thumbnailId = file.thumbnailId || (file.mediaId + '_thumbnail');
-          if (!this._mediaBlobUrlCache.has(thumbnailId)) {
-            const thumbnailBlob = await this.storage.getMediaBlob(thumbnailId);
-            if (thumbnailBlob) this._mediaBlobUrlCache.set(thumbnailId, URL.createObjectURL(thumbnailBlob));
-            else {
-              const videoSrc = this._mediaBlobUrlCache.get(file.mediaId) || this.getAttachmentSrc(file);
-              if (videoSrc) await this.createAndStoreVideoThumbnail(file.mediaId, videoSrc);
-            }
-          }
-          file.thumbnailId = thumbnailId;
-        }
-      }
     }
 
     const usersList = JSON.parse(localStorage.getItem('gm_users') || '[]');
@@ -3343,6 +3450,7 @@ class TelegramApp {
     if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
     msgs.forEach(m => {
       const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
+      const deliveryHtml = isOut ? this.messageDeliveryHtml(m) : '';
       const wrap = document.createElement('div');
       wrap.className = 'tg-bubble-wrap ' + (isOut ? 'out' : 'in');
 
@@ -3374,7 +3482,7 @@ class TelegramApp {
           '  </div>',
           '  <div class="tg-circle-meta">',
           '    <span class="tg-circle-duration">' + this.formatDuration(dur) + '</span>',
-          '    <span class="tg-circle-sent-time">' + this.escape(m.time || '') + (isOut ? ' <span class="tg-checks">✓✓</span>' : '') + '</span>',
+          '    <span class="tg-circle-sent-time">' + this.escape(m.time || '') + deliveryHtml + '</span>',
           '  </div>',
           '</div>'
         ].join('');
@@ -3426,7 +3534,7 @@ class TelegramApp {
       const bubbleMetaHtml = isCircle ? '' : [
         '  <div class="tg-msg-meta">',
         '    <span>' + (m.editedAt ? '<span class="tg-msg-edited">изменено</span>' : '') + m.time + '</span>',
-        (isOut ? '    <span class="tg-checks">✓✓</span>' : ''),
+        deliveryHtml,
         '  </div>'
       ].join('');
       const messageAttachments = m.files && m.files.length ? m.files : (m.file ? [m.file] : []);
@@ -3856,10 +3964,24 @@ class TelegramApp {
       this.el.messagesFeed.appendChild(wrap);
     });
 
+    const newestSeq = msgs.reduce((max, message) => Math.max(max, Number(message.seq) || 0), 0);
+    const savedConversation = requestedChatId === this.storage.getSavedChatId(this.currentUser.username);
+    const chatIsActuallyOpen = !this.isMobileLayout() || Boolean(this.el.chatView && this.el.chatView.classList.contains('active'));
+    if (this.storage.isRemote && newestSeq && !savedConversation && chatIsActuallyOpen && requestedChatId === this.currentChatId && !document.hidden) {
+      this.storage.markConversationRead(requestedChatId, newestSeq).catch(error => console.warn('Read receipt delayed:', error));
+    }
     this.el.messagesContainer.scrollTop = this.el.messagesContainer.scrollHeight;
     if (this.el.messageSearchPanel && !this.el.messageSearchPanel.classList.contains('hidden')) {
       this.updateMessageSearch(false);
     }
+  }
+
+  messageDeliveryHtml(message) {
+    const status = message.deliveryStatus || (this.storage.isRemote ? 'delivered' : 'read');
+    if (status === 'failed') return ' <span class="tg-checks failed" title="Не отправлено">!</span>';
+    if (status === 'sent') return ' <span class="tg-checks sent" title="Отправлено">✓</span>';
+    if (status === 'read') return ' <span class="tg-checks read" title="Прочитано">✓✓</span>';
+    return ' <span class="tg-checks delivered" title="Получено">✓✓</span>';
   }
 
   async sendMessage() {
@@ -3885,21 +4007,49 @@ class TelegramApp {
     this.el.messageInput.style.height = 'auto';
     this.updateMainActionButtonState();
 
-    if (filesToSend.length > 0) {
-      await this.storage.sendMessage(
-        targetChatId,
-        senderUsername,
+    const temporaryId = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    if (this.storage.isRemote) {
+      const now = new Date();
+      const optimistic = {
+        id: temporaryId,
+        chatId: targetChatId,
+        sender: senderUsername,
         text,
-        filesToSend[0],
-        null,
-        null,
-        filesToSend
-      );
-    } else {
-      await this.storage.sendMessage(targetChatId, senderUsername, text);
+        kind: filesToSend.length ? 'file' : 'text',
+        files: filesToSend,
+        file: filesToSend[0] || null,
+        reactions: {},
+        deliveryStatus: 'sent',
+        _optimistic: true,
+        createdAt: now.getTime(),
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      this.storage.putOptimisticMessage(optimistic);
+      const cachedChats = this.storage.touchCachedChat(targetChatId, optimistic);
+      this.renderChatList(cachedChats);
+      if (this.currentChatId === targetChatId) await this.renderMessages(this.storage.getCachedMessages(targetChatId));
     }
-    await this.renderChatList();
-    if (this.currentChatId === targetChatId) await this.renderMessages();
+
+    try {
+      const result = filesToSend.length > 0
+        ? await this.storage.sendMessage(targetChatId, senderUsername, text, filesToSend[0], null, null, filesToSend)
+        : await this.storage.sendMessage(targetChatId, senderUsername, text);
+      if (this.storage.isRemote) {
+        const messages = this.storage.settleOptimisticMessage(targetChatId, temporaryId, result.message);
+        const cachedChats = this.storage.touchCachedChat(targetChatId, result.message);
+        this.renderChatList(cachedChats);
+        if (this.currentChatId === targetChatId) await this.renderMessages(messages);
+      } else {
+        await this.renderChatList();
+        if (this.currentChatId === targetChatId) await this.renderMessages();
+      }
+    } catch (error) {
+      if (this.storage.isRemote) {
+        const messages = this.storage.settleOptimisticMessage(targetChatId, temporaryId, null, error);
+        if (this.currentChatId === targetChatId) await this.renderMessages(messages);
+      }
+      this.showToast(error.message || 'Не удалось отправить сообщение');
+    }
   }
 
   async handleFileUpload(e) {

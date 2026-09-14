@@ -4,7 +4,7 @@
  */
 window.APP_CONFIG = {
   APP_NAME: "Global Messenger",
-  VERSION: "5.0.3",
+  VERSION: "5.2.0",
 
   // 'local' — работа через локальное хранилище браузера (мгновенно, без задержек и ошибок сети)
   // 'remote' — работа через Google Таблицу / API (включим при подключении БД)
@@ -14,6 +14,6 @@ window.APP_CONFIG = {
   API_ENDPOINT: "https://script.google.com/macros/s/AKfycbwcB_ccVYFvgnkIXsIzkJeTuQgVyELeSkLy_R45bF9hlahoHwRGYa4gyzEnEZ5hrGRjLA/exec",
 
   // Интервал синхронизации (мс)
-  POLL_INTERVAL_MS: 1500
+  POLL_INTERVAL_MS: 4000
 };
 
