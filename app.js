@@ -20,16 +20,20 @@ class StorageService {
     const body = { action, payload: { ...payload } };
     if (this.sessionToken && body.payload.sessionToken === undefined) body.payload.sessionToken = this.sessionToken;
     let response;
-    try {
-      response = await fetch(this.config.API_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify(body),
-        redirect: 'follow'
-      });
-    } catch (_) {
-      throw new Error('Сервер временно недоступен. Проверьте интернет и повторите попытку');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch(this.config.API_ENDPOINT + (this.config.API_ENDPOINT.includes('?') ? '&' : '?') + '_=' + Date.now() + '_' + attempt, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify(body),
+          redirect: 'follow',
+          cache: 'no-store'
+        });
+        if (response.ok || (response.status !== 404 && response.status < 500)) break;
+      } catch (_) { response = null; }
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
     }
+    if (!response) throw new Error('Сервер временно недоступен. Проверьте интернет и повторите попытку');
     if (!response.ok) throw new Error('Сервер ответил с ошибкой ' + response.status);
     const result = await response.json();
     if (!result.ok) throw new Error(result.error || 'Ошибка сервера');
