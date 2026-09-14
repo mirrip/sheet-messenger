@@ -8,8 +8,66 @@
 class StorageService {
   constructor(config) {
     this.config = config || (typeof window !== 'undefined' ? window.APP_CONFIG : null) || { STORAGE_MODE: 'local' };
+    this.isRemote = this.config.STORAGE_MODE === 'remote' && Boolean(this.config.API_ENDPOINT);
+    this.sessionToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('gm_session_token') || '') : '';
+    this.remoteMedia = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem('gm_remote_media')) || '{}');
     this.mediaDB = null;
     this.initLocalStorage();
+  }
+
+  async api(action, payload = {}) {
+    if (!this.isRemote) throw new Error('Удалённый сервер не настроен');
+    const body = { action, payload: { ...payload } };
+    if (this.sessionToken && body.payload.sessionToken === undefined) body.payload.sessionToken = this.sessionToken;
+    let response;
+    try {
+      response = await fetch(this.config.API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify(body),
+        redirect: 'follow'
+      });
+    } catch (_) {
+      throw new Error('Сервер временно недоступен. Проверьте интернет и повторите попытку');
+    }
+    if (!response.ok) throw new Error('Сервер ответил с ошибкой ' + response.status);
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || 'Ошибка сервера');
+    return result;
+  }
+
+  deviceId() {
+    let id = localStorage.getItem('gm_device_id');
+    if (!id) { id = 'web_' + Date.now() + '_' + Math.random().toString(36).slice(2); localStorage.setItem('gm_device_id', id); }
+    return id;
+  }
+
+  cacheRemoteUser(user) {
+    if (!user || !user.username) return user;
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const normalized = { id: user.id || user.userId, username: user.username, name: user.name || user.displayName || ('@' + user.username), phone: user.phone || '', bio: user.bio || '', avatar: user.avatar || user.photoId || null, avatars: user.avatars || (user.avatar ? [user.avatar] : []) };
+    const index = users.findIndex(item => String(item.username || '').toLowerCase() === normalized.username.toLowerCase());
+    if (index >= 0) users[index] = { ...users[index], ...normalized }; else users.push(normalized);
+    localStorage.setItem('gm_users', JSON.stringify(users));
+    return normalized;
+  }
+
+  cacheRemoteChats(chats) {
+    const spaces = [];
+    (chats || []).forEach(chat => {
+      if (chat.isSaved) localStorage.setItem('gm_remote_saved_id', chat.id);
+      if (chat.isCommunity) spaces.push({ id: chat.id, type: chat.isChannel ? 'channel' : 'group', title: chat.title, username: chat.username || '', avatar: chat.avatar || '', owner: '', admins: [], members: [], memberCount: chat.memberCount || 0, createdAt: chat.timestamp || Date.now() });
+    });
+    localStorage.setItem('gm_remote_chats', JSON.stringify(chats || []));
+    localStorage.setItem('gm_spaces', JSON.stringify(spaces));
+  }
+
+  async primeRemote() {
+    if (!this.isRemote || !this.sessionToken) return [];
+    const result = await this.api('conversations.list');
+    const chats = (result.conversations || result.chats || []).map(chat => ({ ...chat, lastMsg: chat.lastMsg || (chat.isSaved ? 'Личное облако' : 'Сообщений пока нет'), lastTime: chat.lastTime || (chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''), unreadCount: Number(chat.unreadCount) || 0 }));
+    this.cacheRemoteChats(chats);
+    return chats;
   }
 
   // --- IndexedDB для медиа (голос, видеокружки) ---
@@ -55,7 +113,7 @@ class StorageService {
   async getMediaBlob(id) {
     if (!this.mediaDB) await this.initMediaDB();
     if (!this.mediaDB || !id) return null;
-    return new Promise((resolve) => {
+    const localBlob = await new Promise((resolve) => {
       try {
         const tx = this.mediaDB.transaction('blobs', 'readonly');
         const r = tx.objectStore('blobs').get(id);
@@ -68,6 +126,20 @@ class StorageService {
         r.onerror = () => resolve(null);
       } catch (e) { resolve(null); }
     });
+    if (localBlob || !this.isRemote || !this.sessionToken || !this.remoteMedia[id]) return localBlob;
+    const meta = this.remoteMedia[id];
+    const total = Math.ceil((Number(meta.size) || 0) / (2 * 1024 * 1024));
+    const chunks = [];
+    for (let index = 0; index < total; index += 1) {
+      const part = await this.api('media.downloadChunk', { mediaId: id, index });
+      const binary = atob(part.dataBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      chunks.push(bytes);
+    }
+    const blob = new Blob(chunks, { type: meta.type || 'application/octet-stream' });
+    await this.saveMediaBlob(id, blob);
+    return blob;
   }
 
   async deleteMediaBlob(id) {
@@ -114,6 +186,14 @@ class StorageService {
   }
 
   async register(username, password) {
+    if (this.isRemote) {
+      const result = await this.api('auth.register', { username, password, deviceId: this.deviceId() });
+      this.sessionToken = result.session.token;
+      localStorage.setItem('gm_session_token', this.sessionToken);
+      result.user = this.cacheRemoteUser(result.user);
+      await this.primeRemote();
+      return result;
+    }
     username = username.trim().toLowerCase().replace(/^@/, '');
     if (!username) throw new Error('Введите имя пользователя');
     if (password.length < 4) throw new Error('Пароль должен быть от 4 символов');
@@ -141,6 +221,14 @@ class StorageService {
   }
 
   async login(username, password) {
+    if (this.isRemote) {
+      const result = await this.api('auth.login', { username, password, deviceId: this.deviceId() });
+      this.sessionToken = result.session.token;
+      localStorage.setItem('gm_session_token', this.sessionToken);
+      result.user = this.cacheRemoteUser(result.user);
+      await this.primeRemote();
+      return result;
+    }
     username = username.trim().toLowerCase().replace(/^@/, '');
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     const user = users.find(u => u.username.toLowerCase() === username);
@@ -153,6 +241,14 @@ class StorageService {
     }
 
     return { ok: true, user: { id: user.id, username: user.username, name: user.name, bio: user.bio, phone: user.phone || '', avatar: user.avatar } };
+  }
+
+  async logoutRemote() {
+    if (this.isRemote && this.sessionToken) {
+      try { await this.api('auth.logout'); } catch (_) { /* local logout still proceeds */ }
+    }
+    this.sessionToken = '';
+    localStorage.removeItem('gm_session_token');
   }
 
 
@@ -304,6 +400,11 @@ class StorageService {
   }
 
   async toggleReaction(msgId, emoji, username) {
+    if (this.isRemote) {
+      const message = JSON.parse(localStorage.getItem('gm_messages') || '[]').find(item => item.id === msgId);
+      if (!message) throw new Error('Сообщение не найдено');
+      return this.api('reactions.toggle', { conversationId: message.chatId, messageId: msgId, emoji });
+    }
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const msg = all.find(m => m.id === msgId);
     if (!msg) return { ok: false };
@@ -326,6 +427,7 @@ class StorageService {
   }
 
   async editMessage(chatId, msgId, username, text) {
+    if (this.isRemote) return this.api('messages.edit', { conversationId: chatId, messageId: msgId, text });
     const nextText = String(text || '').trim();
     if (!nextText) throw new Error('Сообщение не может быть пустым');
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
@@ -342,6 +444,7 @@ class StorageService {
   }
 
   async deleteMessage(chatId, msgId, username) {
+    if (this.isRemote) return this.api('messages.delete', { conversationId: chatId, messageId: msgId });
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const index = all.findIndex(item => item.id === msgId && item.chatId === chatId);
     if (index === -1 || String(all[index].sender || '').toLowerCase() !== String(username || '').toLowerCase()) {
@@ -353,6 +456,10 @@ class StorageService {
   }
 
   async searchUsers(query, currentUsername) {
+    if (this.isRemote) {
+      const result = await this.api('users.search', { query });
+      return (result.users || []).map(user => this.cacheRemoteUser(user));
+    }
     query = query.trim().toLowerCase().replace(/^@/, '');
     if (!query) return [];
 
@@ -364,6 +471,10 @@ class StorageService {
   }
 
   async getUserProfile(username) {
+    if (this.isRemote) {
+      const result = await this.api('profile.get', { username });
+      return this.cacheRemoteUser(result.user);
+    }
     if (!username) return null;
     const clean = String(username).replace(/^@/, '').toLowerCase().trim();
     if (clean === 'general' || clean === 'общий чат' || clean === 'общий') {
@@ -405,6 +516,11 @@ class StorageService {
   }
 
   async updateUserProfile(username, dataOrName, maybeBio = undefined) {
+    if (this.isRemote) {
+      const data = typeof dataOrName === 'string' ? { name: dataOrName, bio: maybeBio } : (dataOrName || {});
+      const result = await this.api('profile.update', { displayName: data.name, bio: data.bio, phone: data.phone, photoId: data.photoId });
+      return { ok: true, user: this.cacheRemoteUser(result.user) };
+    }
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     let user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
     if (!user) {
@@ -594,7 +710,12 @@ class StorageService {
       && !this.getSpaces().some(space => String(space.username || '').toLowerCase() === clean);
   }
 
-  createSpace(data) {
+  async createSpace(data) {
+    if (this.isRemote) {
+      const result = await this.api('spaces.create', { type: data.type, title: data.title, username: data.username, members: data.members || [] });
+      await this.primeRemote();
+      return this.getSpace(result.conversation.id) || result.conversation;
+    }
     const type = data && data.type === 'channel' ? 'channel' : 'group';
     const title = String(data && data.title || '').trim();
     const username = String(data && data.username || '').trim().toLowerCase().replace(/^@/, '');
@@ -621,7 +742,12 @@ class StorageService {
     return space;
   }
 
-  updateSpace(chatId, actorUsername, patch = {}) {
+  async updateSpace(chatId, actorUsername, patch = {}) {
+    if (this.isRemote) {
+      await this.api('spaces.update', { conversationId: chatId, title: patch.title, username: patch.username, photoId: patch.photoId });
+      await this.primeRemote();
+      return this.getSpace(chatId);
+    }
     const actor = String(actorUsername || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
     const index = spaces.findIndex(space => space.id === chatId);
@@ -640,7 +766,8 @@ class StorageService {
     return spaces[index];
   }
 
-  setSpaceAdmin(chatId, actorUsername, targetUsername, enabled) {
+  async setSpaceAdmin(chatId, actorUsername, targetUsername, enabled) {
+    if (this.isRemote) throw new Error('Управление ролями будет доступно после загрузки списка участников');
     const actor = String(actorUsername || '').toLowerCase().replace(/^@/, '');
     const target = String(targetUsername || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
@@ -657,7 +784,12 @@ class StorageService {
     return spaces[index];
   }
 
-  leaveSpace(chatId, username) {
+  async leaveSpace(chatId, username) {
+    if (this.isRemote) {
+      const result = await this.api('spaces.leave', { conversationId: chatId });
+      await this.primeRemote();
+      return result;
+    }
     const user = String(username || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
     const index = spaces.findIndex(space => space.id === chatId);
@@ -749,6 +881,7 @@ class StorageService {
   }
 
   getChatPostingState(currentUsername, chatId) {
+    if (this.isRemote) return { blocked: false, blockedByMe: false, blockedByPeer: false, peer: '', restricted: false, reason: '' };
     const blockState = this.getChatBlockState(currentUsername, chatId);
     if (blockState.blocked) return { ...blockState, restricted: true, reason: 'blacklist' };
     const space = this.getSpace(chatId);
@@ -832,6 +965,19 @@ class StorageService {
   }
 
   async getMessages(chatId) {
+    if (this.isRemote) {
+      const result = await this.api('messages.page', { conversationId: chatId, limit: 200 });
+      const messages = (result.messages || []).map(message => {
+        (message.files || []).forEach(file => { this.remoteMedia[file.mediaId] = file; });
+        if (message.kind === 'voice' && message.files && message.files[0]) message.voice = { mediaId: message.files[0].mediaId };
+        if (message.kind === 'circle' && message.files && message.files[0]) message.circleVideo = { mediaId: message.files[0].mediaId };
+        return message;
+      });
+      localStorage.setItem('gm_remote_media', JSON.stringify(this.remoteMedia));
+      const all = JSON.parse(localStorage.getItem('gm_messages') || '[]').filter(message => message.chatId !== chatId).concat(messages);
+      try { localStorage.setItem('gm_messages', JSON.stringify(all)); } catch (_) { /* cache is optional */ }
+      return messages;
+    }
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
   }
@@ -842,10 +988,39 @@ class StorageService {
   }
 
   getSavedChatId(username) {
+    if (this.isRemote) return localStorage.getItem('gm_remote_saved_id') || ('saved:' + String(username || '').toLowerCase().replace(/^@/, ''));
     return 'saved:' + String(username || '').toLowerCase().replace(/^@/, '');
   }
 
+  async uploadRemoteBlob(chatId, descriptor, kind = 'file') {
+    const mediaId = descriptor && descriptor.mediaId;
+    const blob = mediaId ? await this.getMediaBlob(mediaId) : null;
+    if (!blob) throw new Error('Не удалось прочитать файл');
+    const init = await this.api('media.init', { conversationId: chatId, name: descriptor.name || (kind === 'voice' ? 'voice.webm' : (kind === 'circle' ? 'circle.webm' : 'file')), mimeType: descriptor.type || blob.type || 'application/octet-stream', sizeBytes: blob.size });
+    for (let index = 0; index < init.totalChunks; index += 1) {
+      const bytes = new Uint8Array(await blob.slice(index * init.chunkSizeBytes, Math.min(blob.size, (index + 1) * init.chunkSizeBytes)).arrayBuffer());
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(value => value.toString(16).padStart(2, '0')).join('');
+      await this.api('media.putChunk', { uploadId: init.uploadId, index, dataBase64: btoa(binary), sha256: digest });
+    }
+    const complete = await this.api('media.complete', { uploadId: init.uploadId });
+    return complete.media.mediaId;
+  }
+
   async sendMessage(chatId, sender, text, file = null, voice = null, circleVideo = null, files = null) {
+    if (this.isRemote) {
+      const mediaIds = [];
+      let kind = 'text';
+      if (voice && voice.mediaId) { kind = 'voice'; mediaIds.push(await this.uploadRemoteBlob(chatId, { ...voice, name: 'voice.webm', type: 'audio/webm' }, 'voice')); }
+      else if (circleVideo && circleVideo.mediaId) { kind = 'circle'; mediaIds.push(await this.uploadRemoteBlob(chatId, { ...circleVideo, name: 'circle.webm', type: 'video/webm' }, 'circle')); }
+      else {
+        const attachments = files || (file ? [file] : []);
+        if (attachments.length) kind = 'file';
+        for (const attachment of attachments) mediaIds.push(await this.uploadRemoteBlob(chatId, attachment, 'file'));
+      }
+      return this.api('messages.send', { conversationId: chatId, text: text || '', kind, mediaIds });
+    }
     const postingState = this.getChatPostingState(sender, chatId);
     if (postingState.restricted) {
       if (postingState.reason === 'blacklist') throw new Error(postingState.blockedByMe ? 'Сначала разблокируйте пользователя' : 'Пользователь ограничил переписку');
@@ -887,6 +1062,7 @@ class StorageService {
   }
 
   async getUserChats(currentUsername) {
+    if (this.isRemote) return this.primeRemote();
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     const userMap = new Map();
@@ -960,6 +1136,18 @@ class StorageService {
     });
 
     return Array.from(chatMap.values()).sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+  }
+
+  async ensureDirectChat(username) {
+    if (!this.isRemote) return { id: 'dm:' + [username, JSON.parse(localStorage.getItem('gm_current_user') || '{}').username].sort().join(':'), title: '@' + username };
+    const result = await this.api('conversations.ensureDm', { username });
+    await this.primeRemote();
+    return result.conversation;
+  }
+
+  canAccessChatId(chatId) {
+    if (!this.isRemote) return null;
+    return JSON.parse(localStorage.getItem('gm_remote_chats') || '[]').some(chat => chat.id === chatId);
   }
 }
 
@@ -2595,6 +2783,7 @@ class TelegramApp {
     this.closeActiveMediaSession(true);
     this.messagesRenderEpoch += 1;
     this.chatListRenderEpoch += 1;
+    this.storage.logoutRemote();
     localStorage.removeItem('gm_current_user');
     this.currentUser = null;
     this.el.menuDropdown.classList.add('hidden');
@@ -2694,6 +2883,7 @@ class TelegramApp {
 
   canOpenChatId(chatId) {
     if (!this.currentUser || !chatId) return false;
+    if (this.storage.isRemote) return this.storage.canAccessChatId(chatId);
     const me = String(this.currentUser.username || '').toLowerCase();
     const normalized = String(chatId).toLowerCase();
     if (normalized === this.storage.getSavedChatId(me)) return true;
@@ -2716,9 +2906,10 @@ class TelegramApp {
     return participants.find(username => username !== currentUsername) || currentUsername || 'general';
   }
 
-  openDirectChat(targetUsername) {
-    const chatId = this.getDmChatId(this.currentUser.username, targetUsername);
-    const title = '@' + targetUsername;
+  async openDirectChat(targetUsername) {
+    const conversation = await this.storage.ensureDirectChat(targetUsername);
+    const chatId = conversation.id;
+    const title = conversation.title || ('@' + targetUsername);
     this.openChat(chatId, title);
 
     this.el.chatSearch.value = '';
@@ -6028,7 +6219,7 @@ class TelegramApp {
     if (!this.el.spaceCreatorSave || this.el.spaceCreatorSave.disabled) return;
     this.el.spaceCreatorSave.disabled = true;
     try {
-      const space = this.storage.createSpace({
+      const space = await this.storage.createSpace({
         type: this.getSelectedSpaceType(),
         title: this.el.spaceTitleInput.value,
         username: this.el.spaceUsernameInput.value,
@@ -6106,7 +6297,7 @@ class TelegramApp {
         button.textContent = targetIsAdmin ? 'Снять' : 'Назначить';
         button.addEventListener('click', async () => {
           try {
-            this.storage.setSpaceAdmin(space.id, me, username, !targetIsAdmin);
+            await this.storage.setSpaceAdmin(space.id, me, username, !targetIsAdmin);
             await this.renderSpaceProfile();
             this.showToast(targetIsAdmin ? 'Администратор снят' : 'Администратор назначен');
           } catch (error) { this.showToast(error.message || 'Не удалось изменить права'); }
@@ -6222,7 +6413,7 @@ class TelegramApp {
     if (!this.activeSpaceId || !this.el.spaceProfileSave) return;
     this.el.spaceProfileSave.disabled = true;
     try {
-      const updated = this.storage.updateSpace(this.activeSpaceId, this.currentUser.username, {
+      const updated = await this.storage.updateSpace(this.activeSpaceId, this.currentUser.username, {
         title: this.el.spaceProfileTitleInput.value,
         username: this.el.spaceProfileUsernameInput.value,
         avatar: this.spaceProfileEditAvatar
@@ -6247,7 +6438,7 @@ class TelegramApp {
     }
     if (!confirm('Покинуть «' + space.title + '»?')) return;
     try {
-      this.storage.leaveSpace(chatId, this.currentUser.username);
+      await this.storage.leaveSpace(chatId, this.currentUser.username);
       this.closeSpaceProfile();
       this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
       if (window.innerWidth <= 768) this.el.chatView.classList.remove('active');
