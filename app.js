@@ -86,16 +86,31 @@ class StorageService {
   initLocalStorage() {
     if (typeof localStorage === 'undefined') return;
     if (!localStorage.getItem('gm_users')) {
-      const demoUsers = [
-        { id: 'usr_durov', username: 'durov', name: 'Павел Дуров' },
-        { id: 'usr_maria', username: 'maria', name: 'Мария' }
-      ];
-      localStorage.setItem('gm_users', JSON.stringify(demoUsers));
+      localStorage.setItem('gm_users', '[]');
     }
     if (!localStorage.getItem('gm_messages')) {
       const demoMessages = [];
       localStorage.setItem('gm_messages', JSON.stringify(demoMessages));
     }
+    this.removeLegacyDemoData();
+  }
+
+  removeLegacyDemoData() {
+    if (localStorage.getItem('gm_demo_data_removed_v1') === '1') return;
+    const demoUserIds = new Set(['usr_durov', 'usr_maria']);
+    const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
+    const cleanedUsers = users.filter(user => !(demoUserIds.has(user.id) && !user.password));
+    if (cleanedUsers.length !== users.length) {
+      localStorage.setItem('gm_users', JSON.stringify(cleanedUsers));
+    }
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !key.startsWith('gm_contacts_')) continue;
+      const contacts = JSON.parse(localStorage.getItem(key) || '[]');
+      const cleaned = contacts.filter(contact => !['durov', 'maria'].includes(String(contact.username || '').toLowerCase()));
+      if (cleaned.length !== contacts.length) localStorage.setItem(key, JSON.stringify(cleaned));
+    }
+    localStorage.setItem('gm_demo_data_removed_v1', '1');
   }
 
   async register(username, password) {
@@ -113,6 +128,10 @@ class StorageService {
       username: username,
       name: '@' + username,
       password: password,
+      phone: '',
+      bio: '',
+      avatar: null,
+      avatars: [],
       createdAt: Date.now()
     };
     users.push(newUser);
@@ -306,6 +325,33 @@ class StorageService {
     return { ok: true, reactions: msg.reactions };
   }
 
+  async editMessage(chatId, msgId, username, text) {
+    const nextText = String(text || '').trim();
+    if (!nextText) throw new Error('Сообщение не может быть пустым');
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const msg = all.find(item => item.id === msgId && item.chatId === chatId);
+    if (!msg || String(msg.sender || '').toLowerCase() !== String(username || '').toLowerCase()) {
+      throw new Error('Сообщение не найдено или недоступно');
+    }
+    const attachments = msg.files && msg.files.length ? msg.files : (msg.file ? [msg.file] : []);
+    if (attachments.length || msg.voice || msg.circleVideo) throw new Error('Изменять можно только текстовые сообщения');
+    msg.text = nextText;
+    msg.editedAt = Date.now();
+    localStorage.setItem('gm_messages', JSON.stringify(all));
+    return { ok: true, message: msg };
+  }
+
+  async deleteMessage(chatId, msgId, username) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    const index = all.findIndex(item => item.id === msgId && item.chatId === chatId);
+    if (index === -1 || String(all[index].sender || '').toLowerCase() !== String(username || '').toLowerCase()) {
+      throw new Error('Сообщение не найдено или недоступно');
+    }
+    const removed = all.splice(index, 1)[0];
+    localStorage.setItem('gm_messages', JSON.stringify(all));
+    return { ok: true, message: removed };
+  }
+
   async searchUsers(query, currentUsername) {
     query = query.trim().toLowerCase().replace(/^@/, '');
     if (!query) return [];
@@ -405,26 +451,8 @@ class StorageService {
     const sorted = [u1, u2].sort();
     const dmChatId = 'dm:' + sorted[0] + ':' + sorted[1];
 
-    const chatMsgs = all.filter(m => {
-      const chatId = (m.chatId || '').toLowerCase();
-      const sender = (m.sender || '').toLowerCase();
-
-      // 1. Личный диалог
-      if (chatId === dmChatId) return true;
-      // 2. Общий чат
-      if (u2 === 'general' && chatId === 'general') return true;
-      // 3. Сообщения, адресованные в диалог с u2
-      if (chatId.includes(u2) && (chatId.includes(u1) || chatId === 'general')) return true;
-      // 4. Отправитель - собеседник
-      if (sender === u2) {
-        if (chatId === 'general' || chatId.includes(u1) || chatId === dmChatId) return true;
-      }
-      // 5. Отправитель - текущий пользователь в диалоге с u2 или упоминанием
-      if (sender === u1) {
-        if (chatId === dmChatId || (m.text && m.text.toLowerCase().includes('@' + u2))) return true;
-      }
-      return false;
-    });
+    const targetChatId = u2 === 'general' ? 'general' : dmChatId;
+    const chatMsgs = all.filter(message => String(message.chatId || '').toLowerCase() === targetChatId);
 
     const media = [];
     const files = [];
@@ -521,15 +549,7 @@ class StorageService {
     if (!username) return [];
     const key = 'gm_contacts_' + username.toLowerCase();
     const list = JSON.parse(localStorage.getItem(key) || '[]');
-    if (list.length === 0) {
-      const demo = [
-        { username: 'durov', name: 'Павел Дуров', addedAt: Date.now() - 86400000 },
-        { username: 'maria', name: 'Мария', addedAt: Date.now() - 43200000 }
-      ];
-      localStorage.setItem(key, JSON.stringify(demo));
-      return demo;
-    }
-    return list;
+    return Array.isArray(list) ? list : [];
   }
 
   getAttachmentLibrary(username) {
@@ -763,10 +783,12 @@ class StorageService {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     const myName = (username || '').toLowerCase();
     const spaceIds = new Set(this.getSpaces().filter(space => (space.members || []).includes(myName)).map(space => space.id));
-    const userMsgs = all.filter(m => {
-      const sender = (m.sender || '').toLowerCase();
-      const chatId = (m.chatId || '').toLowerCase();
-      return sender === myName || chatId.includes(myName) || chatId === this.getSavedChatId(myName) || spaceIds.has(m.chatId);
+    const userMsgs = all.filter(message => {
+      const chatId = String(message.chatId || '').toLowerCase();
+      if (chatId === this.getSavedChatId(myName) || spaceIds.has(message.chatId)) return true;
+      if (!chatId.startsWith('dm:')) return false;
+      const participants = chatId.split(':').slice(1);
+      return participants.length === 2 && participants.includes(myName);
     });
 
     const media = [];
@@ -812,6 +834,11 @@ class StorageService {
   async getMessages(chatId) {
     const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
     return all.filter(m => m.chatId === chatId);
+  }
+
+  getMessage(chatId, msgId) {
+    const all = JSON.parse(localStorage.getItem('gm_messages') || '[]');
+    return all.find(message => message.chatId === chatId && message.id === msgId) || null;
   }
 
   getSavedChatId(username) {
@@ -979,6 +1006,9 @@ class TelegramApp {
     this.chatMediaPlaybackQueue = [];
     this.downloadTasks = new Map();
     this.messageSearchResults = [];
+    this.messagesRenderEpoch = 0;
+    this.chatListRenderEpoch = 0;
+    this.activeMessageAction = null;
     this.messageSearchIndex = -1;
     this.chatBackgroundObjectUrl = '';
     this.appearanceLoadRequest = 0;
@@ -1005,6 +1035,7 @@ class TelegramApp {
     this.applyAppearanceSettings(false);
     this.bindEvents();
     this.bindMobileBackNavigation();
+    this.bindVisualViewport();
     this.updateMainActionButtonState();
 
     if (this.currentUser) {
@@ -2231,7 +2262,7 @@ class TelegramApp {
     });
 
     this.el.messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         this.sendMessage();
       }
@@ -2263,6 +2294,13 @@ class TelegramApp {
             this.hideReactionsPopup();
             await this.renderMessages();
           }
+        });
+      });
+
+      this.el.reactionsPopup.querySelectorAll('[data-message-action]').forEach(button => {
+        button.addEventListener('click', async event => {
+          event.stopPropagation();
+          await this.handleMessageAction(button.getAttribute('data-message-action'));
         });
       });
 
@@ -2533,7 +2571,8 @@ class TelegramApp {
 
     try {
       let res;
-      if (this.authMode === 'register') {
+      const isRegistration = this.authMode === 'register';
+      if (isRegistration) {
         res = await this.storage.register(username, password);
       } else {
         res = await this.storage.login(username, password);
@@ -2542,8 +2581,8 @@ class TelegramApp {
       this.currentUser = res.user;
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
-      this.showMainScreen();
-      if (!this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
+      this.showMainScreen({ loadData: !isRegistration });
+      if (!isRegistration && !this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
@@ -2554,6 +2593,8 @@ class TelegramApp {
 
   logout() {
     this.closeActiveMediaSession(true);
+    this.messagesRenderEpoch += 1;
+    this.chatListRenderEpoch += 1;
     localStorage.removeItem('gm_current_user');
     this.currentUser = null;
     this.el.menuDropdown.classList.add('hidden');
@@ -2565,16 +2606,18 @@ class TelegramApp {
     this.el.mainScreen.classList.add('hidden');
   }
 
-  showMainScreen() {
+  showMainScreen(options = {}) {
     this.el.authScreen.classList.add('hidden');
     this.el.mainScreen.classList.remove('hidden');
     this.applyAppearanceSettings(false);
     if (this.isMobileLayout()) this.armMobileHistoryGuard(true);
 
+    const loadData = options.loadData !== false;
     const openState = sessionStorage.getItem('gm_active_chat_open');
     const storedChatId = sessionStorage.getItem('gm_active_chat_id') || '';
     const ownSavedChatId = this.storage.getSavedChatId(this.currentUser.username);
-    const savedChatId = (!storedChatId || storedChatId === 'general' || storedChatId.startsWith('saved:')) ? ownSavedChatId : storedChatId;
+    let savedChatId = (!storedChatId || storedChatId === 'general' || storedChatId.startsWith('saved:')) ? ownSavedChatId : storedChatId;
+    if (!this.canOpenChatId(savedChatId)) savedChatId = ownSavedChatId;
     const storedChatTitle = sessionStorage.getItem('gm_active_chat_title') || '';
     const restoredSpace = this.storage.getSpace(savedChatId);
     const savedChatTitle = restoredSpace ? restoredSpace.title : (savedChatId === ownSavedChatId ? 'Избранное' : (storedChatTitle || 'Диалог'));
@@ -2602,11 +2645,22 @@ class TelegramApp {
 
     this.el.currentUserName.innerText = '@' + this.currentUser.username;
     this.renderAvatars();
-    this.switchSidebarView(this.activeSidebarView || 'chats');
-    this.renderProfileFeed();
     this.updateComposerBlockState();
 
-    this.refreshData();
+    if (loadData) {
+      this.switchSidebarView(this.activeSidebarView || 'chats');
+      this.renderProfileFeed();
+      this.refreshData();
+    } else {
+      this.activeSidebarView = 'chats';
+      ['chats', 'contacts', 'profile', 'settings'].forEach(view => {
+        document.getElementById('rail-nav-' + view)?.classList.toggle('active', view === 'chats');
+        document.getElementById('mob-nav-' + view)?.classList.toggle('active', view === 'chats');
+        document.getElementById('sidebar-view-' + view)?.classList.toggle('hidden', view !== 'chats');
+      });
+      if (this.el.chatList) this.el.chatList.innerHTML = '';
+      if (this.el.messagesFeed) this.el.messagesFeed.innerHTML = '';
+    }
   }
 
   async refreshData() {
@@ -2617,6 +2671,39 @@ class TelegramApp {
   getDmChatId(u1, u2) {
     const sorted = [u1.toLowerCase(), u2.toLowerCase()].sort();
     return 'dm:' + sorted[0] + ':' + sorted[1];
+  }
+
+  bindVisualViewport() {
+    if (typeof window === 'undefined' || !window.visualViewport || this.visualViewportBound) return;
+    this.visualViewportBound = true;
+    const update = () => {
+      const viewport = window.visualViewport;
+      document.documentElement.style.setProperty('--tg-visual-viewport-height', Math.round(viewport.height) + 'px');
+      document.documentElement.style.setProperty('--tg-visual-viewport-top', Math.round(viewport.offsetTop) + 'px');
+      if (document.activeElement === this.el.messageInput && this.el.chatView?.classList.contains('active')) {
+        requestAnimationFrame(() => {
+          this.el.messagesContainer.scrollTop = this.el.messagesContainer.scrollHeight;
+        });
+      }
+    };
+    window.visualViewport.addEventListener('resize', update);
+    window.visualViewport.addEventListener('scroll', update);
+    window.addEventListener('orientationchange', update);
+    update();
+  }
+
+  canOpenChatId(chatId) {
+    if (!this.currentUser || !chatId) return false;
+    const me = String(this.currentUser.username || '').toLowerCase();
+    const normalized = String(chatId).toLowerCase();
+    if (normalized === this.storage.getSavedChatId(me)) return true;
+    if (normalized === 'general') return true;
+    if (normalized.startsWith('dm:')) {
+      const participants = normalized.split(':').slice(1);
+      return participants.length === 2 && participants.includes(me) && participants[0] !== participants[1];
+    }
+    const space = this.storage.getSpace(chatId);
+    return Boolean(space && (space.members || []).map(String).map(value => value.toLowerCase()).includes(me));
   }
 
   getPeerUsernameFromChatId(chatId) {
@@ -2640,8 +2727,16 @@ class TelegramApp {
   }
 
   openChat(chatId, title) {
+    if (!this.canOpenChatId(chatId)) {
+      this.showToast('Этот чат недоступен для текущего аккаунта');
+      return;
+    }
     if (this.activeMediaSession && this.activeMediaSession.chatId !== chatId) {
       this.closeActiveMediaSession(true);
+    }
+    if (chatId !== this.currentChatId && this.pendingFiles && this.pendingFiles.length) {
+      this.pendingFiles = [];
+      this.renderPendingAttachments();
     }
     if (chatId !== this.currentChatId) this.closeMessageSearch(false);
     this.currentChatId = chatId;
@@ -2675,6 +2770,7 @@ class TelegramApp {
     } else {
       const peerUsername = (chatId.startsWith('dm:') ? (chatId.split(':')[1] === this.currentUser.username.toLowerCase() ? chatId.split(':')[2] : chatId.split(':')[1]) : title.replace('@', '')).toLowerCase();
       this.storage.getUserProfile(peerUsername).then(profile => {
+        if (this.currentChatId !== chatId) return;
         if (profile && profile.avatar) {
           this.el.activeChatAvatar.innerHTML = '<img src="' + profile.avatar + '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
           this.el.activeChatAvatar.style.cursor = 'pointer';
@@ -2711,7 +2807,12 @@ class TelegramApp {
   }
 
   async renderChatList() {
-    let chats = await this.storage.getUserChats(this.currentUser.username);
+    if (!this.currentUser) return;
+    const requestedUsername = this.currentUser.username;
+    const requestedFolder = this.activeFolder;
+    const renderEpoch = ++this.chatListRenderEpoch;
+    let chats = await this.storage.getUserChats(requestedUsername);
+    if (renderEpoch !== this.chatListRenderEpoch || !this.currentUser || this.currentUser.username !== requestedUsername || this.activeFolder !== requestedFolder) return;
 
     const pinnedChats = new Set(this.getChatListPreference('pinned'));
     const archivedChats = new Set(this.getChatListPreference('archived'));
@@ -2731,7 +2832,24 @@ class TelegramApp {
 
     this.el.chatList.innerHTML = '';
 
+    if (chats.length === 0) {
+      const emptyLabel = this.activeFolder === 'archive' ? 'Архив пуст' : (this.activeFolder === 'channels' ? 'Групп и каналов пока нет' : (this.activeFolder === 'dm' ? 'Личных чатов пока нет' : 'Переписок пока нет'));
+      this.el.chatList.innerHTML = '<div class="tg-chat-list-empty">' + this.uiIcon('message', 'tg-ui-icon-xl') + '<strong>' + emptyLabel + '</strong><span>Новая переписка появится здесь сразу после первого сообщения</span></div>';
+      return;
+    }
+
+    let renderedSection = '';
     chats.forEach(chat => {
+      const section = pinnedChats.has(chat.id) ? 'pinned' : 'regular';
+      if (section !== renderedSection) {
+        renderedSection = section;
+        const heading = document.createElement('div');
+        heading.className = 'tg-chat-list-section';
+        heading.textContent = section === 'pinned'
+          ? 'Закреплённые'
+          : (this.activeFolder === 'archive' ? 'Архив' : (this.activeFolder === 'channels' ? 'Группы и каналы' : (this.activeFolder === 'dm' ? 'Личные чаты' : 'Все чаты')));
+        this.el.chatList.appendChild(heading);
+      }
       const isActive = chat.id === this.currentChatId;
       const item = document.createElement('div');
       item.className = 'tg-chat-item' + (isActive ? ' active' : '') + (pinnedChats.has(chat.id) ? ' is-pinned' : '');
@@ -2918,7 +3036,11 @@ class TelegramApp {
   }
 
   async renderMessages() {
-    const msgs = await this.storage.getMessages(this.currentChatId);
+    const requestedChatId = this.currentChatId;
+    const renderEpoch = ++this.messagesRenderEpoch;
+    if (!this.canOpenChatId(requestedChatId)) return;
+    const msgs = await this.storage.getMessages(requestedChatId);
+    if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId || !this.canOpenChatId(requestedChatId)) return;
     this.el.messagesFeed.innerHTML = '';
     this.chatMediaPlaybackQueue = [];
 
@@ -2931,6 +3053,7 @@ class TelegramApp {
 
     // Предзагрузка всех Blob URL для мгновенного и надежного старта видео и аудио
     for (const m of msgs) {
+      if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
       if (m.circleVideo && m.circleVideo.mediaId && !this._mediaBlobUrlCache.has(m.circleVideo.mediaId)) {
         const b = await this.storage.getMediaBlob(m.circleVideo.mediaId);
         if (b) {
@@ -2975,7 +3098,9 @@ class TelegramApp {
 
     // Сбор всех медиа-элементов чата для непрерывной галереи (Playlist)
     const chatMediaPlaylist = [];
+    if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
     msgs.forEach(m => {
+      if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
       const attachments = m.files && m.files.length ? m.files : (m.file ? [m.file] : []);
       attachments.forEach(file => {
         const kind = this.getAttachmentKind(file);
@@ -2992,6 +3117,7 @@ class TelegramApp {
       });
     });
 
+    if (renderEpoch !== this.messagesRenderEpoch || requestedChatId !== this.currentChatId) return;
     msgs.forEach(m => {
       const isOut = m.sender.toLowerCase() === this.currentUser.username.toLowerCase();
       const wrap = document.createElement('div');
@@ -3076,7 +3202,7 @@ class TelegramApp {
 
       const bubbleMetaHtml = isCircle ? '' : [
         '  <div class="tg-msg-meta">',
-        '    <span>' + m.time + '</span>',
+        '    <span>' + (m.editedAt ? '<span class="tg-msg-edited">изменено</span>' : '') + m.time + '</span>',
         (isOut ? '    <span class="tg-checks">✓✓</span>' : ''),
         '  </div>'
       ].join('');
@@ -3455,30 +3581,53 @@ class TelegramApp {
         });
       });
 
-      // Контекстное меню / зажатие (Long Press) для реакций
+      // Контекстное меню / зажатие (Long Press) для действий с сообщением
       const bubbleEl = wrap.querySelector('.tg-msg-bubble');
       if (bubbleEl) {
         // ПК: Правый клик
         bubbleEl.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          this.showReactionsPopup(e.clientX, e.clientY, m.id);
+          this.showMessageActionsPopup(e.clientX, e.clientY, m);
         });
 
         // Мобильные: Долгое зажатие (Touch Long Press)
         let touchTimer = null;
+        let touchOrigin = null;
+        let longPressTriggered = false;
         bubbleEl.addEventListener('touchstart', (e) => {
+          if (e.touches.length !== 1) return;
           const touch = e.touches[0];
+          touchOrigin = { x: touch.clientX, y: touch.clientY };
+          longPressTriggered = false;
           touchTimer = setTimeout(() => {
-            this.showReactionsPopup(touch.clientX, touch.clientY, m.id);
+            longPressTriggered = true;
+            if (navigator.vibrate) navigator.vibrate(18);
+            this.showMessageActionsPopup(touch.clientX, touch.clientY, m);
           }, 450);
         }, { passive: true });
 
-        bubbleEl.addEventListener('touchend', () => {
+        bubbleEl.addEventListener('touchend', (event) => {
           if (touchTimer) clearTimeout(touchTimer);
-        });
-        bubbleEl.addEventListener('touchmove', () => {
+          touchTimer = null;
+          touchOrigin = null;
+          if (longPressTriggered) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, { passive: false });
+        bubbleEl.addEventListener('touchmove', (event) => {
+          if (!touchTimer || !touchOrigin || !event.touches[0]) return;
+          const touch = event.touches[0];
+          if (Math.hypot(touch.clientX - touchOrigin.x, touch.clientY - touchOrigin.y) > 12) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+        }, { passive: true });
+        bubbleEl.addEventListener('touchcancel', () => {
           if (touchTimer) clearTimeout(touchTimer);
-        });
+          touchTimer = null;
+          touchOrigin = null;
+        }, { passive: true });
       }
 
       this.el.messagesFeed.appendChild(wrap);
@@ -3491,7 +3640,10 @@ class TelegramApp {
   }
 
   async sendMessage() {
-    const blockState = this.storage.getChatPostingState(this.currentUser.username, this.currentChatId);
+    const targetChatId = this.currentChatId;
+    const senderUsername = this.currentUser.username;
+    if (!this.canOpenChatId(targetChatId)) return;
+    const blockState = this.storage.getChatPostingState(senderUsername, targetChatId);
     if (blockState.restricted) {
       this.updateComposerBlockState();
       this.showToast(blockState.reason === 'channel-readonly' ? 'Публиковать в канале могут только администраторы' : (blockState.reason === 'not-member' ? 'Вы не состоите в этом сообществе' : (blockState.blockedByMe ? 'Сначала разблокируйте @' + blockState.peer : 'Пользователь ограничил переписку')));
@@ -3512,8 +3664,8 @@ class TelegramApp {
 
     if (filesToSend.length > 0) {
       await this.storage.sendMessage(
-        this.currentChatId,
-        this.currentUser.username,
+        targetChatId,
+        senderUsername,
         text,
         filesToSend[0],
         null,
@@ -3521,9 +3673,10 @@ class TelegramApp {
         filesToSend
       );
     } else {
-      await this.storage.sendMessage(this.currentChatId, this.currentUser.username, text);
+      await this.storage.sendMessage(targetChatId, senderUsername, text);
     }
-    await this.refreshData();
+    await this.renderChatList();
+    if (this.currentChatId === targetChatId) await this.renderMessages();
   }
 
   async handleFileUpload(e) {
@@ -3632,18 +3785,39 @@ class TelegramApp {
     }
   }
 
-  showReactionsPopup(x, y, msgId) {
-    this.activeReactionMsgId = msgId;
+  showMessageActionsPopup(x, y, message) {
+    if (!message || message.chatId !== this.currentChatId) return;
+    this.activeReactionMsgId = message.id;
+    this.activeMessageAction = { chatId: message.chatId, messageId: message.id };
     if (!this.el.reactionsPopup) return;
 
-    // Ограничиваем координаты границами экрана
-    const popupWidth = 260;
-    const posX = Math.min(Math.max(10, x - 120), window.innerWidth - popupWidth - 10);
-    const posY = Math.max(10, y - 55);
+    const isOwn = String(message.sender || '').toLowerCase() === String(this.currentUser.username || '').toLowerCase();
+    const attachments = message.files && message.files.length ? message.files : (message.file ? [message.file] : []);
+    const isEditableText = isOwn && Boolean(message.text) && !attachments.length && !message.voice && !message.circleVideo;
+    const editButton = this.el.reactionsPopup.querySelector('[data-message-action="edit"]');
+    const deleteButton = this.el.reactionsPopup.querySelector('[data-message-action="delete"]');
+    const copyButton = this.el.reactionsPopup.querySelector('[data-message-action="copy"]');
+    if (editButton) editButton.classList.toggle('hidden', !isEditableText);
+    if (deleteButton) deleteButton.classList.toggle('hidden', !isOwn);
+    if (copyButton) copyButton.classList.toggle('hidden', !message.text);
+
+    const popupWidth = Math.min(320, window.innerWidth - 20);
+    const posX = Math.min(Math.max(10, x - (popupWidth / 2)), window.innerWidth - popupWidth - 10);
 
     this.el.reactionsPopup.style.left = posX + 'px';
-    this.el.reactionsPopup.style.top = posY + 'px';
+    this.el.reactionsPopup.style.top = Math.max(10, y - 55) + 'px';
     this.el.reactionsPopup.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      const rect = this.el.reactionsPopup.getBoundingClientRect();
+      if (rect.bottom > window.innerHeight - 10) {
+        this.el.reactionsPopup.style.top = Math.max(10, window.innerHeight - rect.height - 10) + 'px';
+      }
+    });
+  }
+
+  showReactionsPopup(x, y, msgId) {
+    const message = this.storage.getMessage(this.currentChatId, msgId);
+    if (message) this.showMessageActionsPopup(x, y, message);
   }
 
   hideReactionsPopup() {
@@ -3651,6 +3825,83 @@ class TelegramApp {
       this.el.reactionsPopup.classList.add('hidden');
     }
     this.activeReactionMsgId = null;
+    this.activeMessageAction = null;
+  }
+
+  async handleMessageAction(action) {
+    const active = this.activeMessageAction;
+    if (!active || active.chatId !== this.currentChatId) return;
+    const message = this.storage.getMessage(active.chatId, active.messageId);
+    this.hideReactionsPopup();
+    if (!message) return;
+
+    if (action === 'copy') {
+      if (!message.text) return;
+      try {
+        await navigator.clipboard.writeText(message.text);
+        this.showToast('Сообщение скопировано');
+      } catch (_) {
+        this.showToast('Не удалось скопировать сообщение');
+      }
+      return;
+    }
+
+    if (action === 'edit') {
+      const nextText = window.prompt('Изменить сообщение', message.text || '');
+      if (nextText === null || nextText.trim() === message.text) return;
+      try {
+        await this.storage.editMessage(active.chatId, active.messageId, this.currentUser.username, nextText);
+        await this.renderMessages();
+        await this.renderChatList();
+      } catch (error) {
+        this.showToast(error.message || 'Не удалось изменить сообщение');
+      }
+      return;
+    }
+
+    if (action === 'delete') {
+      if (!window.confirm('Удалить это сообщение?')) return;
+      try {
+        const result = await this.storage.deleteMessage(active.chatId, active.messageId, this.currentUser.username);
+        await this.removeMessagesMedia(result.message ? [result.message] : []);
+        await this.renderMessages();
+        await this.renderChatList();
+      } catch (error) {
+        this.showToast(error.message || 'Не удалось удалить сообщение');
+      }
+      return;
+    }
+
+    if (action === 'forward') await this.openForwardPicker(message);
+  }
+
+  async openForwardPicker(message) {
+    const chats = (await this.storage.getUserChats(this.currentUser.username)).filter(chat => chat.id !== message.chatId);
+    const overlay = document.createElement('div');
+    overlay.className = 'tg-action-sheet-overlay';
+    overlay.innerHTML = '<section class="tg-action-sheet-card" role="dialog" aria-modal="true" aria-label="Переслать сообщение"><header><strong>Переслать в…</strong><button type="button" data-close aria-label="Закрыть">×</button></header><div class="tg-forward-chat-list"></div></section>';
+    const list = overlay.querySelector('.tg-forward-chat-list');
+    if (!chats.length) {
+      list.innerHTML = '<div class="tg-forward-empty">Нет других чатов для пересылки</div>';
+    } else {
+      chats.forEach(chat => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tg-forward-chat';
+        button.innerHTML = '<span class="tg-avatar tg-avatar-user">' + this.escape((chat.title || '?').charAt(0).toUpperCase()) + '</span><span><strong>' + this.escape(chat.title || 'Чат') + '</strong><small>' + this.escape(chat.isCommunity ? (chat.isChannel ? 'Канал' : 'Группа') : 'Диалог') + '</small></span>';
+        button.addEventListener('click', async () => {
+          button.disabled = true;
+          const files = message.files && message.files.length ? message.files.map(file => ({ ...file })) : (message.file ? [{ ...message.file }] : null);
+          await this.storage.sendMessage(chat.id, this.currentUser.username, message.text || '', files && files[0], message.voice ? { ...message.voice } : null, message.circleVideo ? { ...message.circleVideo } : null, files);
+          overlay.remove();
+          await this.renderChatList();
+          this.showToast('Сообщение переслано');
+        });
+        list.appendChild(button);
+      });
+    }
+    overlay.addEventListener('click', event => { if (event.target === overlay || event.target.closest('[data-close]')) overlay.remove(); });
+    document.body.appendChild(overlay);
   }
 
   async handleSearch(q) {
@@ -4187,6 +4438,9 @@ class TelegramApp {
   }
 
   async startVoiceRecording() {
+    const recordingChatId = this.currentChatId;
+    const recordingUsername = this.currentUser && this.currentUser.username;
+    if (!recordingUsername || !this.canOpenChatId(recordingChatId)) return;
     this.stopAllPlayingMedia();
     try {
       let stream;
@@ -4242,11 +4496,12 @@ class TelegramApp {
           const mediaId = 'voice_' + Date.now();
           await this.storage.saveMediaBlob(mediaId, blob);
           this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
-          await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, {
+          await this.storage.sendMessage(recordingChatId, recordingUsername, '', null, {
             mediaId: mediaId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
-          await this.refreshData();
+          await this.renderChatList();
+          if (this.currentChatId === recordingChatId) await this.renderMessages();
         }
         this.cleanupStream();
       };
@@ -4267,6 +4522,9 @@ class TelegramApp {
   }
 
   async startVideoCircleRecording() {
+    const recordingChatId = this.currentChatId;
+    const recordingUsername = this.currentUser && this.currentUser.username;
+    if (!recordingUsername || !this.canOpenChatId(recordingChatId)) return;
     this.stopAllPlayingMedia();
     try {
       let stream;
@@ -4353,12 +4611,13 @@ class TelegramApp {
             await this.storage.saveMediaBlob(posterId, posterBlob);
             this._mediaBlobUrlCache.set(posterId, URL.createObjectURL(posterBlob));
           }
-          await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
+          await this.storage.sendMessage(recordingChatId, recordingUsername, '', null, null, {
             mediaId: mediaId,
             posterId: posterId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
-          await this.refreshData();
+          await this.renderChatList();
+          if (this.currentChatId === recordingChatId) await this.renderMessages();
         }
         this.cleanupStream();
       };
@@ -4478,6 +4737,9 @@ class TelegramApp {
   }
 
   async sendDemoVideoCircle() {
+    const targetChatId = this.currentChatId;
+    const senderUsername = this.currentUser && this.currentUser.username;
+    if (!senderUsername || !this.canOpenChatId(targetChatId)) return;
     try {
       const canvas = document.createElement('canvas');
       canvas.width = 240;
@@ -4502,11 +4764,12 @@ class TelegramApp {
         const mediaId = 'circle_demo_' + Date.now();
         await this.storage.saveMediaBlob(mediaId, blob);
         this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
-        await this.storage.sendMessage(this.currentChatId, this.currentUser.username, '', null, null, {
+        await this.storage.sendMessage(targetChatId, senderUsername, '', null, null, {
           mediaId: mediaId,
           duration: 3
         });
-        await this.refreshData();
+        await this.renderChatList();
+        if (this.currentChatId === targetChatId) await this.renderMessages();
       };
 
       rec.start();

@@ -626,7 +626,7 @@
           </button>
 
           <div class="tg-input-wrapper">
-            <textarea id="message-input" class="tg-msg-textarea" placeholder="Написать сообщение..." rows="1"></textarea>
+            <textarea id="message-input" name="message" class="tg-msg-textarea" placeholder="Написать сообщение..." rows="1" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" inputmode="text"></textarea>
 
             <!-- TELEGRAM RECORDING BAR (INSIDE MESSAGE INPUT) -->
             <div id="composer-recording-bar" class="tg-composer-rec-bar hidden">
@@ -1103,19 +1103,27 @@
         </button>
       </div>
     </div>
-    <!-- REACTIONS POPUP -->
-    <div id="reactions-popup" class="tg-reactions-popup hidden">
-      <span class="tg-react-emoji" data-emoji="👍">👍</span>
-      <span class="tg-react-emoji" data-emoji="❤️">❤️</span>
-      <span class="tg-react-emoji" data-emoji="🔥">🔥</span>
-      <span class="tg-react-emoji" data-emoji="😂">😂</span>
-      <span class="tg-react-emoji" data-emoji="😮">😮</span>
-      <span class="tg-react-emoji" data-emoji="😢">😢</span>
-      <span class="tg-react-emoji" data-emoji="🎉">🎉</span>
+    <!-- MESSAGE ACTIONS: LONG PRESS / RIGHT CLICK -->
+    <div id="reactions-popup" class="tg-reactions-popup hidden" role="menu" aria-label="Действия с сообщением">
+      <div class="tg-message-reactions-row">
+        <span class="tg-react-emoji" data-emoji="👍">👍</span>
+        <span class="tg-react-emoji" data-emoji="❤️">❤️</span>
+        <span class="tg-react-emoji" data-emoji="🔥">🔥</span>
+        <span class="tg-react-emoji" data-emoji="😂">😂</span>
+        <span class="tg-react-emoji" data-emoji="😮">😮</span>
+        <span class="tg-react-emoji" data-emoji="😢">😢</span>
+        <span class="tg-react-emoji" data-emoji="🎉">🎉</span>
+      </div>
+      <div class="tg-message-actions-list">
+        <button type="button" data-message-action="copy" role="menuitem">Копировать</button>
+        <button type="button" data-message-action="forward" role="menuitem">Переслать</button>
+        <button type="button" data-message-action="edit" role="menuitem">Изменить</button>
+        <button type="button" data-message-action="delete" class="danger" role="menuitem">Удалить</button>
+      </div>
     </div>
   </div>
 
   <script src="config.js?v=3.26.1"></script>
-  <script src="app.js?v=3.41.0"></script>
+  <script src="app.js?v=3.42.0"></script>
 </body>
 </html>
