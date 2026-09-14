@@ -60,7 +60,7 @@ class StorageService {
     const spaces = [];
     (chats || []).forEach(chat => {
       if (chat.isSaved) localStorage.setItem('gm_remote_saved_id', chat.id);
-      if (chat.isCommunity) spaces.push({ id: chat.id, type: chat.isChannel ? 'channel' : 'group', title: chat.title, username: chat.username || '', avatar: chat.avatar || '', owner: '', admins: [], members: [], memberCount: chat.memberCount || 0, createdAt: chat.timestamp || Date.now() });
+      if (chat.isCommunity) spaces.push({ id: chat.id, type: chat.isChannel ? 'channel' : 'group', title: chat.title, username: chat.username || '', avatar: chat.avatar || '', owner: chat.owner || '', admins: chat.admins || [], members: chat.members || [], memberCount: chat.memberCount || 0, currentRole: chat.currentRole || '', createdAt: chat.timestamp || Date.now() });
     });
     localStorage.setItem('gm_remote_chats', JSON.stringify(chats || []));
     localStorage.setItem('gm_spaces', JSON.stringify(spaces));
@@ -336,6 +336,16 @@ class StorageService {
 
   async addProfilePhoto(username, photoBase64) {
     if (!username || !photoBase64) return [];
+    if (this.isRemote) {
+      const result = await this.api('profile.photo.set', { dataUrl: photoBase64 });
+      const user = this.cacheRemoteUser({ ...result.user, avatar: photoBase64, avatars: [photoBase64] });
+      const current = JSON.parse(localStorage.getItem('gm_current_user') || '{}');
+      if (current.username && current.username.toLowerCase() === String(username).toLowerCase()) {
+        Object.assign(current, user);
+        localStorage.setItem('gm_current_user', JSON.stringify(current));
+      }
+      return [photoBase64];
+    }
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     let user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
     if (!user) {
@@ -477,7 +487,12 @@ class StorageService {
   async getUserProfile(username) {
     if (this.isRemote) {
       const result = await this.api('profile.get', { username });
-      return this.cacheRemoteUser(result.user);
+      let user = result.user;
+      if (user && user.photoId) {
+        const photo = await this.api('profile.photo.get', { userId: user.userId || user.id, photoId: user.photoId });
+        if (photo.dataUrl) user = { ...user, avatar: photo.dataUrl, avatars: [photo.dataUrl] };
+      }
+      return this.cacheRemoteUser(user);
     }
     if (!username) return null;
     const clean = String(username).replace(/^@/, '').toLowerCase().trim();
@@ -523,7 +538,12 @@ class StorageService {
     if (this.isRemote) {
       const data = typeof dataOrName === 'string' ? { name: dataOrName, bio: maybeBio } : (dataOrName || {});
       const result = await this.api('profile.update', { displayName: data.name, bio: data.bio, phone: data.phone, photoId: data.photoId });
-      return { ok: true, user: this.cacheRemoteUser(result.user) };
+      let user = this.cacheRemoteUser(result.user);
+      if (data.avatar && data.avatar !== user.avatar) {
+        const avatars = await this.addProfilePhoto(username, data.avatar);
+        user = this.cacheRemoteUser({ ...user, avatar: avatars[0] || null, avatars });
+      }
+      return { ok: true, user };
     }
     const users = JSON.parse(localStorage.getItem('gm_users') || '[]');
     let user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
@@ -771,7 +791,13 @@ class StorageService {
   }
 
   async setSpaceAdmin(chatId, actorUsername, targetUsername, enabled) {
-    if (this.isRemote) throw new Error('Управление ролями будет доступно после загрузки списка участников');
+    if (this.isRemote) {
+      const profile = await this.getUserProfile(targetUsername);
+      if (!profile || !profile.id) throw new Error('Участник не найден');
+      await this.api('spaces.members.setRole', { conversationId: chatId, userId: profile.id, role: enabled ? 'admin' : 'member' });
+      await this.primeRemote();
+      return this.getSpace(chatId);
+    }
     const actor = String(actorUsername || '').toLowerCase().replace(/^@/, '');
     const target = String(targetUsername || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
@@ -6436,7 +6462,7 @@ class TelegramApp {
     const chatId = this.activeSpaceId || this.currentChatId;
     const space = this.storage.getSpace(chatId);
     if (!space) return;
-    if (space.owner === this.currentUser.username.toLowerCase()) {
+    if (!this.storage.isRemote && space.owner === this.currentUser.username.toLowerCase()) {
       this.showToast('Создателю нужно сначала передать права владельца другому участнику');
       return;
     }
