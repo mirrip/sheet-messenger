@@ -190,6 +190,9 @@ class StorageService {
   }
 
   async register(username, password) {
+    username = String(username || '').trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-z][a-z0-9_]{2,31}$/.test(username)) throw new Error('Username: 3–32 символа, латинская буква в начале');
+    if (String(password || '').length < 4) throw new Error('Пароль должен быть от 4 символов');
     if (this.isRemote) {
       const result = await this.api('auth.register', { username, password, deviceId: this.deviceId() });
       this.sessionToken = result.session.token;
@@ -198,7 +201,6 @@ class StorageService {
       await this.primeRemote();
       return result;
     }
-    username = username.trim().toLowerCase().replace(/^@/, '');
     if (!username) throw new Error('Введите имя пользователя');
     if (password.length < 4) throw new Error('Пароль должен быть от 4 символов');
 
@@ -2785,7 +2787,7 @@ class TelegramApp {
 
     this.el.authSubmitBtn.disabled = true;
     this.el.authStatus.className = 'tg-status-msg';
-    this.el.authStatus.innerText = 'Вход в «кумир»...';
+    this.el.authStatus.innerText = this.authMode === 'register' ? 'Создаём аккаунт…' : 'Вход в «кумир»...';
 
     try {
       let res;

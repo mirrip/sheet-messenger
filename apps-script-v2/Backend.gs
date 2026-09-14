@@ -1,4 +1,4 @@
-const APP_VERSION = "5.0.2";
+const APP_VERSION = "5.0.3";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",
   MESSAGES: "1teFreIz4rul32y3dUi35diDcwtcR8Kyiat7eMxCjOt4",
@@ -60,13 +60,14 @@ function find_(s,key,value,predicate){const target=String(value);return objects_
 function append_(s,o){const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0].map(String);s.appendRow(h.map(k=>o[k]==null?"":o[k]));return o;}
 function patch_(s,row,p){const h=s.getRange(1,1,1,s.getLastColumn()).getValues()[0].map(String),v=s.getRange(row,1,1,h.length).getValues()[0];h.forEach((k,i)=>{if(Object.prototype.hasOwnProperty.call(p,k))v[i]=p[k];});s.getRange(row,1,1,h.length).setValues([v]);}
 function locked_(fn){const l=LockService.getScriptLock();l.waitLock(20000);try{return fn();}finally{l.releaseLock();}}
-function cleanUser_(v){const u=String(v||"").trim().replace(/^@/,"").toLowerCase();if(!/^[a-z][a-z0-9_]{4,31}$/.test(u))fail_("INVALID_USERNAME","Username: 5–32 символа, латинская буква в начале");return u;}
-function cleanPassword_(v){const p=String(v||"");if(p.length<8||p.length>256)fail_("INVALID_PASSWORD","Пароль должен содержать от 8 до 256 символов");return p;}
+function cleanUser_(v){const u=String(v||"").trim().replace(/^@/,"").toLowerCase();if(!/^[a-z][a-z0-9_]{2,31}$/.test(u))fail_("INVALID_USERNAME","Username: 3–32 символа, латинская буква в начале");return u;}
+function cleanPassword_(v){const p=String(v||"");if(p.length<4||p.length>256)fail_("INVALID_PASSWORD","Пароль должен содержать от 4 до 256 символов");return p;}
 function cleanText_(v,n){const x=String(v==null?"":v).trim();if(x.length>n)fail_("TEXT_TOO_LONG","Слишком длинный текст");return x;}
 function hex_(bytes){return bytes.map(x=>(x<0?x+256:x).toString(16).padStart(2,"0")).join("");}
 function sha_(v){return hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(v),Utilities.Charset.UTF_8));}
 function pepper_(){const p=PropertiesService.getScriptProperties();let x=p.getProperty("AUTH_PEPPER");if(!x){x=Utilities.getUuid()+Utilities.getUuid();p.setProperty("AUTH_PEPPER",x);}return x;}
-function passwordHash_(password,salt){let x=pepper_()+":"+salt+":"+password;for(let i=0;i<1200;i++)x=sha_(x+":"+i);return x;}
+function passwordHashV1_(password,salt){let x=pepper_()+":"+salt+":"+password;for(let i=0;i<1200;i++)x=sha_(x+":"+i);return x;}
+function passwordHash_(password,salt){return hex_(Utilities.computeHmacSha256Signature(String(salt)+":"+String(password),pepper_(),Utilities.Charset.UTF_8));}
 function constant_(a,b){a=String(a);b=String(b);if(a.length!==b.length)return false;let x=0;for(let i=0;i<a.length;i++)x|=a.charCodeAt(i)^b.charCodeAt(i);return x===0;}
 
 function setupProject(){
@@ -79,8 +80,8 @@ function setupProject(){
   return{ok:true,version:APP_VERSION,databaseIds:DB_IDS};
 }
 
-function register_(p){return locked_(()=>{const username=cleanUser_(p.username),password=cleanPassword_(p.password),users=sheet_("AUTH","Users");if(find_(users,"username_key",username))fail_("USERNAME_TAKEN","Этот username уже занят");const at=now_(),userId=id_("usr"),salt=id_("salt");append_(users,{user_id:userId,username_key:username,password_hash:passwordHash_(password,salt),password_salt:salt,password_version:"v1",status:"active",created_at:at,updated_at:at,last_login_at:at});append_(sheet_("PROFILES","Profiles"),{user_id:userId,display_name:"@"+username,phone:"",bio:"",current_photo_id:"",created_at:at,updated_at:at});const saved=createConversation_("saved","","Избранное","",userId,[{userId:userId,role:"owner"}]);return{ok:true,user:publicUser_(userId),session:issueSession_(userId,p.deviceId)};});}
-function login_(p){const username=cleanUser_(p.username),password=cleanPassword_(p.password),users=sheet_("AUTH","Users"),u=find_(users,"username_key",username,o=>String(o.status)==="active");if(!u||!constant_(u.password_hash,passwordHash_(password,String(u.password_salt))))fail_("INVALID_CREDENTIALS","Неверный username или пароль");patch_(users,u._row,{last_login_at:now_(),updated_at:now_()});return{ok:true,user:publicUser_(String(u.user_id)),session:issueSession_(String(u.user_id),p.deviceId)};}
+function register_(p){return locked_(()=>{const username=cleanUser_(p.username),password=cleanPassword_(p.password),users=sheet_("AUTH","Users");if(find_(users,"username_key",username))fail_("USERNAME_TAKEN","Этот username уже занят");const at=now_(),userId=id_("usr"),salt=id_("salt");append_(users,{user_id:userId,username_key:username,password_hash:passwordHash_(password,salt),password_salt:salt,password_version:"v2",status:"active",created_at:at,updated_at:at,last_login_at:at});append_(sheet_("PROFILES","Profiles"),{user_id:userId,display_name:"@"+username,phone:"",bio:"",current_photo_id:"",created_at:at,updated_at:at});const saved=createConversation_("saved","","Избранное","",userId,[{userId:userId,role:"owner"}]);return{ok:true,user:publicUser_(userId),session:issueSession_(userId,p.deviceId)};});}
+function login_(p){const username=cleanUser_(p.username),password=cleanPassword_(p.password),users=sheet_("AUTH","Users"),u=find_(users,"username_key",username,o=>String(o.status)==="active"),version=String(u&&u.password_version||"v1"),hash=u&&(version==="v2"?passwordHash_(password,String(u.password_salt)):passwordHashV1_(password,String(u.password_salt)));if(!u||!constant_(u.password_hash,hash))fail_("INVALID_CREDENTIALS","Неверный username или пароль");if(version!=="v2")patch_(users,u._row,{password_hash:passwordHash_(password,String(u.password_salt)),password_version:"v2",last_login_at:now_(),updated_at:now_()});else patch_(users,u._row,{last_login_at:now_(),updated_at:now_()});return{ok:true,user:publicUser_(String(u.user_id)),session:issueSession_(String(u.user_id),p.deviceId)};}
 function issueSession_(userId,deviceId){const raw=id_("ses")+Utilities.getUuid().replace(/-/g,""),at=now_(),expires=new Date(Date.now()+SESSION_TTL_MS).toISOString();append_(sheet_("AUTH","Sessions"),{session_id_hash:sha_(raw),user_id:userId,device_id:String(deviceId||"web"),created_at:at,expires_at:expires,revoked_at:""});return{token:raw,expiresAt:expires};}
 function auth_(token){if(!token)fail_("AUTH_REQUIRED","Требуется вход");const sessions=sheet_("AUTH","Sessions"),s=find_(sessions,"session_id_hash",sha_(token),o=>!o.revoked_at&&new Date(o.expires_at).getTime()>Date.now());if(!s)fail_("SESSION_EXPIRED","Сессия недействительна");const user=find_(sheet_("AUTH","Users"),"user_id",s.user_id,o=>String(o.status)==="active");if(!user)fail_("AUTH_REQUIRED","Пользователь недоступен");return{userId:String(user.user_id),user:user,session:s,sessions:sessions};}
 function logout_(p){const a=auth_(p.sessionToken);patch_(a.sessions,a.session._row,{revoked_at:now_()});return{ok:true};}
