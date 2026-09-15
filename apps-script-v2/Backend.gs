@@ -1,4 +1,4 @@
-const APP_VERSION = "5.2.1";
+const APP_VERSION = "5.2.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",
   MESSAGES: "1teFreIz4rul32y3dUi35diDcwtcR8Kyiat7eMxCjOt4",

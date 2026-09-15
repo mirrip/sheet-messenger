@@ -4810,47 +4810,6 @@ class TelegramApp {
     this.updateMainActionButtonState();
   }
 
-  async sendRecordedMessageOptimistically(chatId, sender, voice = null, circleVideo = null) {
-    const temporaryId = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    const now = new Date();
-    if (this.storage.isRemote) {
-      const optimistic = {
-        id: temporaryId,
-        chatId,
-        sender,
-        text: '',
-        kind: circleVideo ? 'circle' : 'voice',
-        voice,
-        circleVideo,
-        reactions: {},
-        deliveryStatus: 'sent',
-        _optimistic: true,
-        createdAt: now.getTime(),
-        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      this.storage.putOptimisticMessage(optimistic);
-      this.renderChatList(this.storage.touchCachedChat(chatId, optimistic));
-      if (this.currentChatId === chatId) await this.renderMessages(this.storage.getCachedMessages(chatId));
-    }
-    try {
-      const result = await this.storage.sendMessage(chatId, sender, '', null, voice, circleVideo);
-      if (this.storage.isRemote) {
-        const messages = this.storage.settleOptimisticMessage(chatId, temporaryId, result.message);
-        this.renderChatList(this.storage.touchCachedChat(chatId, result.message));
-        if (this.currentChatId === chatId) await this.renderMessages(messages);
-      } else {
-        await this.renderChatList();
-        if (this.currentChatId === chatId) await this.renderMessages();
-      }
-    } catch (error) {
-      if (this.storage.isRemote) {
-        const messages = this.storage.settleOptimisticMessage(chatId, temporaryId, null, error);
-        if (this.currentChatId === chatId) await this.renderMessages(messages);
-      }
-      this.showToast(error.message || 'Не удалось отправить медиасообщение');
-    }
-  }
-
   async startVoiceRecording() {
     const recordingChatId = this.currentChatId;
     const recordingUsername = this.currentUser && this.currentUser.username;
@@ -4910,10 +4869,12 @@ class TelegramApp {
           const mediaId = 'voice_' + Date.now();
           await this.storage.saveMediaBlob(mediaId, blob);
           this._mediaBlobUrlCache.set(mediaId, URL.createObjectURL(blob));
-          await this.sendRecordedMessageOptimistically(recordingChatId, recordingUsername, {
+          await this.storage.sendMessage(recordingChatId, recordingUsername, '', null, {
             mediaId: mediaId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
+          await this.renderChatList();
+          if (this.currentChatId === recordingChatId) await this.renderMessages();
         }
         this.cleanupStream();
       };
@@ -5023,11 +4984,13 @@ class TelegramApp {
             await this.storage.saveMediaBlob(posterId, posterBlob);
             this._mediaBlobUrlCache.set(posterId, URL.createObjectURL(posterBlob));
           }
-          await this.sendRecordedMessageOptimistically(recordingChatId, recordingUsername, null, {
+          await this.storage.sendMessage(recordingChatId, recordingUsername, '', null, null, {
             mediaId: mediaId,
             posterId: posterId,
             duration: Math.max(1, this.getElapsedSeconds())
           });
+          await this.renderChatList();
+          if (this.currentChatId === recordingChatId) await this.renderMessages();
         }
         this.cleanupStream();
       };
