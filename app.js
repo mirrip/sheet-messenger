@@ -262,9 +262,6 @@ class StorageService {
     if (String(password || '').length < 4) throw new Error('Пароль должен быть от 4 символов');
     if (this.isRemote) {
       const result = await this.api('auth.register', { username, password, deviceId: this.deviceId() });
-      this.clearRemoteAccountCache();
-      this.sessionToken = result.session.token;
-      localStorage.setItem('gm_session_token', this.sessionToken);
       result.user = this.cacheRemoteUser(result.user);
       return result;
     }
@@ -814,11 +811,13 @@ class StorageService {
       && !this.getSpaces().some(space => String(space.username || '').toLowerCase() === clean);
   }
 
-  async createSpace(data) {
+  createSpace(data) {
     if (this.isRemote) {
-      const result = await this.api('spaces.create', { type: data.type, title: data.title, username: data.username, members: data.members || [] });
-      await this.primeRemote();
-      return this.getSpace(result.conversation.id) || result.conversation;
+      return (async () => {
+        const result = await this.api('spaces.create', { type: data.type, title: data.title, username: data.username, members: data.members || [] });
+        await this.primeRemote();
+        return this.getSpace(result.conversation.id) || result.conversation;
+      })();
     }
     const type = data && data.type === 'channel' ? 'channel' : 'group';
     const title = String(data && data.title || '').trim();
@@ -846,11 +845,13 @@ class StorageService {
     return space;
   }
 
-  async updateSpace(chatId, actorUsername, patch = {}) {
+  updateSpace(chatId, actorUsername, patch = {}) {
     if (this.isRemote) {
-      await this.api('spaces.update', { conversationId: chatId, title: patch.title, username: patch.username, photoId: patch.photoId });
-      await this.primeRemote();
-      return this.getSpace(chatId);
+      return (async () => {
+        await this.api('spaces.update', { conversationId: chatId, title: patch.title, username: patch.username, photoId: patch.photoId });
+        await this.primeRemote();
+        return this.getSpace(chatId);
+      })();
     }
     const actor = String(actorUsername || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
@@ -870,13 +871,15 @@ class StorageService {
     return spaces[index];
   }
 
-  async setSpaceAdmin(chatId, actorUsername, targetUsername, enabled) {
+  setSpaceAdmin(chatId, actorUsername, targetUsername, enabled) {
     if (this.isRemote) {
-      const profile = await this.getUserProfile(targetUsername);
-      if (!profile || !profile.id) throw new Error('Участник не найден');
-      await this.api('spaces.members.setRole', { conversationId: chatId, userId: profile.id, role: enabled ? 'admin' : 'member' });
-      await this.primeRemote();
-      return this.getSpace(chatId);
+      return (async () => {
+        const profile = await this.getUserProfile(targetUsername);
+        if (!profile || !profile.id) throw new Error('Участник не найден');
+        await this.api('spaces.members.setRole', { conversationId: chatId, userId: profile.id, role: enabled ? 'admin' : 'member' });
+        await this.primeRemote();
+        return this.getSpace(chatId);
+      })();
     }
     const actor = String(actorUsername || '').toLowerCase().replace(/^@/, '');
     const target = String(targetUsername || '').toLowerCase().replace(/^@/, '');
@@ -894,11 +897,13 @@ class StorageService {
     return spaces[index];
   }
 
-  async leaveSpace(chatId, username) {
+  leaveSpace(chatId, username) {
     if (this.isRemote) {
-      const result = await this.api('spaces.leave', { conversationId: chatId });
-      await this.primeRemote();
-      return result;
+      return (async () => {
+        const result = await this.api('spaces.leave', { conversationId: chatId });
+        await this.primeRemote();
+        return result;
+      })();
     }
     const user = String(username || '').toLowerCase().replace(/^@/, '');
     const spaces = this.getSpaces();
@@ -2905,11 +2910,21 @@ class TelegramApp {
         res = await this.storage.login(username, password);
       }
 
+      if (isRegistration) {
+        this.setAuthMode('login');
+        this.el.authUsername.value = username.replace(/^@/, '');
+        this.el.authPassword.value = '';
+        this.el.authStatus.className = 'tg-status-msg success';
+        this.el.authStatus.innerText = 'Аккаунт создан. Теперь войдите.';
+        this.el.authPassword.focus();
+        return;
+      }
+
       this.currentUser = res.user;
       localStorage.setItem('gm_current_user', JSON.stringify(this.currentUser));
       this.el.authStatus.innerText = '';
-      this.showMainScreen({ loadData: !isRegistration, bootstrap: !isRegistration ? this.storage.bootstrapData : null });
-      if (!isRegistration && !this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
+      this.showMainScreen({ loadData: true, bootstrap: this.storage.bootstrapData });
+      if (!this.isMobileLayout()) this.openChat(this.storage.getSavedChatId(this.currentUser.username), 'Избранное');
     } catch (err) {
       this.el.authStatus.className = 'tg-status-msg error';
       this.el.authStatus.innerText = err.message || 'Ошибка входа';
