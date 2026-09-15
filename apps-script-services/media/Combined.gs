@@ -1,3 +1,6 @@
+const SERVICE_NAME = "kumir-media";
+const SERVICE_ACTIONS = Object.freeze(["media.init","media.putChunk","media.complete","media.downloadChunk"]);
+
 const APP_VERSION = "5.3.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",

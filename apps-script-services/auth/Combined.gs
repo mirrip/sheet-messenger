@@ -1,3 +1,6 @@
+const SERVICE_NAME = "kumir-auth";
+const SERVICE_ACTIONS = Object.freeze(["auth.register","auth.login","auth.logout","auth.me"]);
+
 const APP_VERSION = "5.3.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",

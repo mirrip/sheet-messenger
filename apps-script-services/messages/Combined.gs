@@ -1,3 +1,6 @@
+const SERVICE_NAME = "kumir-messages";
+const SERVICE_ACTIONS = Object.freeze(["messages.page","messages.sync","messages.send","messages.edit","messages.delete"]);
+
 const APP_VERSION = "5.3.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",

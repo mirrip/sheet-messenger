@@ -1,3 +1,6 @@
+const SERVICE_NAME = "kumir-reactions";
+const SERVICE_ACTIONS = Object.freeze(["reactions.toggle"]);
+
 const APP_VERSION = "5.3.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",

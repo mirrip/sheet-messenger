@@ -8,7 +8,7 @@
 class StorageService {
   constructor(config) {
     this.config = config || (typeof window !== 'undefined' ? window.APP_CONFIG : null) || { STORAGE_MODE: 'local' };
-    this.isRemote = this.config.STORAGE_MODE === 'remote' && Boolean(this.config.API_ENDPOINT);
+    this.isRemote = this.config.STORAGE_MODE === 'remote' && Boolean(this.config.API_ENDPOINT || Object.keys(this.config.API_ENDPOINTS || {}).length);
     this.sessionToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('gm_session_token') || '') : '';
     this.remoteMedia = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem('gm_remote_media')) || '{}');
     this.mediaDB = null;
@@ -26,7 +26,8 @@ class StorageService {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        response = await fetch(this.config.API_ENDPOINT + (this.config.API_ENDPOINT.includes('?') ? '&' : '?') + '_=' + Date.now() + '_' + attempt, {
+        const endpoint = this.endpointForAction(action);
+        response = await fetch(endpoint + (endpoint.includes('?') ? '&' : '?') + '_=' + Date.now() + '_' + attempt, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: JSON.stringify(body),
@@ -44,6 +45,30 @@ class StorageService {
     const result = await response.json();
     if (!result.ok) throw new Error(result.error || 'Ошибка сервера');
     return result;
+  }
+
+  endpointForAction(action) {
+    const exact = {
+      'users.search': 'directory',
+      'conversations.list': 'conversations',
+      'conversations.ensureDm': 'conversations',
+      'conversations.clearForMe': 'memberships',
+      'conversations.read': 'memberships',
+      'reactions.toggle': 'reactions',
+      'sync.bundle': 'messages',
+      health: 'maintenance'
+    };
+    let service = exact[action];
+    if (!service) {
+      if (action.startsWith('auth.')) service = 'auth';
+      else if (action.startsWith('profile.')) service = 'profiles';
+      else if (action.startsWith('spaces.')) service = 'spaces';
+      else if (action.startsWith('messages.')) service = 'messages';
+      else if (action.startsWith('media.')) service = 'media';
+    }
+    const endpoint = (this.config.API_ENDPOINTS || {})[service] || this.config.API_ENDPOINT;
+    if (!endpoint) throw new Error('Сервис «' + (service || action) + '» не настроен');
+    return endpoint;
   }
 
   deviceId() {
@@ -128,10 +153,14 @@ class StorageService {
   }
 
   async syncBundle(chatId) {
-    const result = await this.api('sync.bundle', { conversationId: chatId, limit: 200 });
-    const chats = this.normalizeRemoteChats(result.conversations || result.chats || []);
-    this.cacheRemoteChats(chats);
-    return { chats, messages: this.cacheRemoteMessages(chatId, result.messages || []) };
+    const known = this.getCachedChats().some(chat => chat.id === chatId);
+    const chatsPromise = this.primeRemote();
+    const messagesPromise = known && chatId ? this.getMessages(chatId) : null;
+    const chats = await chatsPromise;
+    const fallback = chats.find(chat => chat.id === chatId) || chats.find(chat => chat.isSaved) || chats[0] || null;
+    const targetChatId = fallback ? fallback.id : '';
+    const messages = !targetChatId ? [] : (messagesPromise && targetChatId === chatId ? await messagesPromise : await this.getMessages(targetChatId));
+    return { chats, messages, chatId: targetChatId };
   }
 
   // --- IndexedDB для медиа (голос, видеокружки) ---
@@ -3020,6 +3049,11 @@ class TelegramApp {
     this.refreshInFlight = (async () => {
       if (this.storage.isRemote) {
         const bundle = await this.storage.syncBundle(this.currentChatId);
+        if (bundle.chatId && bundle.chatId !== this.currentChatId) {
+          this.currentChatId = bundle.chatId;
+          const selected = bundle.chats.find(chat => chat.id === bundle.chatId);
+          this.currentChatTitle = selected ? selected.title : this.currentChatTitle;
+        }
         await this.renderChatList(bundle.chats);
         await this.renderMessages(bundle.messages);
       } else {

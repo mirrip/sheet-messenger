@@ -1,3 +1,6 @@
+const SERVICE_NAME = "kumir-profiles";
+const SERVICE_ACTIONS = Object.freeze(["profile.get","profile.update","profile.photo.set","profile.photo.get"]);
+
 const APP_VERSION = "5.3.0";
 const DB_IDS = Object.freeze({
   AUTH: "1T5iqlQSxoGIBSA8t-GCeYWNtgKGEL7Qh6prZyfVOBOc",
